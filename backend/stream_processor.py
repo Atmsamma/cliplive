@@ -12,6 +12,7 @@ import threading
 import subprocess
 import tempfile
 import shutil
+import re
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 from queue import Queue, Empty
