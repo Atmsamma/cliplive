@@ -162,20 +162,13 @@ class StreamProcessor:
                 segment_path = os.path.join(self.stream_buffer.temp_dir, segment_filename)
                 
                 # Use streamlink to capture a 2-second segment
-                cmd = [
-                    'streamlink',
-                    self.config['url'],
-                    'best',
-                    '--player-external-http',
-                    '--player-external-http-port', '8080',
-                    '--hls-segment-timeout', '10',
-                    '-o', segment_path,
-                    '--retry-streams', '3'
-                ]
+                # Try real streamlink capture first
+                success = self._capture_real_segment(segment_path)
                 
-                # For demo purposes, create a mock segment file
-                # In real implementation, this would capture from streamlink
-                self._create_mock_segment(segment_path)
+                # Fallback to mock for development if streamlink fails
+                if not success:
+                    print(f"Streamlink capture failed, creating mock segment for development")
+                    self._create_mock_segment(segment_path)
                 
                 if os.path.exists(segment_path):
                     self.stream_buffer.add_segment(segment_path, timestamp)
@@ -231,9 +224,15 @@ class StreamProcessor:
                 print(f"Segment file not found: {segment_path}")
                 return self._get_default_metrics()
             
-            # For development with mock files, return random metrics
-            # In production, this would use real FFmpeg analysis
-            if os.path.getsize(segment_path) < 1000000:  # Mock file detection
+            # Check if this is a real video segment
+            file_size = os.path.getsize(segment_path)
+            is_real_video = file_size > 50000 or segment_path.endswith(('.ts', '.mp4', '.m4v', '.mkv'))
+            
+            if is_real_video:
+                # Use FFmpeg for real video analysis
+                return self._analyze_with_ffmpeg(segment_path)
+            else:
+                # For development with mock files, return random metrics
                 import random
                 metrics = {
                     'frames_analyzed': 60,  # 2 seconds at 30fps
@@ -384,9 +383,24 @@ class StreamProcessor:
     def _create_ffmpeg_clip(self, segments, detection_segment, segment_offset, before_duration, after_duration, output_path, trigger_reason):
         """Use FFmpeg to create a precise clip with 20%/80% timing."""
         try:
-            # For mock segments, create a mock clip
-            if all(os.path.getsize(seg['path']) < 1000000 for seg in segments):
+            # Check if segments are real video by looking at file types and sizes
+            # Real video segments should be at least 50KB and have proper extensions
+            real_video_segments = []
+            for seg in segments:
+                if os.path.exists(seg['path']):
+                    size = os.path.getsize(seg['path'])
+                    path = seg['path']
+                    # Real video if it's larger than 50KB or has video extension
+                    if size > 50000 or path.endswith(('.ts', '.mp4', '.m4v', '.mkv')):
+                        real_video_segments.append(seg)
+            
+            # If no real video segments, create mock clip
+            if not real_video_segments:
+                print("No real video segments found, creating mock clip for development")
                 return self._create_mock_clip(output_path, trigger_reason)
+            
+            # Use real video segments for clipping
+            segments = real_video_segments
             
             # Create concatenation file for FFmpeg
             concat_file = os.path.join(self.stream_buffer.temp_dir, f"concat_{int(time.time())}.txt")
@@ -477,6 +491,47 @@ class StreamProcessor:
             print(f"Standard clip creation error: {e}")
             return self._create_mock_clip(output_path, trigger_reason)
     
+    def _capture_real_segment(self, segment_path: str) -> bool:
+        """Capture a real video segment using Streamlink."""
+        try:
+            # Streamlink command to capture a short segment
+            cmd = [
+                'streamlink',
+                self.config['url'],
+                'best',
+                '--player-external-http',
+                '--player-external-http-port', '8080',
+                '--hls-segment-timeout', '10',
+                '--retry-streams', '2',
+                '--hls-duration', '2',  # 2 second segments
+                '-o', segment_path
+            ]
+            
+            print(f"Capturing real segment with streamlink: {self.config['url']}")
+            
+            # Execute streamlink command with timeout
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+            
+            if result.returncode == 0 and os.path.exists(segment_path):
+                # Verify the captured file has reasonable size
+                file_size = os.path.getsize(segment_path)
+                if file_size > 50000:  # At least 50KB for real video
+                    print(f"Successfully captured {file_size} byte segment")
+                    return True
+                else:
+                    print(f"Captured segment too small ({file_size} bytes), treating as failed")
+                    return False
+            else:
+                print(f"Streamlink failed: {result.stderr}")
+                return False
+                
+        except subprocess.TimeoutExpired:
+            print("Streamlink capture timed out")
+            return False
+        except Exception as e:
+            print(f"Streamlink capture error: {e}")
+            return False
+
     def _create_mock_segment(self, segment_path: str):
         """Create a mock segment file for development."""
         # Create a small file to simulate a video segment
