@@ -56,12 +56,14 @@ Preferred communication style: Simple, everyday language.
 ## Data Flow
 
 1. **Stream Input**: User submits stream URL through React form
-2. **Session Creation**: Express server creates stream session record
-3. **Processing Trigger**: Background Python worker (Flask) begins stream analysis
-4. **Highlight Detection**: Python processor uses FFmpeg to analyze video segments for audio spikes, motion, and scene changes in real-time
-5. **Clip Generation**: When highlights are detected, FFmpeg creates clips using the 20%/80% strategy - 20% of content before the detection moment and 80% after, providing optimal context
-6. **Real-time Updates**: SSE broadcasts processing status and new clips
-7. **Clip Management**: Users can view, download, and manage captured clips
+2. **Session Creation**: Express server creates stream session record  
+3. **Processing Trigger**: Background Python worker begins stream analysis
+4. **Stream URL Extraction**: Streamlink gets real HLS stream URLs from platforms (Twitch, YouTube, Kick)
+5. **Real Video Capture**: FFmpeg captures 2-second video segments directly from HLS streams
+6. **Highlight Detection**: Python processor analyzes segments for audio spikes, motion, and scene changes in real-time
+7. **Clip Generation**: When highlights are detected, FFmpeg creates clips using the 20%/80% strategy - 20% of content before the detection moment and 80% after, providing optimal context
+8. **Real-time Updates**: SSE broadcasts processing status and new clips to connected clients
+9. **Clip Management**: Users can view, download, and manage captured clips
 
 ## External Dependencies
 

@@ -492,44 +492,61 @@ class StreamProcessor:
             return self._create_mock_clip(output_path, trigger_reason)
     
     def _capture_real_segment(self, segment_path: str) -> bool:
-        """Capture a real video segment using Streamlink."""
+        """Capture a real video segment using Streamlink with ad handling."""
         try:
-            # Streamlink command to capture a short segment
-            cmd = [
+            # Use FFmpeg directly to capture from the HLS stream URL
+            # First get the stream URL from streamlink
+            url_cmd = [
                 'streamlink',
                 self.config['url'],
-                'best',
-                '--player-external-http',
-                '--player-external-http-port', '8080',
-                '--hls-segment-timeout', '10',
-                '--retry-streams', '2',
-                '--hls-duration', '2',  # 2 second segments
-                '-o', segment_path
+                'worst',
+                '--stream-url'
             ]
             
-            print(f"Capturing real segment with streamlink: {self.config['url']}")
+            print(f"Getting stream URL: {' '.join(url_cmd)}")
+            url_result = subprocess.run(url_cmd, capture_output=True, text=True, timeout=10)
             
-            # Execute streamlink command with timeout
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+            if url_result.returncode != 0:
+                print(f"Failed to get stream URL: {url_result.stderr}")
+                return False
             
-            if result.returncode == 0 and os.path.exists(segment_path):
-                # Verify the captured file has reasonable size
+            stream_url = url_result.stdout.strip()
+            if not stream_url:
+                print("Empty stream URL received")
+                return False
+                
+            print(f"Got stream URL: {stream_url[:100]}...")
+            
+            # Use FFmpeg to capture a 2-second segment directly from HLS
+            ffmpeg_cmd = [
+                'ffmpeg',
+                '-i', stream_url,
+                '-t', '2',  # 2 seconds
+                '-c', 'copy',  # Copy streams without re-encoding
+                '-y',  # Overwrite output
+                segment_path
+            ]
+            
+            print(f"Capturing with FFmpeg: ffmpeg -i [stream] -t 2 -c copy {segment_path}")
+            ffmpeg_result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=15)
+            
+            if ffmpeg_result.returncode == 0 and os.path.exists(segment_path):
                 file_size = os.path.getsize(segment_path)
-                if file_size > 50000:  # At least 50KB for real video
-                    print(f"Successfully captured {file_size} byte segment")
+                if file_size > 10000:  # At least 10KB for real video
+                    print(f"✓ Successfully captured {file_size} byte real video segment with FFmpeg")
                     return True
                 else:
-                    print(f"Captured segment too small ({file_size} bytes), treating as failed")
+                    print(f"✗ FFmpeg segment too small ({file_size} bytes)")
                     return False
             else:
-                print(f"Streamlink failed: {result.stderr}")
+                print(f"✗ FFmpeg capture failed: {ffmpeg_result.stderr}")
                 return False
                 
         except subprocess.TimeoutExpired:
-            print("Streamlink capture timed out")
+            print("✗ Stream capture timed out")
             return False
         except Exception as e:
-            print(f"Streamlink capture error: {e}")
+            print(f"✗ Stream capture error: {e}")
             return False
 
     def _create_mock_segment(self, segment_path: str):
