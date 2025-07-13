@@ -41,10 +41,11 @@ Preferred communication style: Simple, everyday language.
 - **Sidebar Navigation**: Application navigation with live status indicators
 
 ### Backend Services
-- **Stream Session Management**: Handles active streaming sessions
-- **Clip Storage**: File-based clip management with metadata
+- **Stream Session Management**: Handles active streaming sessions with real FFmpeg processing
+- **Clip Storage**: File-based clip management with PostgreSQL metadata storage
 - **SSE Event Broadcasting**: Real-time updates to connected clients
-- **Mock Processing**: Simulated highlight detection for development
+- **FFmpeg Processing**: Real video stream capture and highlight clip generation
+- **Multi-platform Support**: Streamlink integration for Twitch, YouTube, and other platforms
 
 ### Shared Schema
 - **Database Schema**: Drizzle ORM with PostgreSQL dialect (configured but using in-memory storage)
@@ -54,12 +55,12 @@ Preferred communication style: Simple, everyday language.
 ## Data Flow
 
 1. **Stream Input**: User submits stream URL through React form
-2. **Session Creation**: Express server creates stream session record
-3. **Processing Trigger**: Background Python worker (Flask) begins stream analysis
-4. **Highlight Detection**: FFmpeg analyzes video for audio spikes, motion, and scene changes
-5. **Clip Generation**: 20-second clips are created around highlight moments
-6. **Real-time Updates**: SSE broadcasts processing status and new clips
-7. **Clip Management**: Users can view, download, and manage captured clips
+2. **Stream Resolution**: Streamlink resolves platform URLs (Twitch, YouTube) to direct streams
+3. **FFmpeg Processing**: Real-time video capture and segmentation with audio/motion analysis
+4. **Highlight Detection**: FFmpeg analyzes live video for audio spikes, motion, and scene changes
+5. **Clip Generation**: 20-second MP4 clips are created around highlight moments using FFmpeg
+6. **Real-time Updates**: SSE broadcasts processing status and new clips to frontend
+7. **Clip Management**: Users can view, download, and manage captured video clips
 
 ## External Dependencies
 
@@ -78,7 +79,7 @@ Preferred communication style: Simple, everyday language.
 ### Development
 - Concurrent development servers: Vite (frontend) + Express (backend)
 - Hot module replacement for rapid development
-- Mock data and simulated processing for testing
+- Real FFmpeg processing with actual video stream capture
 
 ### Production
 - **Build Process**: Vite builds frontend to `dist/public`, ESBuild bundles server

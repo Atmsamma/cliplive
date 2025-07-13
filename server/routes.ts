@@ -5,6 +5,7 @@ import { insertStreamSessionSchema, insertClipSchema, type ProcessingStatus, typ
 import { z } from "zod";
 import fs from "fs";
 import path from "path";
+import { streamProcessor } from "./stream-processor";
 
 // Mock processing state
 let processingStatus: ProcessingStatus = {
@@ -127,6 +128,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     fs.mkdirSync(clipsDir, { recursive: true });
   }
 
+  // Set up the stream processor to broadcast events
+  streamProcessor.setEventCallback(broadcastSSE);
+
   // Server-Sent Events endpoint
   app.get('/api/events', (req, res) => {
     res.writeHead(200, {
@@ -140,9 +144,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     sseClients.add(res);
 
     // Send initial status
+    const currentStatus = streamProcessor.getStatus();
     res.write(`data: ${JSON.stringify({
       type: 'processing-status',
-      data: processingStatus,
+      data: currentStatus,
     })}\n\n`);
 
     req.on('close', () => {
@@ -153,8 +158,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get processing status
   app.get('/api/status', async (req, res) => {
     const activeSession = await storage.getActiveSession();
+    const processorStatus = streamProcessor.getStatus();
     res.json({
-      ...processingStatus,
+      ...processorStatus,
       currentSession: activeSession,
     });
   });
@@ -162,77 +168,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Start stream capture
   app.post('/api/start', async (req, res) => {
     try {
-      const validatedData = insertStreamSessionSchema.parse(req.body);
-      
-      // Stop any active sessions
-      const activeSession = await storage.getActiveSession();
-      if (activeSession) {
-        await storage.updateSessionStatus(activeSession.id, false);
-      }
-      
-      // Create new session
-      const session = await storage.createStreamSession({
-        ...validatedData,
-        isActive: true,
+      const streamConfigSchema = z.object({
+        url: z.string().url(),
+        audioThreshold: z.number().min(0).max(100).default(6),
+        motionThreshold: z.number().min(0).max(100).default(30),
+        clipLength: z.number().min(5).max(60).default(20),
       });
       
-      // Update processing status
-      processingStatus.isProcessing = true;
-      processingStatus.framesProcessed = 0;
-      processingStatus.currentSession = session;
-      sessionStartTime = new Date();
+      const config = streamConfigSchema.parse(req.body);
       
-      // Start mock highlight detection (every 15-45 seconds)
-      highlightInterval = setInterval(() => {
-        generateMockClip(session.url);
-      }, Math.random() * 30000 + 15000);
+      // Stop any current processing
+      await streamProcessor.stopCapture();
       
-      // Start metrics updates
-      metricsInterval = setInterval(updateProcessingMetrics, 1000);
+      // Start FFmpeg processing
+      await streamProcessor.startCapture(config);
       
-      broadcastSSE({
-        type: 'session-started',
-        data: session,
-      });
-      
-      res.json(session);
+      res.json({ message: 'Stream capture started', config });
     } catch (error) {
-      res.status(400).json({ error: 'Invalid request data' });
+      console.error('Failed to start stream capture:', error);
+      res.status(400).json({ 
+        error: error instanceof Error ? error.message : 'Invalid request data' 
+      });
     }
   });
 
   // Stop stream capture
   app.post('/api/stop', async (req, res) => {
     try {
-      const activeSession = await storage.getActiveSession();
-      if (!activeSession) {
-        return res.status(400).json({ error: 'No active session' });
-      }
-      
-      const updatedSession = await storage.updateSessionStatus(activeSession.id, false);
-      
-      // Update processing status
-      processingStatus.isProcessing = false;
-      processingStatus.currentSession = undefined;
-      sessionStartTime = null;
-      
-      // Clear intervals
-      if (highlightInterval) {
-        clearInterval(highlightInterval);
-        highlightInterval = null;
-      }
-      if (metricsInterval) {
-        clearInterval(metricsInterval);
-        metricsInterval = null;
-      }
-      
-      broadcastSSE({
-        type: 'session-stopped',
-        data: updatedSession,
-      });
-      
-      res.json(updatedSession);
+      await streamProcessor.stopCapture();
+      res.json({ message: 'Stream capture stopped' });
     } catch (error) {
+      console.error('Failed to stop stream capture:', error);
       res.status(500).json({ error: 'Failed to stop session' });
     }
   });
