@@ -1,0 +1,91 @@
+Prompt: Build a Stream Clipper Application
+
+Create an automatic livestream highlight capture tool that detects exciting moments from public streams and creates video clips. The application should have the following architecture and features:
+
+Architecture Requirements
+Frontend:
+
+React 18 with Vite bundler
+Tailwind CSS for styling
+React Hot Toast for notifications
+Simple, clean UI with dark theme
+Real-time updates via Server-Sent Events
+Backend:
+
+Dual backend approach:
+Express.js (TypeScript) server on port 5000 for main API
+Flask (Python) server on port 5001 for stream processing
+No database required - rebuild state from filesystem
+File-based storage for video clips
+Stream Processing:
+
+Python background worker thread
+Uses Streamlink for multi-platform stream capture (Twitch, YouTube, Kick, HLS)
+Uses FFmpeg for video analysis and clipping
+Real-time highlight detection based on:
+Audio volume changes (≥6dB threshold)
+Motion detection (≥30% change)
+Scene change detection (>0.4 score)
+Core Features
+Stream Input: Web form accepting livestream URLs with validation
+Real-time Processing: Background analysis of audio/video metrics
+Automatic Clipping: 20-second clips centered around highlight moments
+Live Notifications: Toast alerts when highlights are captured
+Clip Management: List view of all captured clips with timestamps
+Bulk Download: ZIP archive generation for all clips
+Status Monitoring: Real-time processing status indicators
+Technical Specifications
+File Structure:
+
+/frontend/          # React app (alternative implementation)
+/client/           # Main React app with shadcn/ui
+/server/           # Express.js TypeScript API
+/backend/          # Flask Python stream processor
+/cli/              # Python CLI tools for video processing
+/clips/            # Runtime video clip storage
+Key Dependencies:
+
+Python: Flask, Streamlink, threading, queue
+Node.js: Express, TypeScript, Vite
+System: FFmpeg (must be in PATH), Streamlink CLI
+Frontend: React, Tailwind, react-hot-toast
+API Endpoints:
+
+GET /api/status - Check processing status
+POST /api/start - Start stream capture
+POST /api/stop - Stop stream capture
+GET /api/clips - List all clips
+GET /clips/:filename - Serve individual clips
+GET /api/download-all - ZIP download
+GET /events - Server-Sent Events stream
+Stream Processing Logic:
+
+Background Python thread monitors stream metrics
+Configurable thresholds via environment variables
+Minimum 30-second interval between highlights
+Clips saved with timestamp filenames (YYYYMMDD-HHMMSS.mp4)
+Real-time notifications via SSE to frontend
+Highlight Detection Algorithm:
+
+Continuously analyze stream with FFmpeg
+Extract audio volume, motion, and scene change metrics
+Compare against configurable thresholds
+Trigger clip creation when thresholds exceeded
+Use CLI helper to extract 20-second segments
+Notify frontend via SSE queue
+UI Requirements:
+
+Dark theme with modern design
+Stream URL input with platform validation
+Start/Stop capture button with loading states
+Real-time processing indicator
+Responsive layout
+Error handling with toast notifications
+Deployment Considerations:
+
+Runs directly with pip/npm install (no containers)
+Filesystem-based storage
+Process management for background workers
+Resource requirements for video processing
+All dependencies must be installable in standard environment
+The application should be lightweight, self-contained, and provide real-time stream analysis with automatic highlight extraction capabilities. Focus on reliability and user experience with clear status indicators and error handling.
