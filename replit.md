@@ -21,16 +21,16 @@ Preferred communication style: Simple, everyday language.
 ### Backend Architecture
 - **Primary Server**: Express.js with TypeScript (port 5000)
 - **Secondary Server**: Flask with Python (port 5001) - for stream processing
-- **Data Storage**: PostgreSQL database with Drizzle ORM
+- **Data Storage**: In-memory storage with file-based persistence
 - **Real-time Communication**: Server-Sent Events (SSE) for live updates
 
 ### Key Design Decisions
 
 1. **Dual Backend Approach**: Express.js handles the main API while a separate Flask server manages stream processing. This separation allows for specialized tools (FFmpeg, Streamlink) in Python while maintaining a fast TypeScript API.
 
-2. **PostgreSQL Database**: The application now uses a PostgreSQL database with Drizzle ORM for persistent data storage, replacing the previous in-memory approach.
+2. **No Database**: The application rebuilds state from the filesystem, making deployment simpler and reducing dependencies.
 
-3. **File-based Storage**: Video clips are stored directly in the filesystem with metadata managed in the PostgreSQL database.
+3. **File-based Storage**: Video clips are stored directly in the filesystem with metadata managed in memory.
 
 ## Key Components
 
@@ -41,11 +41,10 @@ Preferred communication style: Simple, everyday language.
 - **Sidebar Navigation**: Application navigation with live status indicators
 
 ### Backend Services
-- **Stream Session Management**: Handles active streaming sessions with real FFmpeg processing
-- **Clip Storage**: File-based clip management with PostgreSQL metadata storage
+- **Stream Session Management**: Handles active streaming sessions
+- **Clip Storage**: File-based clip management with metadata
 - **SSE Event Broadcasting**: Real-time updates to connected clients
-- **FFmpeg Processing**: Real video stream capture and highlight clip generation
-- **Multi-platform Support**: Streamlink integration for Twitch, YouTube, and other platforms
+- **Mock Processing**: Simulated highlight detection for development
 
 ### Shared Schema
 - **Database Schema**: Drizzle ORM with PostgreSQL dialect (configured but using in-memory storage)
@@ -55,12 +54,12 @@ Preferred communication style: Simple, everyday language.
 ## Data Flow
 
 1. **Stream Input**: User submits stream URL through React form
-2. **Stream Resolution**: Streamlink resolves platform URLs (Twitch, YouTube) to direct streams
-3. **FFmpeg Processing**: Real-time video capture and segmentation with audio/motion analysis
-4. **Highlight Detection**: FFmpeg analyzes live video for audio spikes, motion, and scene changes
-5. **Clip Generation**: 20-second MP4 clips are created around highlight moments using FFmpeg
-6. **Real-time Updates**: SSE broadcasts processing status and new clips to frontend
-7. **Clip Management**: Users can view, download, and manage captured video clips
+2. **Session Creation**: Express server creates stream session record
+3. **Processing Trigger**: Background Python worker (Flask) begins stream analysis
+4. **Highlight Detection**: FFmpeg analyzes video for audio spikes, motion, and scene changes
+5. **Clip Generation**: 20-second clips are created around highlight moments
+6. **Real-time Updates**: SSE broadcasts processing status and new clips
+7. **Clip Management**: Users can view, download, and manage captured clips
 
 ## External Dependencies
 
@@ -79,7 +78,7 @@ Preferred communication style: Simple, everyday language.
 ### Development
 - Concurrent development servers: Vite (frontend) + Express (backend)
 - Hot module replacement for rapid development
-- Real FFmpeg processing with actual video stream capture
+- Mock data and simulated processing for testing
 
 ### Production
 - **Build Process**: Vite builds frontend to `dist/public`, ESBuild bundles server

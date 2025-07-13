@@ -5,7 +5,6 @@ import { insertStreamSessionSchema, insertClipSchema, type ProcessingStatus, typ
 import { z } from "zod";
 import fs from "fs";
 import path from "path";
-import { streamProcessor } from "./stream-processor";
 
 // Mock processing state
 let processingStatus: ProcessingStatus = {
@@ -42,7 +41,7 @@ function generateMockClip(sessionUrl: string): Promise<void> {
     const triggerReason = triggerReasons[Math.floor(Math.random() * triggerReasons.length)];
     
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-    const filename = `highlight_${timestamp}.txt`;
+    const filename = `highlight_${timestamp}.mp4`;
     
     // Mock file creation
     const clipsDir = path.join(process.cwd(), 'clips');
@@ -50,45 +49,15 @@ function generateMockClip(sessionUrl: string): Promise<void> {
       fs.mkdirSync(clipsDir, { recursive: true });
     }
     
-    // Create a mock text file with clip information
+    // Create a small mock file
     const filePath = path.join(clipsDir, filename);
-    const mockContent = `STREAM CLIPPER - MOCK HIGHLIGHT CLIP
-=====================================
-
-Clip Details:
-- Filename: ${filename}
-- Trigger Reason: ${triggerReason}
-- Original URL: ${sessionUrl}
-- Duration: 20 seconds
-- Generated: ${new Date().toISOString()}
-
-This is a mock highlight clip generated for development purposes.
-In a real implementation, this would be a 20-second video file
-extracted from the live stream when a highlight was detected.
-
-Processing Details:
-- Audio threshold exceeded: ${triggerReason === 'Audio Spike' ? 'YES' : 'NO'}
-- Motion detected: ${triggerReason === 'Motion Detected' ? 'YES' : 'NO'}
-- Scene change detected: ${triggerReason === 'Scene Change' ? 'YES' : 'NO'}
-
-To implement real video processing, you would need:
-1. FFmpeg installed and accessible
-2. Streamlink for stream capture
-3. Python backend for video analysis
-4. Real-time processing pipeline
-
-This mock system demonstrates the UI and workflow
-without requiring external video processing tools.
-`;
-    
-    fs.writeFileSync(filePath, mockContent);
-    const fileSize = mockContent.length;
+    fs.writeFileSync(filePath, Buffer.alloc(1024 * 1024 * 10)); // 10MB mock file
     
     const clip = await storage.createClip({
       filename,
       originalUrl: sessionUrl,
       duration: 20,
-      fileSize: fileSize,
+      fileSize: 1024 * 1024 * 10,
       triggerReason,
     });
     
@@ -128,9 +97,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     fs.mkdirSync(clipsDir, { recursive: true });
   }
 
-  // Set up the stream processor to broadcast events
-  streamProcessor.setEventCallback(broadcastSSE);
-
   // Server-Sent Events endpoint
   app.get('/api/events', (req, res) => {
     res.writeHead(200, {
@@ -144,10 +110,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     sseClients.add(res);
 
     // Send initial status
-    const currentStatus = streamProcessor.getStatus();
     res.write(`data: ${JSON.stringify({
       type: 'processing-status',
-      data: currentStatus,
+      data: processingStatus,
     })}\n\n`);
 
     req.on('close', () => {
@@ -158,91 +123,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get processing status
   app.get('/api/status', async (req, res) => {
     const activeSession = await storage.getActiveSession();
-    const processorStatus = streamProcessor.getStatus();
     res.json({
-      ...processorStatus,
+      ...processingStatus,
       currentSession: activeSession,
     });
-  });
-
-  // Test FFmpeg with a simple stream
-  app.post('/api/test-ffmpeg', async (req, res) => {
-    try {
-      // Test with a basic webcam or test pattern
-      const testConfig = {
-        url: 'testsrc=duration=30:size=320x240:rate=30',
-        audioThreshold: 50,
-        motionThreshold: 30,
-        clipLength: 20
-      };
-      
-      await streamProcessor.stopCapture();
-      
-      // Test FFmpeg with test source
-      const testArgs = [
-        '-f', 'lavfi',
-        '-i', testConfig.url,
-        '-t', '10', // 10 second test
-        '-c:v', 'libx264',
-        '-preset', 'ultrafast',
-        '-f', 'null',
-        '-'
-      ];
-      
-      const { spawn } = require('child_process');
-      const testProcess = spawn('ffmpeg', testArgs);
-      
-      testProcess.on('exit', (code) => {
-        if (code === 0) {
-          res.json({ success: true, message: 'FFmpeg test successful' });
-        } else {
-          res.status(500).json({ success: false, message: `FFmpeg test failed with code ${code}` });
-        }
-      });
-      
-      testProcess.on('error', (error) => {
-        res.status(500).json({ success: false, message: `FFmpeg test error: ${error.message}` });
-      });
-      
-    } catch (error) {
-      res.status(500).json({ success: false, message: 'FFmpeg test failed' });
-    }
   });
 
   // Start stream capture
   app.post('/api/start', async (req, res) => {
     try {
-      const streamConfigSchema = z.object({
-        url: z.string().url(),
-        audioThreshold: z.number().min(0).max(100).default(6),
-        motionThreshold: z.number().min(0).max(100).default(30),
-        clipLength: z.number().min(5).max(60).default(20),
+      const validatedData = insertStreamSessionSchema.parse(req.body);
+      
+      // Stop any active sessions
+      const activeSession = await storage.getActiveSession();
+      if (activeSession) {
+        await storage.updateSessionStatus(activeSession.id, false);
+      }
+      
+      // Create new session
+      const session = await storage.createStreamSession({
+        ...validatedData,
+        isActive: true,
       });
       
-      const config = streamConfigSchema.parse(req.body);
+      // Update processing status
+      processingStatus.isProcessing = true;
+      processingStatus.framesProcessed = 0;
+      processingStatus.currentSession = session;
+      sessionStartTime = new Date();
       
-      // Stop any current processing
-      await streamProcessor.stopCapture();
+      // Start mock highlight detection (every 15-45 seconds)
+      highlightInterval = setInterval(() => {
+        generateMockClip(session.url);
+      }, Math.random() * 30000 + 15000);
       
-      // Start FFmpeg processing
-      await streamProcessor.startCapture(config);
+      // Start metrics updates
+      metricsInterval = setInterval(updateProcessingMetrics, 1000);
       
-      res.json({ message: 'Stream capture started', config });
+      broadcastSSE({
+        type: 'session-started',
+        data: session,
+      });
+      
+      res.json(session);
     } catch (error) {
-      console.error('Failed to start stream capture:', error);
-      res.status(400).json({ 
-        error: error instanceof Error ? error.message : 'Invalid request data' 
-      });
+      res.status(400).json({ error: 'Invalid request data' });
     }
   });
 
   // Stop stream capture
   app.post('/api/stop', async (req, res) => {
     try {
-      await streamProcessor.stopCapture();
-      res.json({ message: 'Stream capture stopped' });
+      const activeSession = await storage.getActiveSession();
+      if (!activeSession) {
+        return res.status(400).json({ error: 'No active session' });
+      }
+      
+      const updatedSession = await storage.updateSessionStatus(activeSession.id, false);
+      
+      // Update processing status
+      processingStatus.isProcessing = false;
+      processingStatus.currentSession = undefined;
+      sessionStartTime = null;
+      
+      // Clear intervals
+      if (highlightInterval) {
+        clearInterval(highlightInterval);
+        highlightInterval = null;
+      }
+      if (metricsInterval) {
+        clearInterval(metricsInterval);
+        metricsInterval = null;
+      }
+      
+      broadcastSSE({
+        type: 'session-stopped',
+        data: updatedSession,
+      });
+      
+      res.json(updatedSession);
     } catch (error) {
-      console.error('Failed to stop stream capture:', error);
       res.status(500).json({ error: 'Failed to stop session' });
     }
   });

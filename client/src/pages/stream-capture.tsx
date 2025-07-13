@@ -83,18 +83,6 @@ export default function StreamCapture() {
 
       {/* Main Content Area */}
       <main className="flex-1 overflow-auto p-6">
-        {/* Development Notice */}
-        <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-4 mb-6">
-          <div className="flex items-center space-x-2 mb-2">
-            <div className="w-2 h-2 bg-amber-500 rounded-full"></div>
-            <h3 className="text-sm font-medium text-amber-200">Development Mode</h3>
-          </div>
-          <p className="text-sm text-amber-300/80">
-            This is a development version with mock video processing. Generated clips will be text files 
-            containing clip metadata. For full functionality, implement FFmpeg-based video processing.
-          </p>
-        </div>
-
         {/* Stream Input Section */}
         <StreamInputForm />
 

@@ -1,8 +1,4 @@
 import { clips, streamSessions, type Clip, type InsertClip, type StreamSession, type InsertStreamSession } from "@shared/schema";
-import { db } from "./db";
-import { eq, desc } from "drizzle-orm";
-import fs from "fs";
-import path from "path";
 
 export interface IStorage {
   // Clips
@@ -18,89 +14,83 @@ export interface IStorage {
   getStreamSessions(): Promise<StreamSession[]>;
 }
 
-export class DatabaseStorage implements IStorage {
-  constructor() {
-    // Clear any existing clips directory on startup
-    this.clearClipsDirectory();
-  }
+export class MemStorage implements IStorage {
+  private clips: Map<number, Clip>;
+  private streamSessions: Map<number, StreamSession>;
+  private currentClipId: number;
+  private currentSessionId: number;
 
-  private clearClipsDirectory() {
-    const clipsDir = path.join(process.cwd(), 'clips');
-    
-    if (fs.existsSync(clipsDir)) {
-      const files = fs.readdirSync(clipsDir);
-      files.forEach((file: string) => {
-        const filePath = path.join(clipsDir, file);
-        try {
-          fs.unlinkSync(filePath);
-        } catch (error) {
-          // Ignore errors when cleaning up
-        }
-      });
-    }
+  constructor() {
+    this.clips = new Map();
+    this.streamSessions = new Map();
+    this.currentClipId = 1;
+    this.currentSessionId = 1;
   }
 
   // Clips
   async createClip(insertClip: InsertClip): Promise<Clip> {
-    const [clip] = await db
-      .insert(clips)
-      .values(insertClip)
-      .returning();
+    const id = this.currentClipId++;
+    const clip: Clip = {
+      ...insertClip,
+      id,
+      createdAt: new Date(),
+    };
+    this.clips.set(id, clip);
     return clip;
   }
 
   async getClips(): Promise<Clip[]> {
-    return await db
-      .select()
-      .from(clips)
-      .orderBy(desc(clips.createdAt));
+    return Array.from(this.clips.values()).sort(
+      (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
+    );
   }
 
   async getClip(id: number): Promise<Clip | undefined> {
-    const [clip] = await db.select().from(clips).where(eq(clips.id, id));
-    return clip || undefined;
+    return this.clips.get(id);
   }
 
   async deleteClip(id: number): Promise<boolean> {
-    const result = await db.delete(clips).where(eq(clips.id, id));
-    return result.rowCount > 0;
+    return this.clips.delete(id);
   }
 
   // Stream Sessions
   async createStreamSession(insertSession: InsertStreamSession): Promise<StreamSession> {
-    const [session] = await db
-      .insert(streamSessions)
-      .values(insertSession)
-      .returning();
+    const id = this.currentSessionId++;
+    const session: StreamSession = {
+      ...insertSession,
+      id,
+      startedAt: new Date(),
+      stoppedAt: null,
+    };
+    this.streamSessions.set(id, session);
     return session;
   }
 
   async getActiveSession(): Promise<StreamSession | undefined> {
-    const [session] = await db
-      .select()
-      .from(streamSessions)
-      .where(eq(streamSessions.isActive, true));
-    return session || undefined;
+    return Array.from(this.streamSessions.values()).find(
+      session => session.isActive
+    );
   }
 
   async updateSessionStatus(id: number, isActive: boolean): Promise<StreamSession | undefined> {
-    const [session] = await db
-      .update(streamSessions)
-      .set({ 
+    const session = this.streamSessions.get(id);
+    if (session) {
+      const updatedSession = {
+        ...session,
         isActive,
         stoppedAt: !isActive ? new Date() : null,
-      })
-      .where(eq(streamSessions.id, id))
-      .returning();
-    return session || undefined;
+      };
+      this.streamSessions.set(id, updatedSession);
+      return updatedSession;
+    }
+    return undefined;
   }
 
   async getStreamSessions(): Promise<StreamSession[]> {
-    return await db
-      .select()
-      .from(streamSessions)
-      .orderBy(desc(streamSessions.startedAt));
+    return Array.from(this.streamSessions.values()).sort(
+      (a, b) => b.startedAt.getTime() - a.startedAt.getTime()
+    );
   }
 }
 
-export const storage = new DatabaseStorage();
+export const storage = new MemStorage();
