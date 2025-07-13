@@ -1,0 +1,110 @@
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import StreamInputForm from "@/components/stream-input-form";
+import ProcessingStatus from "@/components/processing-status";
+import ClipList from "@/components/clip-list";
+import { Download } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
+
+export default function StreamCapture() {
+  const { toast } = useToast();
+  
+  const { data: status } = useQuery({
+    queryKey: ["/api/status"],
+    refetchInterval: 1000,
+  });
+
+  const { data: clips = [] } = useQuery({
+    queryKey: ["/api/clips"],
+    refetchInterval: 5000,
+  });
+
+  const handleDownloadAll = async () => {
+    try {
+      const response = await apiRequest("GET", "/api/download-all");
+      const data = await response.json();
+      
+      toast({
+        title: "Download All",
+        description: data.message || "Download started",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to download clips",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const totalSize = clips.reduce((acc: number, clip: any) => acc + clip.fileSize, 0);
+  const formatSize = (bytes: number) => {
+    const mb = bytes / (1024 * 1024);
+    return `${mb.toFixed(1)} MB`;
+  };
+
+  return (
+    <>
+      {/* Header */}
+      <header className="bg-slate-800 border-b border-slate-600 px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-50">Stream Capture</h2>
+            <p className="text-slate-400 text-sm">Monitor and capture highlights from live streams</p>
+          </div>
+          <div className="flex items-center space-x-4">
+            {/* Processing Status Badge */}
+            <div className="flex items-center space-x-2 px-3 py-1 bg-slate-700 rounded-full text-sm">
+              <div
+                className={`w-2 h-2 rounded-full ${
+                  status?.isProcessing ? "bg-emerald-500 animate-pulse" : "bg-red-500"
+                }`}
+              />
+              <span className="text-slate-300">
+                {status?.isProcessing ? "Processing" : "Idle"}
+              </span>
+            </div>
+            
+            {/* Download All Button */}
+            <Button
+              variant="outline"
+              onClick={handleDownloadAll}
+              disabled={clips.length === 0}
+              className="bg-slate-700 hover:bg-slate-600 text-slate-300 border-slate-600"
+            >
+              <Download size={16} className="mr-2" />
+              Download All
+            </Button>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content Area */}
+      <main className="flex-1 overflow-auto p-6">
+        {/* Stream Input Section */}
+        <StreamInputForm />
+
+        {/* Real-time Processing Status */}
+        <ProcessingStatus />
+
+        {/* Recent Clips */}
+        <div className="bg-slate-800 rounded-xl border border-slate-600 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-medium flex items-center space-x-2 text-slate-50">
+              <span>Recent Clips</span>
+            </h3>
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-slate-400">Total: {clips.length} clips</span>
+              <div className="text-sm text-slate-400">•</div>
+              <span className="text-sm text-slate-400">{formatSize(totalSize)}</span>
+            </div>
+          </div>
+
+          <ClipList clips={clips.slice(0, 5)} showActions />
+        </div>
+      </main>
+    </>
+  );
+}
