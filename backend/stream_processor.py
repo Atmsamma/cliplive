@@ -245,7 +245,7 @@ class StreamProcessor:
 
         # Cooldown system to prevent duplicate clips
         self.last_clip_time = 0
-        self.clip_cooldown = 10  # Minimum seconds between clips
+        self.clip_cooldown = self.clip_length  # Cooldown matches clip length to prevent overlap
 
         # Ensure clips directory exists
         self.clips_dir = os.path.join(os.getcwd(), 'clips')
@@ -265,14 +265,15 @@ class StreamProcessor:
             self.frames_processed = 0
             self.clips_generated = 0
 
-            # Initialize stream buffer with enough capacity for full clips
-            # Need at least 3x clip length to ensure we can always create full clips
-            buffer_duration = max(60, self.clip_length * 3)  # At least 60s, or 3x clip length
+            # Initialize stream buffer to match clip length exactly
+            # This prevents overlapping clips and ensures clean timing
+            buffer_duration = self.clip_length  # Buffer exactly matches clip length
             self.stream_buffer = StreamBuffer(
                 buffer_seconds=buffer_duration,
                 segment_duration=2
             )
             print(f"Stream buffer configured: {buffer_duration}s capacity ({buffer_duration // 2} segments max)")
+            print(f"Each clip will use the full {buffer_duration}s buffer, preventing overlap")
 
             # Start processing threads
             self.capture_thread = threading.Thread(target=self._stream_capture_loop, daemon=True)
@@ -699,17 +700,32 @@ class StreamProcessor:
 
             print(f"Detection moment at {detection_moment_in_timeline}s in concatenated timeline")
 
-            # Calculate clip boundaries using 20%/80% strategy
-            clip_start_time = max(0, detection_moment_in_timeline - before_duration)
-            clip_end_time = min(total_available_duration, detection_moment_in_timeline + after_duration)
-            actual_clip_duration = min(self.clip_length, clip_end_time - clip_start_time)
-
-            print(f"Clip timing: start={clip_start_time:.1f}s, duration={actual_clip_duration:.1f}s (requested {self.clip_length}s)")
-
-            # Ensure we have enough footage for the requested clip length
-            if actual_clip_duration < (self.clip_length * 0.5):  # Less than 50% of requested duration
-                print(f"⚠️  Warning: Only {actual_clip_duration}s available, requested {self.clip_length}s")
-                print(f"   Need more buffer time. Consider increasing buffer or reducing clip length.")
+            # With buffer = clip length, we use the entire buffer for each clip
+            # Detection moment determines the 20%/80% split within the buffer
+            buffer_duration = total_available_duration  # Should equal clip_length
+            
+            # Calculate where detection falls in the buffer (0.0 to 1.0)
+            detection_ratio = detection_moment_in_timeline / buffer_duration if buffer_duration > 0 else 0.5
+            
+            print(f"Detection at {detection_ratio:.1%} through {buffer_duration}s buffer")
+            
+            # For optimal highlights, adjust start point based on detection position
+            if detection_ratio < 0.2:
+                # Early detection - use from start to capture buildup
+                clip_start_time = 0
+                print(f"Early detection: using full buffer from start")
+            elif detection_ratio > 0.8:
+                # Late detection - ensure we get the moment
+                clip_start_time = max(0, buffer_duration - self.clip_length)
+                print(f"Late detection: using end of buffer")
+            else:
+                # Normal detection - use 20%/80% strategy
+                clip_start_time = max(0, detection_moment_in_timeline - before_duration)
+                print(f"Normal detection: 20%/80% split")
+            
+            actual_clip_duration = min(self.clip_length, buffer_duration - clip_start_time)
+            
+            print(f"Final clip: start={clip_start_time:.1f}s, duration={actual_clip_duration:.1f}s")
 
             # FFmpeg command for precise clipping
             cmd = [
