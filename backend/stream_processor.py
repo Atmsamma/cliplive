@@ -768,8 +768,7 @@ class StreamProcessor:
             print(f"FFmpeg clip creation error: {e}")
             return self._create_mock_clip(output_path, trigger_reason)
 
-    def _create_standard_clip(self, segments, output_```python
-path, filename, trigger_reason, detection_time):
+    def _create_standard_clip(self, segments, output_path, filename, trigger_reason, detection_time):
         """Fallback method for standard clipping without precise timing."""
         try:
             concat_file = os.path.join(self.stream_buffer.temp_dir, f"standard_{int(time.time())}.txt")
