@@ -671,6 +671,9 @@ class StreamProcessor:
             # Use real video segments for clipping
             segments = real_video_segments
             
+            # Sort segments by timestamp to ensure proper order
+            segments.sort(key=lambda x: x['timestamp'])
+            
             # Create concatenation file for FFmpeg
             concat_file = os.path.join(self.stream_buffer.temp_dir, f"concat_{int(time.time())}.txt")
             
@@ -680,8 +683,30 @@ class StreamProcessor:
                     escaped_path = segment['path'].replace("'", "'\\''")
                     f.write(f"file '{escaped_path}'\n")
             
-            # Calculate start time (20% before detection moment)
-            clip_start = max(0, segment_offset - before_duration)
+            # Calculate total available duration from all segments
+            total_available_duration = len(segments) * 2  # Each segment is 2 seconds
+            print(f"Total available duration: {total_available_duration}s from {len(segments)} segments")
+            
+            # Find detection moment position in the concatenated timeline
+            detection_moment_in_timeline = 0
+            for i, segment in enumerate(segments):
+                if segment == detection_segment:
+                    detection_moment_in_timeline = (i * 2) + segment_offset
+                    break
+            
+            print(f"Detection moment at {detection_moment_in_timeline}s in concatenated timeline")
+            
+            # Calculate clip boundaries using 20%/80% strategy
+            clip_start_time = max(0, detection_moment_in_timeline - before_duration)
+            clip_end_time = min(total_available_duration, detection_moment_in_timeline + after_duration)
+            actual_clip_duration = min(self.clip_length, clip_end_time - clip_start_time)
+            
+            print(f"Clip timing: start={clip_start_time:.1f}s, duration={actual_clip_duration:.1f}s (requested {self.clip_length}s)")
+            
+            # Ensure we have enough footage for the requested clip length
+            if actual_clip_duration < (self.clip_length * 0.5):  # Less than 50% of requested duration
+                print(f"⚠️  Warning: Only {actual_clip_duration}s available, requested {self.clip_length}s")
+                print(f"   Need more buffer time. Consider increasing buffer or reducing clip length.")
             
             # FFmpeg command for precise clipping
             cmd = [
@@ -689,8 +714,8 @@ class StreamProcessor:
                 '-f', 'concat',
                 '-safe', '0',
                 '-i', concat_file,
-                '-ss', str(clip_start),  # Start time
-                '-t', str(self.clip_length),  # Duration
+                '-ss', str(clip_start_time),  # Start time in concatenated timeline
+                '-t', str(actual_clip_duration),  # Actual available duration
                 '-c:v', 'libx264',  # Video codec
                 '-c:a', 'aac',      # Audio codec
                 '-preset', 'fast',   # Encoding speed
@@ -700,7 +725,7 @@ class StreamProcessor:
                 output_path
             ]
             
-            print(f"Running FFmpeg command: {' '.join(cmd)}")
+            print(f"Running FFmpeg: ffmpeg ... -ss {clip_start_time} -t {actual_clip_duration} {output_path}")
             
             # Execute FFmpeg command
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
@@ -710,10 +735,10 @@ class StreamProcessor:
                 os.remove(concat_file)
             
             if result.returncode == 0:
-                print(f"FFmpeg clip creation successful: {output_path}")
+                print(f"✅ FFmpeg clip creation successful: {output_path} ({actual_clip_duration}s)")
                 return True
             else:
-                print(f"FFmpeg error: {result.stderr}")
+                print(f"❌ FFmpeg error: {result.stderr}")
                 # Fallback to mock clip for development
                 return self._create_mock_clip(output_path, trigger_reason)
                 
