@@ -23,11 +23,11 @@ import numpy as np
 
 class BaselineTracker:
     """Tracks baseline metrics for adaptive threshold detection."""
-    
+
     def __init__(self, calibration_seconds: int = 120):
         """
         Initialize baseline tracker.
-        
+
         Args:
             calibration_seconds: Duration to collect baseline data
         """
@@ -35,80 +35,80 @@ class BaselineTracker:
         self.calibration_start = None
         self.is_calibrating = True
         self.is_calibrated = False
-        
+
         # Metric collections for baseline calculation
         self.audio_levels = deque(maxlen=1000)
         self.motion_levels = deque(maxlen=1000) 
         self.scene_changes = deque(maxlen=1000)
-        
+
         # Calculated baseline statistics
         self.audio_baseline = {'mean': 0, 'std': 1}
         self.motion_baseline = {'mean': 0, 'std': 1}
         self.scene_baseline = {'mean': 0, 'std': 1}
-        
+
         # Adaptive thresholds (in standard deviations)
         self.audio_sensitivity = 2.5  # Audio spikes need 2.5 std above baseline
         self.motion_sensitivity = 2.0  # Motion needs 2.0 std above baseline
         self.scene_sensitivity = 1.5   # Scene changes need 1.5 std above baseline
-        
+
     def start_calibration(self):
         """Start the calibration period."""
         self.calibration_start = time.time()
         self.is_calibrating = True
         self.is_calibrated = False
         print(f"🎯 Starting {self.calibration_seconds}s baseline calibration...")
-        
+
     def add_metrics(self, audio_level: float, motion_level: float, scene_change: float):
         """Add new metrics to baseline tracking."""
         if self.is_calibrating:
             self.audio_levels.append(audio_level)
             self.motion_levels.append(motion_level)
             self.scene_changes.append(scene_change)
-            
+
             # Check if calibration period is complete
             if (time.time() - self.calibration_start) >= self.calibration_seconds:
                 self._finalize_calibration()
-                
+
     def _finalize_calibration(self):
         """Calculate baseline statistics from collected data."""
         if len(self.audio_levels) < 10:  # Reduced minimum samples for faster calibration
             print("⚠️  Insufficient data for calibration, extending period...")
             return
-            
+
         # Calculate baseline statistics with safety checks
         try:
             audio_mean = statistics.mean(self.audio_levels)
             audio_std = statistics.stdev(self.audio_levels) if len(self.audio_levels) > 1 else 1.0
-            
+
             motion_mean = statistics.mean(self.motion_levels)
             motion_std = statistics.stdev(self.motion_levels) if len(self.motion_levels) > 1 else 1.0
-            
+
             scene_mean = statistics.mean(self.scene_changes)
             scene_std = statistics.stdev(self.scene_changes) if len(self.scene_changes) > 1 else 0.1
-            
+
             self.audio_baseline = {
                 'mean': audio_mean,
                 'std': max(audio_std, 1.0)  # Minimum std of 1
             }
-            
+
             self.motion_baseline = {
                 'mean': motion_mean,
                 'std': max(motion_std, 1.0)
             }
-            
+
             self.scene_baseline = {
                 'mean': scene_mean,
                 'std': max(scene_std, 0.1)
             }
-            
+
             self.is_calibrating = False
             self.is_calibrated = True
-            
+
             print(f"✅ Baseline calibration complete!")
             print(f"   Audio: {self.audio_baseline['mean']:.1f} ± {self.audio_baseline['std']:.1f}")
             print(f"   Motion: {self.motion_baseline['mean']:.1f} ± {self.motion_baseline['std']:.1f}")
             print(f"   Scene: {self.scene_baseline['mean']:.3f} ± {self.scene_baseline['std']:.3f}")
-            
+
         except Exception as e:
             print(f"Error calculating baseline: {e}")
             # Force enable with default values
@@ -118,39 +118,39 @@ class BaselineTracker:
             self.is_calibrating = False
             self.is_calibrated = True
             print("⚠️  Using default baseline values")
-        
+
     def check_anomaly(self, audio_level: float, motion_level: float, scene_change: float) -> Optional[str]:
         """Check if current metrics represent an anomaly worth clipping."""
         if not self.is_calibrated:
             return None  # Don't detect during calibration
-            
+
         # Calculate z-scores (how many standard deviations above baseline)
         audio_z = (audio_level - self.audio_baseline['mean']) / self.audio_baseline['std']
         motion_z = (motion_level - self.motion_baseline['mean']) / self.motion_baseline['std']
         scene_z = (scene_change - self.scene_baseline['mean']) / self.scene_baseline['std']
-        
+
         # Check for anomalies
         if audio_z >= self.audio_sensitivity:
             confidence = min(100, int((audio_z / self.audio_sensitivity) * 100))
             return f"Audio Anomaly ({confidence}% confidence, +{audio_z:.1f}σ)"
-            
+
         if motion_z >= self.motion_sensitivity:
             confidence = min(100, int((motion_z / self.motion_sensitivity) * 100))
             return f"Motion Anomaly ({confidence}% confidence, +{motion_z:.1f}σ)"
-            
+
         if scene_z >= self.scene_sensitivity:
             confidence = min(100, int((scene_z / self.scene_sensitivity) * 100))
             return f"Scene Anomaly ({confidence}% confidence, +{scene_z:.1f}σ)"
-            
+
         return None
-        
+
     def get_calibration_progress(self) -> float:
         """Get calibration progress as percentage."""
         if not self.is_calibrating:
             return 100.0
         elapsed = time.time() - self.calibration_start
         return min(100.0, (elapsed / self.calibration_seconds) * 100)
-        
+
     def adapt_sensitivity(self, clip_feedback: str = None):
         """Adapt sensitivity based on user feedback or stream characteristics."""
         # Future enhancement: adjust thresholds based on clip quality feedback
@@ -158,11 +158,11 @@ class BaselineTracker:
 
 class StreamBuffer:
     """Circular buffer to store recent stream segments for clipping."""
-    
+
     def __init__(self, buffer_seconds: int = 30, segment_duration: int = 2):
         """
         Initialize stream buffer.
-        
+
         Args:
             buffer_seconds: Total seconds to keep in buffer
             segment_duration: Duration of each segment in seconds
@@ -172,7 +172,7 @@ class StreamBuffer:
         self.max_segments = buffer_seconds // segment_duration
         self.segments = deque(maxlen=self.max_segments)
         self.temp_dir = tempfile.mkdtemp(prefix="stream_buffer_")
-        
+
     def add_segment(self, segment_path: str, timestamp: float):
         """Add a new segment to the buffer."""
         segment_info = {
@@ -181,13 +181,13 @@ class StreamBuffer:
             'duration': self.segment_duration
         }
         self.segments.append(segment_info)
-        
+
         # Clean up old segments beyond max capacity
         if len(self.segments) > self.max_segments:
             old_segment = self.segments[0]
             if os.path.exists(old_segment['path']):
                 os.remove(old_segment['path'])
-    
+
     def get_clip_segments(self, detection_time: float, total_clip_duration: int) -> List[Dict]:
         """
         Get segments needed for clipping based on detection time.
@@ -195,20 +195,20 @@ class StreamBuffer:
         """
         before_duration = total_clip_duration * 0.2  # 20% before
         after_duration = total_clip_duration * 0.8   # 80% after
-        
+
         start_time = detection_time - before_duration
         end_time = detection_time + after_duration
-        
+
         relevant_segments = []
         for segment in self.segments:
             segment_end = segment['timestamp'] + segment['duration']
-            
+
             # Check if segment overlaps with our time range
             if segment['timestamp'] <= end_time and segment_end >= start_time:
                 relevant_segments.append(segment)
-        
+
         return relevant_segments
-    
+
     def cleanup(self):
         """Clean up temporary files."""
         for segment in self.segments:
@@ -219,7 +219,7 @@ class StreamBuffer:
 
 class StreamProcessor:
     """Main stream processor with highlight detection and clipping."""
-    
+
     def __init__(self, config: Dict[str, Any]):
         """Initialize stream processor with configuration."""
         self.config = config
@@ -228,108 +228,111 @@ class StreamProcessor:
         self.stream_buffer = None
         self.metrics_queue = Queue()
         self.clip_queue = Queue()
-        
+
         # Processing stats
         self.frames_processed = 0
         self.clips_generated = 0
         self.start_time = None
-        
+
         # Detection thresholds (legacy - will be replaced by adaptive)
         self.audio_threshold = config.get('audioThreshold', 6)  # dB
         self.motion_threshold = config.get('motionThreshold', 30)  # percentage
         self.clip_length = config.get('clipLength', 20)  # seconds
-        
+
         # Adaptive baseline detection with shorter calibration for testing
         self.baseline_tracker = BaselineTracker(calibration_seconds=60)  # Reduced from 120s
         self.use_adaptive_detection = config.get('useAdaptiveDetection', True)
-        
+
         # Cooldown system to prevent duplicate clips
         self.last_clip_time = 0
         self.clip_cooldown = 10  # Minimum seconds between clips
-        
+
         # Ensure clips directory exists
         self.clips_dir = os.path.join(os.getcwd(), 'clips')
         os.makedirs(self.clips_dir, exist_ok=True)
-        
+
         print(f"Stream processor initialized with config: {config}")
-    
+
     def start_processing(self) -> bool:
         """Start stream processing."""
         if self.is_running:
             print("Stream processor is already running")
             return False
-        
+
         try:
             self.is_running = True
             self.start_time = time.time()
             self.frames_processed = 0
             self.clips_generated = 0
-            
-            # Initialize stream buffer
+
+            # Initialize stream buffer with enough capacity for full clips
+            # Need at least 3x clip length to ensure we can always create full clips
+            buffer_duration = max(60, self.clip_length * 3)  # At least 60s, or 3x clip length
             self.stream_buffer = StreamBuffer(
-                buffer_seconds=max(30, self.clip_length * 2),
+                buffer_seconds=buffer_duration,
                 segment_duration=2
             )
-            
+            print(f"Stream buffer configured: {buffer_duration}s capacity ({buffer_duration // 2} segments max)")
+
             # Start processing threads
             self.capture_thread = threading.Thread(target=self._stream_capture_loop, daemon=True)
             self.analysis_thread = threading.Thread(target=self._stream_analysis_loop, daemon=True)
             self.metrics_thread = threading.Thread(target=self._metrics_update_loop, daemon=True)
-            
+
             self.capture_thread.start()
             self.analysis_thread.start()
             self.metrics_thread.start()
-            
+
             # Start adaptive baseline calibration
             if self.use_adaptive_detection:
                 self.baseline_tracker.start_calibration()
-            
+
             print(f"Started stream processing for URL: {self.config['url']}")
             return True
-            
+
         except Exception as e:
             print(f"Failed to start stream processing: {e}")
             self.is_running = False
             return False
-    
+
     def stop_processing(self):
         """Stop stream processing."""
         print("Stopping stream processing...")
         self.is_running = False
-        
+
         if self.stream_buffer:
             self.stream_buffer.cleanup()
             self.stream_buffer = None
-    
+
     def _stream_capture_loop(self):
         """Main loop for capturing stream segments."""
         segment_counter = 0
-        
+
         while self.is_running:
             try:
                 timestamp = time.time()
                 segment_filename = f"segment_{segment_counter:06d}.ts"
                 segment_path = os.path.join(self.stream_buffer.temp_dir, segment_filename)
-                
+
                 # Use streamlink to capture a 2-second segment
                 # Try real streamlink capture first
                 success = self._capture_real_segment(segment_path)
-                
+
                 # Fallback to mock for development if streamlink fails
                 if not success:
                     print(f"Streamlink capture failed, creating mock segment for development")
                     self._create_mock_segment(segment_path)
-                
+
                 if os.path.exists(segment_path):
                     self.stream_buffer.add_segment(segment_path, timestamp)
                     segment_counter += 1
-                
+
                 time.sleep(2)  # Wait for next segment
-                
+
             except Exception as e:
                 print(f"Error in stream capture: {e}")
                 time.sleep(1)
-    
+
     def _stream_analysis_loop(self):
         """Analyze stream segments for highlights."""
         while self.is_running:
@@ -337,14 +340,14 @@ class StreamProcessor:
                 if len(self.stream_buffer.segments) < 3:
                     time.sleep(1)
                     continue
-                
+
                 # Analyze latest segment
                 latest_segment = self.stream_buffer.segments[-1]
                 metrics = self._analyze_segment(latest_segment['path'])
-                
+
                 # Update processing stats
                 self.frames_processed += metrics.get('frames_analyzed', 30)
-                
+
                 # Add metrics to baseline tracker
                 if self.use_adaptive_detection:
                     self.baseline_tracker.add_metrics(
@@ -352,11 +355,11 @@ class StreamProcessor:
                         metrics.get('motion_level', 0),
                         metrics.get('scene_change', 0)
                     )
-                
+
                 # Check for highlight triggers
                 detection_time = latest_segment['timestamp']
                 trigger_reason = None
-                
+
                 if self.use_adaptive_detection and self.baseline_tracker.is_calibrated:
                     # Use adaptive anomaly detection
                     trigger_reason = self.baseline_tracker.check_anomaly(
@@ -364,11 +367,11 @@ class StreamProcessor:
                         metrics.get('motion_level', 0),
                         metrics.get('scene_change', 0)
                     )
-                
+
                 # Always check fixed thresholds as fallback
                 if not trigger_reason:
                     trigger_reason = self._check_highlight_triggers(metrics)
-                    
+
                 # Debug output for detection attempts
                 if self.frames_processed % 300 == 0:  # Every 5 minutes
                     print(f"🔍 Detection status - Audio: {metrics.get('audio_level', 0):.1f}, Motion: {metrics.get('motion_level', 0):.1f}, Scene: {metrics.get('scene_change', 0):.3f}")
@@ -376,7 +379,7 @@ class StreamProcessor:
                         print(f"   Baseline - Audio: {self.baseline_tracker.audio_baseline['mean']:.1f}±{self.baseline_tracker.audio_baseline['std']:.1f}")
                     else:
                         print(f"   Still calibrating: {self.baseline_tracker.get_calibration_progress():.1f}%")
-                
+
                 # Apply cooldown to prevent spam clips
                 current_time = time.time()
                 if trigger_reason and (current_time - self.last_clip_time) >= self.clip_cooldown:
@@ -385,7 +388,7 @@ class StreamProcessor:
                     self.last_clip_time = current_time
                 elif trigger_reason:
                     print(f"Skipping clip due to cooldown: {trigger_reason}")
-                
+
                 # Queue metrics for SSE updates
                 metrics_update = {
                     'frames_processed': self.frames_processed,
@@ -393,7 +396,7 @@ class StreamProcessor:
                     'motion_level': metrics.get('motion_level', 0),
                     'scene_change': metrics.get('scene_change', 0),
                 }
-                
+
                 # Add adaptive detection status
                 if self.use_adaptive_detection:
                     metrics_update.update({
@@ -404,26 +407,26 @@ class StreamProcessor:
                     })
                 else:
                     metrics_update['detection_mode'] = 'fixed'
-                    
+
                 self.metrics_queue.put(metrics_update)
-                
+
                 time.sleep(1)
-                
+
             except Exception as e:
                 print(f"Error in stream analysis: {e}")
                 time.sleep(1)
-    
+
     def _analyze_segment(self, segment_path: str) -> Dict[str, float]:
         """Analyze a segment for audio/motion/scene metrics using FFmpeg."""
         try:
             if not os.path.exists(segment_path):
                 print(f"Segment file not found: {segment_path}")
                 return self._get_default_metrics()
-            
+
             # Check if this is a real video segment
             file_size = os.path.getsize(segment_path)
             is_real_video = file_size > 50000 or segment_path.endswith(('.ts', '.mp4', '.m4v', '.mkv'))
-            
+
             if is_real_video:
                 # Use FFmpeg for real video analysis
                 return self._analyze_with_ffmpeg(segment_path)
@@ -438,15 +441,15 @@ class StreamProcessor:
                     'audio_db_change': random.randint(-3, 12),  # Simulate volume changes
                 }
                 return metrics
-            
+
             # Real FFmpeg analysis would go here
             metrics = self._analyze_with_ffmpeg(segment_path)
             return metrics
-            
+
         except Exception as e:
             print(f"Error analyzing segment {segment_path}: {e}")
             return self._get_default_metrics()
-    
+
     def _analyze_with_ffmpeg(self, segment_path: str) -> Dict[str, float]:
         """Use FFmpeg to analyze video segment for real metrics."""
         try:
@@ -460,7 +463,7 @@ class StreamProcessor:
                 '-of', 'csv=p=0:s=x',
                 '-v', 'quiet'
             ]
-            
+
             # Motion analysis using frame differences
             motion_cmd = [
                 'ffmpeg',
@@ -471,7 +474,7 @@ class StreamProcessor:
                 '-v', 'quiet',
                 '-'
             ]
-            
+
             # Real-time FFmpeg analysis with enhanced audio and video detection
             result = subprocess.run([
                 'ffmpeg',
@@ -481,7 +484,7 @@ class StreamProcessor:
                 '-f', 'null',
                 '-'
             ], capture_output=True, text=True, timeout=10)
-            
+
             metrics = {
                 'frames_analyzed': 60,
                 'audio_level': 0.0,
@@ -489,11 +492,11 @@ class StreamProcessor:
                 'scene_change': 0.0,
                 'audio_db_change': 0.0,
             }
-            
+
             # Parse FFmpeg output for real audio spikes and scene changes
             audio_levels = []
             scene_scores = []
-            
+
             for line in result.stderr.split('\n'):
                 # Detect RMS audio levels (indicates volume spikes)
                 if 'Overall RMS' in line or 'RMS level dB' in line:
@@ -508,13 +511,13 @@ class StreamProcessor:
                                 audio_change = 8 + (rms_db + 30) * 0.7
                             else:  # Normal/quiet
                                 audio_change = max(0, (rms_db + 50) * 0.2)
-                            
+
                             audio_levels.append(min(20, max(0, audio_change)))
                             # UI display level
                             metrics['audio_level'] = max(0, min(100, (rms_db + 60) * 1.67))
                     except (ValueError, AttributeError):
                         pass
-                        
+
                 # Detect scene changes (indicates visual motion/cuts)
                 elif 'lavfi.scene_score' in line:
                     try:
@@ -525,27 +528,27 @@ class StreamProcessor:
                             metrics['scene_change'] = scene_score
                     except (ValueError, AttributeError):
                         pass
-            
+
             # Set final metrics for highlight detection
             if audio_levels:
                 metrics['audio_db_change'] = max(audio_levels)  # Peak audio spike
-            
+
             if scene_scores:
                 max_scene = max(scene_scores)
                 metrics['scene_change'] = max_scene
                 metrics['motion_level'] = min(100, max_scene * 100)  # Scale to 0-100
-            
+
             # Add natural variation for realistic detection
             import random
             metrics['audio_level'] += random.uniform(0, 2)
             metrics['motion_level'] += random.uniform(0, 3)
-            
+
             return metrics
-            
+
         except Exception as e:
             print(f"FFmpeg analysis error: {e}")
             return self._get_default_metrics()
-    
+
     def _get_default_metrics(self) -> Dict[str, float]:
         """Return default metrics when analysis fails."""
         return {
@@ -555,77 +558,77 @@ class StreamProcessor:
             'scene_change': 0,
             'audio_db_change': 0,
         }
-    
+
     def _check_highlight_triggers(self, metrics: Dict[str, float]) -> Optional[str]:
         """Check if metrics exceed thresholds for highlight detection."""
-        
+
         # More sensitive thresholds for better detection
         audio_level = metrics.get('audio_level', 0)
         motion_level = metrics.get('motion_level', 0)
         scene_change = metrics.get('scene_change', 0)
         audio_db_change = metrics.get('audio_db_change', 0)
-        
+
         # Audio threshold check - check both level and change
         if audio_db_change >= self.audio_threshold:
             return f"Audio Spike ({audio_db_change:.1f}dB)"
-        
+
         if audio_level >= 80:  # High audio level
             return f"High Audio Level ({audio_level:.1f})"
-        
+
         # Motion threshold check  
         if motion_level >= self.motion_threshold:
             return f"Motion Detected ({motion_level:.1f}%)"
-        
+
         # Scene change threshold check - lowered for better detection
         if scene_change > 0.3:  # Lowered from 0.4
             return f"Scene Change ({scene_change:.3f})"
-        
+
         # Additional detection for high activity
         if audio_level > 60 and motion_level > 20:
             return f"High Activity (A:{audio_level:.1f}, M:{motion_level:.1f})"
-        
+
         return None
-    
+
     def _create_highlight_clip(self, detection_time: float, trigger_reason: str):
         """Create a highlight clip using the 20%/80% strategy with FFmpeg."""
         try:
             # Get relevant segments for clipping
             clip_segments = self.stream_buffer.get_clip_segments(detection_time, self.clip_length)
-            
+
             if not clip_segments:
                 print("No segments available for clipping")
                 return
-            
+
             # Generate clip filename
             timestamp = datetime.fromtimestamp(detection_time)
             clip_filename = f"highlight_{timestamp.strftime('%Y%m%d_%H%M%S')}.mp4"
             clip_path = os.path.join(self.clips_dir, clip_filename)
-            
+
             # Calculate precise timing for 20%/80% strategy
             before_duration = self.clip_length * 0.2  # 20% before detection
             after_duration = self.clip_length * 0.8   # 80% after detection
-            
+
             print(f"Creating {self.clip_length}s clip using 20%/80% strategy:")
             print(f"  - {before_duration}s before detection moment")
             print(f"  - {after_duration}s after detection moment")
-            
+
             # Find the segment containing the detection moment
             detection_segment = None
             segment_offset = 0
-            
+
             for segment in clip_segments:
                 segment_end = segment['timestamp'] + segment['duration']
                 if segment['timestamp'] <= detection_time <= segment_end:
                     detection_segment = segment
                     segment_offset = detection_time - segment['timestamp']
                     break
-            
+
             if not detection_segment:
                 print("Could not find segment containing detection moment")
                 # Fallback to standard clipping
                 self._create_standard_clip(clip_segments, clip_path, clip_filename, trigger_reason, detection_time)
                 return
-            
+
             # Create the clip with precise timing using FFmpeg
             success = self._create_ffmpeg_clip(
                 clip_segments, 
@@ -636,7 +639,7 @@ class StreamProcessor:
                 clip_path,
                 trigger_reason
             )
-            
+
             if success:
                 # Notify the main server about the new clip
                 file_size = os.path.getsize(clip_path) if os.path.exists(clip_path) else 1024 * 1024 * 10
@@ -645,10 +648,10 @@ class StreamProcessor:
                 print(f"Created highlight clip: {clip_filename} ({trigger_reason})")
             else:
                 print(f"Failed to create highlight clip: {clip_filename}")
-            
+
         except Exception as e:
             print(f"Error creating highlight clip: {e}")
-    
+
     def _create_ffmpeg_clip(self, segments, detection_segment, segment_offset, before_duration, after_duration, output_path, trigger_reason):
         """Use FFmpeg to create a precise clip with 20%/80% timing."""
         try:
@@ -662,52 +665,52 @@ class StreamProcessor:
                     # Real video if it's larger than 50KB or has video extension
                     if size > 50000 or path.endswith(('.ts', '.mp4', '.m4v', '.mkv')):
                         real_video_segments.append(seg)
-            
+
             # If no real video segments, create mock clip
             if not real_video_segments:
                 print("No real video segments found, creating mock clip for development")
                 return self._create_mock_clip(output_path, trigger_reason)
-            
+
             # Use real video segments for clipping
             segments = real_video_segments
-            
+
             # Sort segments by timestamp to ensure proper order
             segments.sort(key=lambda x: x['timestamp'])
-            
+
             # Create concatenation file for FFmpeg
             concat_file = os.path.join(self.stream_buffer.temp_dir, f"concat_{int(time.time())}.txt")
-            
+
             with open(concat_file, 'w') as f:
                 for segment in segments:
                     # Escape paths for FFmpeg
                     escaped_path = segment['path'].replace("'", "'\\''")
                     f.write(f"file '{escaped_path}'\n")
-            
+
             # Calculate total available duration from all segments
             total_available_duration = len(segments) * 2  # Each segment is 2 seconds
             print(f"Total available duration: {total_available_duration}s from {len(segments)} segments")
-            
+
             # Find detection moment position in the concatenated timeline
             detection_moment_in_timeline = 0
             for i, segment in enumerate(segments):
                 if segment == detection_segment:
                     detection_moment_in_timeline = (i * 2) + segment_offset
                     break
-            
+
             print(f"Detection moment at {detection_moment_in_timeline}s in concatenated timeline")
-            
+
             # Calculate clip boundaries using 20%/80% strategy
             clip_start_time = max(0, detection_moment_in_timeline - before_duration)
             clip_end_time = min(total_available_duration, detection_moment_in_timeline + after_duration)
             actual_clip_duration = min(self.clip_length, clip_end_time - clip_start_time)
-            
+
             print(f"Clip timing: start={clip_start_time:.1f}s, duration={actual_clip_duration:.1f}s (requested {self.clip_length}s)")
-            
+
             # Ensure we have enough footage for the requested clip length
             if actual_clip_duration < (self.clip_length * 0.5):  # Less than 50% of requested duration
                 print(f"⚠️  Warning: Only {actual_clip_duration}s available, requested {self.clip_length}s")
                 print(f"   Need more buffer time. Consider increasing buffer or reducing clip length.")
-            
+
             # FFmpeg command for precise clipping
             cmd = [
                 'ffmpeg',
@@ -724,16 +727,16 @@ class StreamProcessor:
                 '-y',  # Overwrite output
                 output_path
             ]
-            
+
             print(f"Running FFmpeg: ffmpeg ... -ss {clip_start_time} -t {actual_clip_duration} {output_path}")
-            
+
             # Execute FFmpeg command
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            
+
             # Clean up concat file
             if os.path.exists(concat_file):
                 os.remove(concat_file)
-            
+
             if result.returncode == 0:
                 print(f"✅ FFmpeg clip creation successful: {output_path} ({actual_clip_duration}s)")
                 return True
@@ -741,24 +744,25 @@ class StreamProcessor:
                 print(f"❌ FFmpeg error: {result.stderr}")
                 # Fallback to mock clip for development
                 return self._create_mock_clip(output_path, trigger_reason)
-                
+
         except subprocess.TimeoutExpired:
             print("FFmpeg command timed out")
             return self._create_mock_clip(output_path, trigger_reason)
         except Exception as e:
             print(f"FFmpeg clip creation error: {e}")
             return self._create_mock_clip(output_path, trigger_reason)
-    
-    def _create_standard_clip(self, segments, output_path, filename, trigger_reason, detection_time):
+
+    def _create_standard_clip(self, segments, output_```python
+path, filename, trigger_reason, detection_time):
         """Fallback method for standard clipping without precise timing."""
         try:
             concat_file = os.path.join(self.stream_buffer.temp_dir, f"standard_{int(time.time())}.txt")
-            
+
             with open(concat_file, 'w') as f:
                 for segment in segments:
                     escaped_path = segment['path'].replace("'", "'\\''")
                     f.write(f"file '{escaped_path}'\n")
-            
+
             cmd = [
                 'ffmpeg',
                 '-f', 'concat', 
@@ -769,22 +773,22 @@ class StreamProcessor:
                 '-y',
                 output_path
             ]
-            
+
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
-            
+
             if os.path.exists(concat_file):
                 os.remove(concat_file)
-            
+
             if result.returncode == 0:
                 return True
             else:
                 # Create mock clip for development
                 return self._create_mock_clip(output_path, trigger_reason)
-                
+
         except Exception as e:
             print(f"Standard clip creation error: {e}")
             return self._create_mock_clip(output_path, trigger_reason)
-    
+
     def _capture_real_segment(self, segment_path: str) -> bool:
         """Capture a real video segment using Streamlink with ad handling."""
         try:
@@ -796,21 +800,21 @@ class StreamProcessor:
                 'worst',
                 '--stream-url'
             ]
-            
+
             print(f"Getting stream URL: {' '.join(url_cmd)}")
             url_result = subprocess.run(url_cmd, capture_output=True, text=True, timeout=10)
-            
+
             if url_result.returncode != 0:
                 print(f"Failed to get stream URL: {url_result.stderr}")
                 return False
-            
+
             stream_url = url_result.stdout.strip()
             if not stream_url:
                 print("Empty stream URL received")
                 return False
-                
+
             print(f"Got stream URL: {stream_url[:100]}...")
-            
+
             # Use FFmpeg to capture a 2-second segment directly from HLS
             ffmpeg_cmd = [
                 'ffmpeg',
@@ -820,10 +824,10 @@ class StreamProcessor:
                 '-y',  # Overwrite output
                 segment_path
             ]
-            
+
             print(f"Capturing with FFmpeg: ffmpeg -i [stream] -t 2 -c copy {segment_path}")
             ffmpeg_result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=15)
-            
+
             if ffmpeg_result.returncode == 0 and os.path.exists(segment_path):
                 file_size = os.path.getsize(segment_path)
                 if file_size > 10000:  # At least 10KB for real video
@@ -835,7 +839,7 @@ class StreamProcessor:
             else:
                 print(f"✗ FFmpeg capture failed: {ffmpeg_result.stderr}")
                 return False
-                
+
         except subprocess.TimeoutExpired:
             print("✗ Stream capture timed out")
             return False
@@ -848,7 +852,7 @@ class StreamProcessor:
         # Create a small file to simulate a video segment
         with open(segment_path, 'wb') as f:
             f.write(b'\x00' * (1024 * 500))  # 500KB mock file
-    
+
     def _notify_clip_created(self, filename: str, trigger_reason: str, detection_time: float, file_size: int = None):
         """Notify the main server about a new clip."""
         try:
@@ -859,22 +863,22 @@ class StreamProcessor:
                 'fileSize': file_size or (1024 * 1024 * 10),  # Use actual size or default
                 'triggerReason': trigger_reason,
             }
-            
+
             # Send to main server API
             response = requests.post(
                 'http://localhost:5000/api/clips',
                 json=clip_data,
                 timeout=5
             )
-            
+
             if response.status_code == 200:
                 print(f"Successfully notified server about clip: {filename}")
             else:
                 print(f"Failed to notify server: {response.status_code}")
-                
+
         except Exception as e:
             print(f"Error notifying clip creation: {e}")
-    
+
     def _create_mock_clip(self, clip_path: str, trigger_reason: str) -> bool:
         """Create a mock clip file for development."""
         try:
@@ -885,7 +889,7 @@ class StreamProcessor:
         except Exception as e:
             print(f"Error creating mock clip: {e}")
             return False
-    
+
     def _metrics_update_loop(self):
         """Send periodic metrics updates via SSE."""
         while self.is_running:
@@ -896,14 +900,14 @@ class StreamProcessor:
                 minutes = int((uptime % 3600) // 60)
                 seconds = int(uptime % 60)
                 uptime_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-                
+
                 # Try to get latest analysis metrics
                 latest_metrics = {}
                 try:
                     latest_metrics = self.metrics_queue.get_nowait()
                 except Empty:
                     pass
-                
+
                 status_data = {
                     'isProcessing': True,
                     'framesProcessed': self.frames_processed,
@@ -913,17 +917,17 @@ class StreamProcessor:
                     'sceneChange': latest_metrics.get('scene_change', 0),
                     'clipsGenerated': self.clips_generated,
                 }
-                
+
                 # Send to main server for SSE broadcast
                 requests.post(
                     'http://localhost:5000/api/internal/metrics',
                     json=status_data,
                     timeout=2
                 )
-                
+
             except Exception as e:
                 print(f"Error updating metrics: {e}")
-            
+
             time.sleep(1)
 
 def main():
@@ -931,13 +935,13 @@ def main():
     if len(sys.argv) < 2:
         print("Usage: python stream_processor.py <config_json>")
         sys.exit(1)
-    
+
     try:
         config = json.loads(sys.argv[1])
         processor = StreamProcessor(config)
-        
+
         print(f"Starting stream processor for: {config['url']}")
-        
+
         if processor.start_processing():
             try:
                 while processor.is_running:
@@ -949,7 +953,7 @@ def main():
         else:
             print("Failed to start stream processor")
             sys.exit(1)
-            
+
     except Exception as e:
         print(f"Error in stream processor: {e}")
         sys.exit(1)
