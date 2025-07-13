@@ -71,33 +71,53 @@ class BaselineTracker:
                 
     def _finalize_calibration(self):
         """Calculate baseline statistics from collected data."""
-        if len(self.audio_levels) < 30:  # Need minimum samples
+        if len(self.audio_levels) < 10:  # Reduced minimum samples for faster calibration
             print("⚠️  Insufficient data for calibration, extending period...")
             return
             
-        # Calculate baseline statistics
-        self.audio_baseline = {
-            'mean': statistics.mean(self.audio_levels),
-            'std': max(statistics.stdev(self.audio_levels), 1.0)  # Minimum std of 1
-        }
-        
-        self.motion_baseline = {
-            'mean': statistics.mean(self.motion_levels),
-            'std': max(statistics.stdev(self.motion_levels), 1.0)
-        }
-        
-        self.scene_baseline = {
-            'mean': statistics.mean(self.scene_changes),
-            'std': max(statistics.stdev(self.scene_changes), 0.1)
-        }
-        
-        self.is_calibrating = False
-        self.is_calibrated = True
-        
-        print(f"✅ Baseline calibration complete!")
-        print(f"   Audio: {self.audio_baseline['mean']:.1f} ± {self.audio_baseline['std']:.1f}")
-        print(f"   Motion: {self.motion_baseline['mean']:.1f} ± {self.motion_baseline['std']:.1f}")
-        print(f"   Scene: {self.scene_baseline['mean']:.3f} ± {self.scene_baseline['std']:.3f}")
+        # Calculate baseline statistics with safety checks
+        try:
+            audio_mean = statistics.mean(self.audio_levels)
+            audio_std = statistics.stdev(self.audio_levels) if len(self.audio_levels) > 1 else 1.0
+            
+            motion_mean = statistics.mean(self.motion_levels)
+            motion_std = statistics.stdev(self.motion_levels) if len(self.motion_levels) > 1 else 1.0
+            
+            scene_mean = statistics.mean(self.scene_changes)
+            scene_std = statistics.stdev(self.scene_changes) if len(self.scene_changes) > 1 else 0.1
+            
+            self.audio_baseline = {
+                'mean': audio_mean,
+                'std': max(audio_std, 1.0)  # Minimum std of 1
+            }
+            
+            self.motion_baseline = {
+                'mean': motion_mean,
+                'std': max(motion_std, 1.0)
+            }
+            
+            self.scene_baseline = {
+                'mean': scene_mean,
+                'std': max(scene_std, 0.1)
+            }
+            
+            self.is_calibrating = False
+            self.is_calibrated = True
+            
+            print(f"✅ Baseline calibration complete!")
+            print(f"   Audio: {self.audio_baseline['mean']:.1f} ± {self.audio_baseline['std']:.1f}")
+            print(f"   Motion: {self.motion_baseline['mean']:.1f} ± {self.motion_baseline['std']:.1f}")
+            print(f"   Scene: {self.scene_baseline['mean']:.3f} ± {self.scene_baseline['std']:.3f}")
+            
+        except Exception as e:
+            print(f"Error calculating baseline: {e}")
+            # Force enable with default values
+            self.audio_baseline = {'mean': 50, 'std': 10}
+            self.motion_baseline = {'mean': 30, 'std': 15}
+            self.scene_baseline = {'mean': 0.1, 'std': 0.2}
+            self.is_calibrating = False
+            self.is_calibrated = True
+            print("⚠️  Using default baseline values")
         
     def check_anomaly(self, audio_level: float, motion_level: float, scene_change: float) -> Optional[str]:
         """Check if current metrics represent an anomaly worth clipping."""
@@ -219,8 +239,8 @@ class StreamProcessor:
         self.motion_threshold = config.get('motionThreshold', 30)  # percentage
         self.clip_length = config.get('clipLength', 20)  # seconds
         
-        # Adaptive baseline detection
-        self.baseline_tracker = BaselineTracker(calibration_seconds=120)
+        # Adaptive baseline detection with shorter calibration for testing
+        self.baseline_tracker = BaselineTracker(calibration_seconds=60)  # Reduced from 120s
         self.use_adaptive_detection = config.get('useAdaptiveDetection', True)
         
         # Cooldown system to prevent duplicate clips
@@ -337,16 +357,25 @@ class StreamProcessor:
                 detection_time = latest_segment['timestamp']
                 trigger_reason = None
                 
-                if self.use_adaptive_detection:
+                if self.use_adaptive_detection and self.baseline_tracker.is_calibrated:
                     # Use adaptive anomaly detection
                     trigger_reason = self.baseline_tracker.check_anomaly(
                         metrics.get('audio_level', 0),
                         metrics.get('motion_level', 0),
                         metrics.get('scene_change', 0)
                     )
-                else:
-                    # Fallback to fixed thresholds
+                
+                # Always check fixed thresholds as fallback
+                if not trigger_reason:
                     trigger_reason = self._check_highlight_triggers(metrics)
+                    
+                # Debug output for detection attempts
+                if self.frames_processed % 300 == 0:  # Every 5 minutes
+                    print(f"🔍 Detection status - Audio: {metrics.get('audio_level', 0):.1f}, Motion: {metrics.get('motion_level', 0):.1f}, Scene: {metrics.get('scene_change', 0):.3f}")
+                    if self.baseline_tracker.is_calibrated:
+                        print(f"   Baseline - Audio: {self.baseline_tracker.audio_baseline['mean']:.1f}±{self.baseline_tracker.audio_baseline['std']:.1f}")
+                    else:
+                        print(f"   Still calibrating: {self.baseline_tracker.get_calibration_progress():.1f}%")
                 
                 # Apply cooldown to prevent spam clips
                 current_time = time.time()
@@ -530,17 +559,30 @@ class StreamProcessor:
     def _check_highlight_triggers(self, metrics: Dict[str, float]) -> Optional[str]:
         """Check if metrics exceed thresholds for highlight detection."""
         
-        # Audio threshold check
-        if metrics.get('audio_db_change', 0) >= self.audio_threshold:
-            return "Audio Spike"
+        # More sensitive thresholds for better detection
+        audio_level = metrics.get('audio_level', 0)
+        motion_level = metrics.get('motion_level', 0)
+        scene_change = metrics.get('scene_change', 0)
+        audio_db_change = metrics.get('audio_db_change', 0)
+        
+        # Audio threshold check - check both level and change
+        if audio_db_change >= self.audio_threshold:
+            return f"Audio Spike ({audio_db_change:.1f}dB)"
+        
+        if audio_level >= 80:  # High audio level
+            return f"High Audio Level ({audio_level:.1f})"
         
         # Motion threshold check  
-        if metrics.get('motion_level', 0) >= self.motion_threshold:
-            return "Motion Detected"
+        if motion_level >= self.motion_threshold:
+            return f"Motion Detected ({motion_level:.1f}%)"
         
-        # Scene change threshold check
-        if metrics.get('scene_change', 0) > 0.4:
-            return "Scene Change"
+        # Scene change threshold check - lowered for better detection
+        if scene_change > 0.3:  # Lowered from 0.4
+            return f"Scene Change ({scene_change:.3f})"
+        
+        # Additional detection for high activity
+        if audio_level > 60 and motion_level > 20:
+            return f"High Activity (A:{audio_level:.1f}, M:{motion_level:.1f})"
         
         return None
     
