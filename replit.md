@@ -102,11 +102,15 @@ Preferred communication style: Simple, everyday language.
 - **Audio**: ≥6dB volume change threshold
 - **Motion**: ≥30% frame change detection
 - **Scene Change**: >0.4 score threshold
-- **Clip Length**: 20-second duration using 20%/80% strategy
+- **Clip Length**: Dynamic duration (10s-60s options) using 20%/80% strategy
 
 ### FFmpeg Clipping Strategy
-- **Before Detection**: 20% of clip duration (4 seconds for 20s clips) captures lead-up context
-- **After Detection**: 80% of clip duration (16 seconds for 20s clips) captures the exciting moment and aftermath
+- **Before Detection**: 20% of user-specified clip duration captures lead-up context
+- **After Detection**: 80% of user-specified clip duration captures the exciting moment and aftermath
+- **Examples**: 
+  - 10s clip = 2s before + 8s after detection
+  - 30s clip = 6s before + 24s after detection  
+  - 60s clip = 12s before + 48s after detection
 - **Stream Buffer**: 30-second circular buffer maintains recent segments for immediate clipping
 - **Segment Duration**: 2-second segments for precise timing control
 

@@ -337,6 +337,10 @@ class StreamProcessor:
             before_duration = self.clip_length * 0.2  # 20% before detection
             after_duration = self.clip_length * 0.8   # 80% after detection
             
+            print(f"Creating {self.clip_length}s clip using 20%/80% strategy:")
+            print(f"  - {before_duration}s before detection moment")
+            print(f"  - {after_duration}s after detection moment")
+            
             # Find the segment containing the detection moment
             detection_segment = None
             segment_offset = 0

@@ -196,9 +196,12 @@ export default function StreamInputForm() {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent className="bg-slate-700 border-slate-600">
+                        <SelectItem value="10" className="text-slate-100">10 seconds</SelectItem>
                         <SelectItem value="15" className="text-slate-100">15 seconds</SelectItem>
                         <SelectItem value="20" className="text-slate-100">20 seconds</SelectItem>
                         <SelectItem value="30" className="text-slate-100">30 seconds</SelectItem>
+                        <SelectItem value="45" className="text-slate-100">45 seconds</SelectItem>
+                        <SelectItem value="60" className="text-slate-100">60 seconds</SelectItem>
                       </SelectContent>
                     </Select>
                   </FormItem>
