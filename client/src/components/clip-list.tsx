@@ -35,7 +35,10 @@ export default function ClipList({ clips, showActions = false }: ClipListProps) 
   });
 
   const handleDownload = (filename: string) => {
-    window.open(`/clips/${filename}`, '_blank');
+    const link = document.createElement('a');
+    link.href = `/clips/${filename}`;
+    link.download = filename;
+    link.click();
   };
 
   const handleDelete = (id: number) => {
@@ -83,6 +86,11 @@ export default function ClipList({ clips, showActions = false }: ClipListProps) 
               <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded-full">
                 NEW
               </span>
+              {clip.filename.endsWith('.txt') && (
+                <span className="text-xs text-amber-400 bg-amber-400/10 px-2 py-1 rounded-full">
+                  MOCK
+                </span>
+              )}
             </div>
             <div className="flex items-center space-x-4 text-xs text-slate-400">
               <span>{formatDate(clip.createdAt)}</span>

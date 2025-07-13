@@ -41,7 +41,7 @@ function generateMockClip(sessionUrl: string): Promise<void> {
     const triggerReason = triggerReasons[Math.floor(Math.random() * triggerReasons.length)];
     
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-    const filename = `highlight_${timestamp}.mp4`;
+    const filename = `highlight_${timestamp}.txt`;
     
     // Mock file creation
     const clipsDir = path.join(process.cwd(), 'clips');
@@ -49,15 +49,45 @@ function generateMockClip(sessionUrl: string): Promise<void> {
       fs.mkdirSync(clipsDir, { recursive: true });
     }
     
-    // Create a small mock file
+    // Create a mock text file with clip information
     const filePath = path.join(clipsDir, filename);
-    fs.writeFileSync(filePath, Buffer.alloc(1024 * 1024 * 10)); // 10MB mock file
+    const mockContent = `STREAM CLIPPER - MOCK HIGHLIGHT CLIP
+=====================================
+
+Clip Details:
+- Filename: ${filename}
+- Trigger Reason: ${triggerReason}
+- Original URL: ${sessionUrl}
+- Duration: 20 seconds
+- Generated: ${new Date().toISOString()}
+
+This is a mock highlight clip generated for development purposes.
+In a real implementation, this would be a 20-second video file
+extracted from the live stream when a highlight was detected.
+
+Processing Details:
+- Audio threshold exceeded: ${triggerReason === 'Audio Spike' ? 'YES' : 'NO'}
+- Motion detected: ${triggerReason === 'Motion Detected' ? 'YES' : 'NO'}
+- Scene change detected: ${triggerReason === 'Scene Change' ? 'YES' : 'NO'}
+
+To implement real video processing, you would need:
+1. FFmpeg installed and accessible
+2. Streamlink for stream capture
+3. Python backend for video analysis
+4. Real-time processing pipeline
+
+This mock system demonstrates the UI and workflow
+without requiring external video processing tools.
+`;
+    
+    fs.writeFileSync(filePath, mockContent);
+    const fileSize = mockContent.length;
     
     const clip = await storage.createClip({
       filename,
       originalUrl: sessionUrl,
       duration: 20,
-      fileSize: 1024 * 1024 * 10,
+      fileSize: fileSize,
       triggerReason,
     });
     

@@ -1,4 +1,6 @@
 import { clips, streamSessions, type Clip, type InsertClip, type StreamSession, type InsertStreamSession } from "@shared/schema";
+import fs from "fs";
+import path from "path";
 
 export interface IStorage {
   // Clips
@@ -25,6 +27,25 @@ export class MemStorage implements IStorage {
     this.streamSessions = new Map();
     this.currentClipId = 1;
     this.currentSessionId = 1;
+    
+    // Clear any existing clips directory on startup
+    this.clearClipsDirectory();
+  }
+
+  private clearClipsDirectory() {
+    const clipsDir = path.join(process.cwd(), 'clips');
+    
+    if (fs.existsSync(clipsDir)) {
+      const files = fs.readdirSync(clipsDir);
+      files.forEach((file: string) => {
+        const filePath = path.join(clipsDir, file);
+        try {
+          fs.unlinkSync(filePath);
+        } catch (error) {
+          // Ignore errors when cleaning up
+        }
+      });
+    }
   }
 
   // Clips
