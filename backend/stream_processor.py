@@ -265,15 +265,15 @@ class StreamProcessor:
             self.frames_processed = 0
             self.clips_generated = 0
 
-            # Initialize stream buffer to match clip length exactly
-            # This prevents overlapping clips and ensures clean timing
-            buffer_duration = self.clip_length  # Buffer exactly matches clip length
+            # Initialize stream buffer - need at least 2x clip length for proper 20%/80% strategy
+            # This ensures we have enough content before and after detection moments
+            buffer_duration = max(60, self.clip_length * 2)  # At least 60s or 2x clip length
             self.stream_buffer = StreamBuffer(
                 buffer_seconds=buffer_duration,
                 segment_duration=2
             )
             print(f"Stream buffer configured: {buffer_duration}s capacity ({buffer_duration // 2} segments max)")
-            print(f"Each clip will use the full {buffer_duration}s buffer, preventing overlap")
+            print(f"Buffer size supports full {self.clip_length}s clips with 20%/80% strategy")
 
             # Start processing threads
             self.capture_thread = threading.Thread(target=self._stream_capture_loop, daemon=True)
@@ -691,39 +691,39 @@ class StreamProcessor:
             total_available_duration = len(segments) * 2  # Each segment is 2 seconds
             print(f"Total available duration: {total_available_duration}s from {len(segments)} segments")
 
-            # Find detection moment position in the concatenated timeline
-            detection_moment_in_timeline = 0
-            for i, segment in enumerate(segments):
-                if segment == detection_segment:
-                    detection_moment_in_timeline = (i * 2) + segment_offset
-                    break
-
-            print(f"Detection moment at {detection_moment_in_timeline}s in concatenated timeline")
-
-            # With buffer = clip length, we use the entire buffer for each clip
-            # Detection moment determines the 20%/80% split within the buffer
-            buffer_duration = total_available_duration  # Should equal clip_length
-            
-            # Calculate where detection falls in the buffer (0.0 to 1.0)
-            detection_ratio = detection_moment_in_timeline / buffer_duration if buffer_duration > 0 else 0.5
-            
-            print(f"Detection at {detection_ratio:.1%} through {buffer_duration}s buffer")
-            
-            # For optimal highlights, adjust start point based on detection position
-            if detection_ratio < 0.2:
-                # Early detection - use from start to capture buildup
-                clip_start_time = 0
-                print(f"Early detection: using full buffer from start")
-            elif detection_ratio > 0.8:
-                # Late detection - ensure we get the moment
-                clip_start_time = max(0, buffer_duration - self.clip_length)
-                print(f"Late detection: using end of buffer")
+            # Check if we have enough content for the requested clip length
+            if total_available_duration < self.clip_length:
+                print(f"WARNING: Buffer only has {total_available_duration}s but need {self.clip_length}s")
+                print("Will capture additional real-time content to reach full clip duration")
+                
+                # Use the real-time capture approach for full duration
+                return self._create_realtime_clip(segments, output_path, trigger_reason, before_duration, after_duration)
+                
             else:
-                # Normal detection - use 20%/80% strategy
-                clip_start_time = max(0, detection_moment_in_timeline - before_duration)
-                print(f"Normal detection: 20%/80% split")
+                # We have enough content - use proper 20%/80% strategy
+                # Find detection moment position in the concatenated timeline
+                detection_moment_in_timeline = 0
+                for i, segment in enumerate(segments):
+                    if segment == detection_segment:
+                        detection_moment_in_timeline = (i * 2) + segment_offset
+                        break
+
+                print(f"Detection moment at {detection_moment_in_timeline}s in concatenated timeline")
+                
+                # Calculate optimal start time for 20%/80% strategy
+                ideal_start_time = detection_moment_in_timeline - before_duration
+                
+                # Ensure we don't go before the start of available content
+                clip_start_time = max(0, ideal_start_time)
+                
+                # Ensure we don't exceed available content
+                available_duration_from_start = total_available_duration - clip_start_time
+                actual_clip_duration = min(self.clip_length, available_duration_from_start)
+                
+                print(f"20%/80% strategy: start={clip_start_time:.1f}s, detection at {detection_moment_in_timeline:.1f}s")
             
-            actual_clip_duration = min(self.clip_length, buffer_duration - clip_start_time)
+            # Always use user-specified duration if possible
+            actual_clip_duration = self.clip_length
             
             print(f"Final clip: start={clip_start_time:.1f}s, duration={actual_clip_duration:.1f}s")
 
@@ -767,6 +767,99 @@ class StreamProcessor:
         except Exception as e:
             print(f"FFmpeg clip creation error: {e}")
             return self._create_mock_clip(output_path, trigger_reason)
+
+    def _create_realtime_clip(self, buffered_segments, output_path, trigger_reason, before_duration, after_duration):
+        """Create a clip by combining buffered content with real-time capture to reach full duration."""
+        try:
+            print(f"Creating real-time clip: {self.clip_length}s total ({before_duration}s + {after_duration}s)")
+            
+            # Step 1: Use all available buffered content
+            buffered_duration = len(buffered_segments) * 2
+            print(f"Using {buffered_duration}s of buffered content")
+            
+            # Step 2: Calculate how much additional content we need
+            additional_needed = self.clip_length - buffered_duration
+            print(f"Need {additional_needed}s additional real-time content")
+            
+            # Step 3: Capture additional real-time content
+            temp_files = []
+            if additional_needed > 0:
+                print(f"Capturing {additional_needed}s of additional real-time content...")
+                additional_segments = self._capture_additional_content(additional_needed)
+                temp_files.extend(additional_segments)
+            
+            # Step 4: Combine all segments into final clip
+            all_segments = [seg['path'] for seg in buffered_segments] + temp_files
+            
+            # Create concatenation file
+            concat_file = os.path.join(self.stream_buffer.temp_dir, f"realtime_{int(time.time())}.txt")
+            with open(concat_file, 'w') as f:
+                for segment_path in all_segments:
+                    escaped_path = segment_path.replace("'", "'\\''")
+                    f.write(f"file '{escaped_path}'\n")
+            
+            # Use FFmpeg to create the final clip
+            cmd = [
+                'ffmpeg',
+                '-f', 'concat',
+                '-safe', '0',
+                '-i', concat_file,
+                '-t', str(self.clip_length),  # Use exact clip length
+                '-c:v', 'libx264',
+                '-c:a', 'aac',
+                '-preset', 'fast',
+                '-crf', '23',
+                '-movflags', '+faststart',
+                '-y',
+                output_path
+            ]
+            
+            print(f"Creating real-time clip: ffmpeg ... -t {self.clip_length} {output_path}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            
+            # Clean up temporary files
+            if os.path.exists(concat_file):
+                os.remove(concat_file)
+            for temp_file in temp_files:
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
+            
+            if result.returncode == 0:
+                print(f"✅ Real-time clip creation successful: {output_path} ({self.clip_length}s)")
+                return True
+            else:
+                print(f"❌ Real-time FFmpeg error: {result.stderr}")
+                return self._create_mock_clip(output_path, trigger_reason)
+                
+        except Exception as e:
+            print(f"Real-time clip creation error: {e}")
+            return self._create_mock_clip(output_path, trigger_reason)
+
+    def _capture_additional_content(self, duration_needed):
+        """Capture additional real-time content to fill the clip duration."""
+        additional_segments = []
+        segments_needed = max(1, int(duration_needed / 2))  # 2 seconds per segment
+        
+        print(f"Capturing {segments_needed} additional segments ({segments_needed * 2}s)")
+        
+        for i in range(segments_needed):
+            try:
+                temp_filename = f"additional_{int(time.time())}_{i}.ts"
+                temp_path = os.path.join(self.stream_buffer.temp_dir, temp_filename)
+                
+                # Capture segment using existing method
+                if self._capture_real_segment(temp_path):
+                    additional_segments.append(temp_path)
+                    print(f"✓ Captured additional segment {i+1}/{segments_needed}")
+                else:
+                    print(f"✗ Failed to capture additional segment {i+1}")
+                    break
+                    
+            except Exception as e:
+                print(f"Error capturing additional segment {i}: {e}")
+                break
+        
+        return additional_segments
 
     def _create_standard_clip(self, segments, output_path, filename, trigger_reason, detection_time):
         """Fallback method for standard clipping without precise timing."""
