@@ -165,6 +165,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  // Test FFmpeg with a simple stream
+  app.post('/api/test-ffmpeg', async (req, res) => {
+    try {
+      // Test with a basic webcam or test pattern
+      const testConfig = {
+        url: 'testsrc=duration=30:size=320x240:rate=30',
+        audioThreshold: 50,
+        motionThreshold: 30,
+        clipLength: 20
+      };
+      
+      await streamProcessor.stopCapture();
+      
+      // Test FFmpeg with test source
+      const testArgs = [
+        '-f', 'lavfi',
+        '-i', testConfig.url,
+        '-t', '10', // 10 second test
+        '-c:v', 'libx264',
+        '-preset', 'ultrafast',
+        '-f', 'null',
+        '-'
+      ];
+      
+      const { spawn } = require('child_process');
+      const testProcess = spawn('ffmpeg', testArgs);
+      
+      testProcess.on('exit', (code) => {
+        if (code === 0) {
+          res.json({ success: true, message: 'FFmpeg test successful' });
+        } else {
+          res.status(500).json({ success: false, message: `FFmpeg test failed with code ${code}` });
+        }
+      });
+      
+      testProcess.on('error', (error) => {
+        res.status(500).json({ success: false, message: `FFmpeg test error: ${error.message}` });
+      });
+      
+    } catch (error) {
+      res.status(500).json({ success: false, message: 'FFmpeg test failed' });
+    }
+  });
+
   // Start stream capture
   app.post('/api/start', async (req, res) => {
     try {

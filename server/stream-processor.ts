@@ -58,11 +58,14 @@ export class StreamProcessor {
     try {
       console.log('Resolving stream URL with streamlink:', url);
       
-      // Use streamlink to get the actual stream URL
+      // Use streamlink to get the actual stream URL with more options
       const streamlinkProcess = spawn('streamlink', [
         url,
         'best',
-        '--stream-url'
+        '--stream-url',
+        '--retry-streams', '3',
+        '--retry-max', '3',
+        '--hls-timeout', '60'
       ], {
         stdio: ['pipe', 'pipe', 'pipe']
       });
@@ -130,8 +133,24 @@ export class StreamProcessor {
       data: { session }
     });
 
-    // Start FFmpeg process for stream capture and analysis
-    await this.startFFmpegCapture(config);
+    // Check if this is a demo/test mode
+    if (config.url.toLowerCase().includes('demo') || config.url.toLowerCase().includes('test')) {
+      console.log('Starting demo mode with synthetic stream');
+      await this.startDemoMode(config);
+    } else {
+      // Start FFmpeg process for real stream capture and analysis
+      try {
+        await this.startFFmpegCapture(config);
+      } catch (error) {
+        console.error('Failed to start FFmpeg capture:', error);
+        this.broadcastEvent({
+          type: 'error',
+          data: { message: `Failed to start stream capture: ${error instanceof Error ? error.message : 'Unknown error'}` }
+        });
+        await this.stopCapture();
+        throw error;
+      }
+    }
   }
 
   private async startFFmpegCapture(config: StreamConfig): Promise<void> {
@@ -141,20 +160,21 @@ export class StreamProcessor {
     // Check if URL is a direct stream or needs streamlink processing
     const streamUrl = await this.resolveStreamUrl(config.url);
 
-    // FFmpeg command to capture stream and create segments with volume detection
+    // FFmpeg command to capture stream and create segments
     const ffmpegArgs = [
       '-i', streamUrl,
-      '-af', 'volumedetect',
-      '-vf', 'select=gte(n\\,1)',
       '-c:v', 'libx264',
-      '-c:a', 'aac',
+      '-c:a', 'aac', 
       '-preset', 'ultrafast',
+      '-g', '30', // GOP size for better segmentation
+      '-sc_threshold', '0', // Disable scene change detection for consistent segments
       '-f', 'segment',
       '-segment_time', this.segmentDuration.toString(),
       '-segment_format', 'mpegts',
       '-segment_list', path.join(clipsDir, 'segments.m3u8'),
       '-segment_list_flags', '+live',
       '-reset_timestamps', '1',
+      '-fflags', '+genpts',
       segmentPattern,
       '-loglevel', 'info',
       '-stats'
@@ -169,11 +189,16 @@ export class StreamProcessor {
     // Monitor FFmpeg output for frame processing and audio/video analysis
     this.ffmpegProcess.stderr?.on('data', (data) => {
       const output = data.toString();
+      console.log('FFmpeg output:', output);
       this.parseFFmpegOutput(output);
     });
 
+    this.ffmpegProcess.stdout?.on('data', (data) => {
+      console.log('FFmpeg stdout:', data.toString());
+    });
+
     this.ffmpegProcess.on('error', (error) => {
-      console.error('FFmpeg error:', error);
+      console.error('FFmpeg spawn error:', error);
       this.broadcastEvent({
         type: 'error',
         data: { message: `FFmpeg error: ${error.message}` }
@@ -181,8 +206,14 @@ export class StreamProcessor {
       this.stopCapture();
     });
 
-    this.ffmpegProcess.on('exit', (code) => {
-      console.log(`FFmpeg process exited with code ${code}`);
+    this.ffmpegProcess.on('exit', (code, signal) => {
+      console.log(`FFmpeg process exited with code ${code}, signal ${signal}`);
+      if (code !== 0 && code !== null) {
+        this.broadcastEvent({
+          type: 'error',
+          data: { message: `FFmpeg failed with exit code ${code}. Check if the stream URL is valid and accessible.` }
+        });
+      }
       this.stopCapture();
     });
 
@@ -463,6 +494,112 @@ export class StreamProcessor {
     } catch (error) {
       console.warn('Error during segment cleanup:', error);
     }
+  }
+
+  private async startDemoMode(config: StreamConfig): Promise<void> {
+    console.log('Starting demo mode with synthetic video generation');
+    
+    // Use FFmpeg to generate a test video with varying patterns for highlight detection
+    const clipsDir = path.join(process.cwd(), 'clips');
+    const segmentPattern = path.join(clipsDir, 'segment_%03d.ts');
+
+    // Create a synthetic stream with changing patterns for demo
+    const ffmpegArgs = [
+      '-f', 'lavfi',
+      '-i', 'testsrc2=duration=300:size=640x480:rate=30,sine=frequency=1000:duration=300',
+      '-c:v', 'libx264',
+      '-c:a', 'aac',
+      '-preset', 'ultrafast',
+      '-f', 'segment',
+      '-segment_time', this.segmentDuration.toString(),
+      '-segment_format', 'mpegts',
+      '-segment_list', path.join(clipsDir, 'segments.m3u8'),
+      '-segment_list_flags', '+live',
+      '-reset_timestamps', '1',
+      segmentPattern,
+      '-loglevel', 'info'
+    ];
+
+    console.log('Starting demo FFmpeg with args:', ffmpegArgs.join(' '));
+
+    this.ffmpegProcess = spawn('ffmpeg', ffmpegArgs, {
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    // Handle demo output
+    this.ffmpegProcess.stderr?.on('data', (data) => {
+      const output = data.toString();
+      console.log('Demo FFmpeg output:', output);
+      this.parseDemoOutput(output);
+    });
+
+    this.ffmpegProcess.on('error', (error) => {
+      console.error('Demo FFmpeg spawn error:', error);
+      this.broadcastEvent({
+        type: 'error',
+        data: { message: `Demo FFmpeg error: ${error.message}` }
+      });
+      this.stopCapture();
+    });
+
+    this.ffmpegProcess.on('exit', (code, signal) => {
+      console.log(`Demo FFmpeg process exited with code ${code}, signal ${signal}`);
+      if (code !== 0 && code !== null) {
+        this.broadcastEvent({
+          type: 'error', 
+          data: { message: `Demo failed with exit code ${code}` }
+        });
+      }
+      this.stopCapture();
+    });
+
+    // Start demo segment monitoring and highlight generation
+    this.startDemoHighlightGeneration();
+    this.startSegmentMonitoring();
+  }
+
+  private parseDemoOutput(output: string) {
+    // Parse frame count from demo
+    const frameMatch = output.match(/frame=\s*(\d+)/);
+    if (frameMatch) {
+      this.frameCount = parseInt(frameMatch[1]);
+    }
+
+    // Simulate varying audio and motion levels for demo
+    if (output.includes('frame=')) {
+      // Create interesting patterns for demo
+      const time = (Date.now() - this.startTime) / 1000;
+      this.audioLevel = Math.abs(Math.sin(time * 0.5)) * 80 + 20; // Sine wave pattern
+      this.motionLevel = Math.abs(Math.cos(time * 0.3)) * 70 + 30; // Cosine wave pattern
+      this.sceneChange = Math.random() * 0.6;
+      
+      // Check for highlights every 30 frames
+      if (this.frameCount % 30 === 0) {
+        this.checkForHighlights();
+      }
+    }
+
+    // Broadcast status every 60 frames
+    if (this.frameCount % 60 === 0) {
+      this.broadcastProcessingStatus();
+    }
+  }
+
+  private startDemoHighlightGeneration() {
+    // Generate highlights every 20-40 seconds in demo mode
+    const highlightInterval = setInterval(() => {
+      if (!this.isProcessing) {
+        clearInterval(highlightInterval);
+        return;
+      }
+      
+      console.log('Demo: Triggering highlight generation');
+      // Force a highlight by setting high levels
+      this.audioLevel = 85;
+      this.motionLevel = 75;
+      this.sceneChange = 0.8;
+      this.createHighlightClip();
+    }, Math.random() * 20000 + 20000); // 20-40 seconds
   }
 
   getStatus() {
