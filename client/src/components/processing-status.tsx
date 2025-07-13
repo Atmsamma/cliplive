@@ -31,9 +31,9 @@ export default function ProcessingStatus() {
           </div>
           <div className="text-center">
             <div className="text-3xl font-bold text-emerald-400 mb-1">
-              {status?.clipsGenerated || 0}
+              {status?.currentSession ? 'LIVE' : 'IDLE'}
             </div>
-            <div className="text-sm text-slate-400">Clips Generated</div>
+            <div className="text-sm text-slate-400">Status</div>
           </div>
           <div className="text-center">
             <div className="text-3xl font-bold text-blue-400 mb-1">

@@ -26,11 +26,13 @@ Preferred communication style: Simple, everyday language.
 
 ### Key Design Decisions
 
-1. **Dual Backend Approach**: Express.js handles the main API while a separate Flask server manages stream processing. This separation allows for specialized tools (FFmpeg, Streamlink) in Python while maintaining a fast TypeScript API.
+1. **FFmpeg Integration with 20%/80% Clipping Strategy**: Implemented precise video clipping where 20% of the clip captures content before the highlight detection moment and 80% captures content after. This provides better context for viewers while centering on the most exciting moments.
 
-2. **No Database**: The application rebuilds state from the filesystem, making deployment simpler and reducing dependencies.
+2. **Python Stream Processor**: Created a robust Python backend that uses FFmpeg for real video analysis and clipping, with proper stream buffering and segment management for optimal performance.
 
-3. **File-based Storage**: Video clips are stored directly in the filesystem with metadata managed in memory.
+3. **Dual Backend Approach**: Express.js handles the main API while a separate Python stream processor manages real-time video processing with FFmpeg and Streamlink integration.
+
+4. **Real-time Communication**: Added internal API endpoints for the Python processor to communicate clip creation and metrics updates back to the main server via Server-Sent Events.
 
 ## Key Components
 
@@ -56,8 +58,8 @@ Preferred communication style: Simple, everyday language.
 1. **Stream Input**: User submits stream URL through React form
 2. **Session Creation**: Express server creates stream session record
 3. **Processing Trigger**: Background Python worker (Flask) begins stream analysis
-4. **Highlight Detection**: FFmpeg analyzes video for audio spikes, motion, and scene changes
-5. **Clip Generation**: 20-second clips are created around highlight moments
+4. **Highlight Detection**: Python processor uses FFmpeg to analyze video segments for audio spikes, motion, and scene changes in real-time
+5. **Clip Generation**: When highlights are detected, FFmpeg creates clips using the 20%/80% strategy - 20% of content before the detection moment and 80% after, providing optimal context
 6. **Real-time Updates**: SSE broadcasts processing status and new clips
 7. **Clip Management**: Users can view, download, and manage captured clips
 
@@ -100,7 +102,13 @@ Preferred communication style: Simple, everyday language.
 - **Audio**: ≥6dB volume change threshold
 - **Motion**: ≥30% frame change detection
 - **Scene Change**: >0.4 score threshold
-- **Clip Length**: 20-second duration centered on highlight
+- **Clip Length**: 20-second duration using 20%/80% strategy
+
+### FFmpeg Clipping Strategy
+- **Before Detection**: 20% of clip duration (4 seconds for 20s clips) captures lead-up context
+- **After Detection**: 80% of clip duration (16 seconds for 20s clips) captures the exciting moment and aftermath
+- **Stream Buffer**: 30-second circular buffer maintains recent segments for immediate clipping
+- **Segment Duration**: 2-second segments for precise timing control
 
 ### Real-time Features
 - Server-Sent Events for live status updates

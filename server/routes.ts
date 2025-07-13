@@ -5,8 +5,9 @@ import { insertStreamSessionSchema, insertClipSchema, type ProcessingStatus, typ
 import { z } from "zod";
 import fs from "fs";
 import path from "path";
+import { spawn, ChildProcess } from "child_process";
 
-// Mock processing state
+// Processing state
 let processingStatus: ProcessingStatus = {
   isProcessing: false,
   framesProcessed: 0,
@@ -19,9 +20,8 @@ let processingStatus: ProcessingStatus = {
 // SSE clients
 const sseClients = new Set<Response>();
 
-// Mock highlight detection interval
-let highlightInterval: NodeJS.Timeout | null = null;
-let metricsInterval: NodeJS.Timeout | null = null;
+// Python stream processor
+let streamProcessor: ChildProcess | null = null;
 let sessionStartTime: Date | null = null;
 
 function broadcastSSE(event: SSEEvent) {
@@ -35,59 +35,62 @@ function broadcastSSE(event: SSEEvent) {
   });
 }
 
-function generateMockClip(sessionUrl: string): Promise<void> {
-  return new Promise(async (resolve) => {
-    const triggerReasons = ['Audio Spike', 'Motion Detected', 'Scene Change'];
-    const triggerReason = triggerReasons[Math.floor(Math.random() * triggerReasons.length)];
+function startStreamProcessor(config: any): boolean {
+  try {
+    // Stop any existing processor
+    stopStreamProcessor();
     
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-    const filename = `highlight_${timestamp}.mp4`;
+    const pythonPath = 'python3';
+    const scriptPath = path.join(process.cwd(), 'backend', 'stream_processor.py');
+    const configJson = JSON.stringify(config);
     
-    // Mock file creation
-    const clipsDir = path.join(process.cwd(), 'clips');
-    if (!fs.existsSync(clipsDir)) {
-      fs.mkdirSync(clipsDir, { recursive: true });
+    console.log(`Starting stream processor with config: ${configJson}`);
+    
+    streamProcessor = spawn(pythonPath, [scriptPath, configJson], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      cwd: process.cwd(),
+    });
+    
+    if (streamProcessor.stdout) {
+      streamProcessor.stdout.on('data', (data) => {
+        console.log(`[StreamProcessor]: ${data.toString().trim()}`);
+      });
     }
     
-    // Create a small mock file
-    const filePath = path.join(clipsDir, filename);
-    fs.writeFileSync(filePath, Buffer.alloc(1024 * 1024 * 10)); // 10MB mock file
+    if (streamProcessor.stderr) {
+      streamProcessor.stderr.on('data', (data) => {
+        console.error(`[StreamProcessor Error]: ${data.toString().trim()}`);
+      });
+    }
     
-    const clip = await storage.createClip({
-      filename,
-      originalUrl: sessionUrl,
-      duration: 20,
-      fileSize: 1024 * 1024 * 10,
-      triggerReason,
+    streamProcessor.on('exit', (code) => {
+      console.log(`Stream processor exited with code: ${code}`);
+      if (processingStatus.isProcessing) {
+        processingStatus.isProcessing = false;
+        broadcastSSE({
+          type: 'session-stopped',
+          data: { message: 'Stream processor stopped unexpectedly' },
+        });
+      }
     });
     
-    broadcastSSE({
-      type: 'clip-generated',
-      data: clip,
+    streamProcessor.on('error', (error) => {
+      console.error(`Stream processor error: ${error}`);
     });
     
-    resolve();
-  });
+    return true;
+  } catch (error) {
+    console.error(`Failed to start stream processor: ${error}`);
+    return false;
+  }
 }
 
-function updateProcessingMetrics() {
-  processingStatus.framesProcessed += Math.floor(Math.random() * 50) + 10;
-  processingStatus.audioLevel = Math.floor(Math.random() * 100);
-  processingStatus.motionLevel = Math.floor(Math.random() * 100);
-  processingStatus.sceneChange = Math.random();
-  
-  if (sessionStartTime) {
-    const uptime = Date.now() - sessionStartTime.getTime();
-    const hours = Math.floor(uptime / (1000 * 60 * 60));
-    const minutes = Math.floor((uptime % (1000 * 60 * 60)) / (1000 * 60));
-    const seconds = Math.floor((uptime % (1000 * 60)) / 1000);
-    processingStatus.streamUptime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+function stopStreamProcessor() {
+  if (streamProcessor) {
+    console.log('Stopping stream processor...');
+    streamProcessor.kill('SIGTERM');
+    streamProcessor = null;
   }
-  
-  broadcastSSE({
-    type: 'processing-status',
-    data: processingStatus,
-  });
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -138,6 +141,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const activeSession = await storage.getActiveSession();
       if (activeSession) {
         await storage.updateSessionStatus(activeSession.id, false);
+        stopStreamProcessor();
       }
       
       // Create new session
@@ -146,27 +150,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
         isActive: true,
       });
       
-      // Update processing status
-      processingStatus.isProcessing = true;
-      processingStatus.framesProcessed = 0;
-      processingStatus.currentSession = session;
-      sessionStartTime = new Date();
+      // Start Python stream processor with real FFmpeg integration
+      const processorConfig = {
+        url: session.url,
+        audioThreshold: session.audioThreshold,
+        motionThreshold: session.motionThreshold,
+        clipLength: session.clipLength,
+      };
       
-      // Start mock highlight detection (every 15-45 seconds)
-      highlightInterval = setInterval(() => {
-        generateMockClip(session.url);
-      }, Math.random() * 30000 + 15000);
+      const started = startStreamProcessor(processorConfig);
       
-      // Start metrics updates
-      metricsInterval = setInterval(updateProcessingMetrics, 1000);
-      
-      broadcastSSE({
-        type: 'session-started',
-        data: session,
-      });
-      
-      res.json(session);
+      if (started) {
+        // Update processing status
+        processingStatus.isProcessing = true;
+        processingStatus.framesProcessed = 0;
+        processingStatus.currentSession = session;
+        sessionStartTime = new Date();
+        
+        broadcastSSE({
+          type: 'session-started',
+          data: session,
+        });
+        
+        res.json(session);
+      } else {
+        // Failed to start processor
+        await storage.updateSessionStatus(session.id, false);
+        res.status(500).json({ error: 'Failed to start stream processor' });
+      }
     } catch (error) {
+      console.error('Error starting stream capture:', error);
       res.status(400).json({ error: 'Invalid request data' });
     }
   });
@@ -181,20 +194,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const updatedSession = await storage.updateSessionStatus(activeSession.id, false);
       
+      // Stop Python stream processor
+      stopStreamProcessor();
+      
       // Update processing status
       processingStatus.isProcessing = false;
       processingStatus.currentSession = undefined;
       sessionStartTime = null;
-      
-      // Clear intervals
-      if (highlightInterval) {
-        clearInterval(highlightInterval);
-        highlightInterval = null;
-      }
-      if (metricsInterval) {
-        clearInterval(metricsInterval);
-        metricsInterval = null;
-      }
       
       broadcastSSE({
         type: 'session-stopped',
@@ -274,6 +280,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       res.status(500).json({ error: 'Failed to create download' });
+    }
+  });
+
+  // Internal API for Python processor to create clips
+  app.post('/api/clips', async (req, res) => {
+    try {
+      const validatedData = insertClipSchema.parse(req.body);
+      const clip = await storage.createClip(validatedData);
+      
+      // Broadcast SSE event about new clip
+      broadcastSSE({
+        type: 'clip-generated',
+        data: clip,
+      });
+      
+      res.json(clip);
+    } catch (error) {
+      console.error('Error creating clip:', error);
+      res.status(400).json({ error: 'Invalid clip data' });
+    }
+  });
+
+  // Internal API for Python processor to send metrics updates
+  app.post('/api/internal/metrics', async (req, res) => {
+    try {
+      // Update processing status with data from Python processor
+      const metricsData = req.body;
+      
+      // Update uptime if session is active
+      if (sessionStartTime && metricsData.isProcessing) {
+        const uptime = Date.now() - sessionStartTime.getTime();
+        const hours = Math.floor(uptime / (1000 * 60 * 60));
+        const minutes = Math.floor((uptime % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((uptime % (1000 * 60)) / 1000);
+        metricsData.streamUptime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+      }
+      
+      // Update global processing status
+      processingStatus = { ...processingStatus, ...metricsData };
+      
+      // Broadcast updated metrics via SSE
+      broadcastSSE({
+        type: 'processing-status',
+        data: processingStatus,
+      });
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error updating metrics:', error);
+      res.status(500).json({ error: 'Failed to update metrics' });
     }
   });
 

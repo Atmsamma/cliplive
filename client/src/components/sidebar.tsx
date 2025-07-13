@@ -57,10 +57,10 @@ export default function Sidebar() {
           const isActive = location === item.path;
           
           return (
-            <Link key={item.path} href={item.path}>
-              <a
+            <Link key={item.path} href={item.path} asChild>
+              <div
                 className={cn(
-                  "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors",
+                  "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors cursor-pointer",
                   isActive
                     ? "bg-blue-500 text-white"
                     : "text-slate-300 hover:bg-slate-700 hover:text-white"
@@ -73,7 +73,7 @@ export default function Sidebar() {
                     {item.badge}
                   </span>
                 )}
-              </a>
+              </div>
             </Link>
           );
         })}
