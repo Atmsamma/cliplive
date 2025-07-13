@@ -18,6 +18,123 @@ from typing import Dict, Any, Optional, List
 from queue import Queue, Empty
 import requests
 from collections import deque
+import statistics
+import numpy as np
+
+class BaselineTracker:
+    """Tracks baseline metrics for adaptive threshold detection."""
+    
+    def __init__(self, calibration_seconds: int = 120):
+        """
+        Initialize baseline tracker.
+        
+        Args:
+            calibration_seconds: Duration to collect baseline data
+        """
+        self.calibration_seconds = calibration_seconds
+        self.calibration_start = None
+        self.is_calibrating = True
+        self.is_calibrated = False
+        
+        # Metric collections for baseline calculation
+        self.audio_levels = deque(maxlen=1000)
+        self.motion_levels = deque(maxlen=1000) 
+        self.scene_changes = deque(maxlen=1000)
+        
+        # Calculated baseline statistics
+        self.audio_baseline = {'mean': 0, 'std': 1}
+        self.motion_baseline = {'mean': 0, 'std': 1}
+        self.scene_baseline = {'mean': 0, 'std': 1}
+        
+        # Adaptive thresholds (in standard deviations)
+        self.audio_sensitivity = 2.5  # Audio spikes need 2.5 std above baseline
+        self.motion_sensitivity = 2.0  # Motion needs 2.0 std above baseline
+        self.scene_sensitivity = 1.5   # Scene changes need 1.5 std above baseline
+        
+    def start_calibration(self):
+        """Start the calibration period."""
+        self.calibration_start = time.time()
+        self.is_calibrating = True
+        self.is_calibrated = False
+        print(f"🎯 Starting {self.calibration_seconds}s baseline calibration...")
+        
+    def add_metrics(self, audio_level: float, motion_level: float, scene_change: float):
+        """Add new metrics to baseline tracking."""
+        if self.is_calibrating:
+            self.audio_levels.append(audio_level)
+            self.motion_levels.append(motion_level)
+            self.scene_changes.append(scene_change)
+            
+            # Check if calibration period is complete
+            if (time.time() - self.calibration_start) >= self.calibration_seconds:
+                self._finalize_calibration()
+                
+    def _finalize_calibration(self):
+        """Calculate baseline statistics from collected data."""
+        if len(self.audio_levels) < 30:  # Need minimum samples
+            print("⚠️  Insufficient data for calibration, extending period...")
+            return
+            
+        # Calculate baseline statistics
+        self.audio_baseline = {
+            'mean': statistics.mean(self.audio_levels),
+            'std': max(statistics.stdev(self.audio_levels), 1.0)  # Minimum std of 1
+        }
+        
+        self.motion_baseline = {
+            'mean': statistics.mean(self.motion_levels),
+            'std': max(statistics.stdev(self.motion_levels), 1.0)
+        }
+        
+        self.scene_baseline = {
+            'mean': statistics.mean(self.scene_changes),
+            'std': max(statistics.stdev(self.scene_changes), 0.1)
+        }
+        
+        self.is_calibrating = False
+        self.is_calibrated = True
+        
+        print(f"✅ Baseline calibration complete!")
+        print(f"   Audio: {self.audio_baseline['mean']:.1f} ± {self.audio_baseline['std']:.1f}")
+        print(f"   Motion: {self.motion_baseline['mean']:.1f} ± {self.motion_baseline['std']:.1f}")
+        print(f"   Scene: {self.scene_baseline['mean']:.3f} ± {self.scene_baseline['std']:.3f}")
+        
+    def check_anomaly(self, audio_level: float, motion_level: float, scene_change: float) -> Optional[str]:
+        """Check if current metrics represent an anomaly worth clipping."""
+        if not self.is_calibrated:
+            return None  # Don't detect during calibration
+            
+        # Calculate z-scores (how many standard deviations above baseline)
+        audio_z = (audio_level - self.audio_baseline['mean']) / self.audio_baseline['std']
+        motion_z = (motion_level - self.motion_baseline['mean']) / self.motion_baseline['std']
+        scene_z = (scene_change - self.scene_baseline['mean']) / self.scene_baseline['std']
+        
+        # Check for anomalies
+        if audio_z >= self.audio_sensitivity:
+            confidence = min(100, int((audio_z / self.audio_sensitivity) * 100))
+            return f"Audio Anomaly ({confidence}% confidence, +{audio_z:.1f}σ)"
+            
+        if motion_z >= self.motion_sensitivity:
+            confidence = min(100, int((motion_z / self.motion_sensitivity) * 100))
+            return f"Motion Anomaly ({confidence}% confidence, +{motion_z:.1f}σ)"
+            
+        if scene_z >= self.scene_sensitivity:
+            confidence = min(100, int((scene_z / self.scene_sensitivity) * 100))
+            return f"Scene Anomaly ({confidence}% confidence, +{scene_z:.1f}σ)"
+            
+        return None
+        
+    def get_calibration_progress(self) -> float:
+        """Get calibration progress as percentage."""
+        if not self.is_calibrating:
+            return 100.0
+        elapsed = time.time() - self.calibration_start
+        return min(100.0, (elapsed / self.calibration_seconds) * 100)
+        
+    def adapt_sensitivity(self, clip_feedback: str = None):
+        """Adapt sensitivity based on user feedback or stream characteristics."""
+        # Future enhancement: adjust thresholds based on clip quality feedback
+        pass
 
 class StreamBuffer:
     """Circular buffer to store recent stream segments for clipping."""
@@ -97,10 +214,18 @@ class StreamProcessor:
         self.clips_generated = 0
         self.start_time = None
         
-        # Detection thresholds
+        # Detection thresholds (legacy - will be replaced by adaptive)
         self.audio_threshold = config.get('audioThreshold', 6)  # dB
         self.motion_threshold = config.get('motionThreshold', 30)  # percentage
         self.clip_length = config.get('clipLength', 20)  # seconds
+        
+        # Adaptive baseline detection
+        self.baseline_tracker = BaselineTracker(calibration_seconds=120)
+        self.use_adaptive_detection = config.get('useAdaptiveDetection', True)
+        
+        # Cooldown system to prevent duplicate clips
+        self.last_clip_time = 0
+        self.clip_cooldown = 10  # Minimum seconds between clips
         
         # Ensure clips directory exists
         self.clips_dir = os.path.join(os.getcwd(), 'clips')
@@ -134,6 +259,10 @@ class StreamProcessor:
             self.capture_thread.start()
             self.analysis_thread.start()
             self.metrics_thread.start()
+            
+            # Start adaptive baseline calibration
+            if self.use_adaptive_detection:
+                self.baseline_tracker.start_calibration()
             
             print(f"Started stream processing for URL: {self.config['url']}")
             return True
@@ -196,21 +325,58 @@ class StreamProcessor:
                 # Update processing stats
                 self.frames_processed += metrics.get('frames_analyzed', 30)
                 
+                # Add metrics to baseline tracker
+                if self.use_adaptive_detection:
+                    self.baseline_tracker.add_metrics(
+                        metrics.get('audio_level', 0),
+                        metrics.get('motion_level', 0),
+                        metrics.get('scene_change', 0)
+                    )
+                
                 # Check for highlight triggers
                 detection_time = latest_segment['timestamp']
-                trigger_reason = self._check_highlight_triggers(metrics)
+                trigger_reason = None
                 
-                if trigger_reason:
+                if self.use_adaptive_detection:
+                    # Use adaptive anomaly detection
+                    trigger_reason = self.baseline_tracker.check_anomaly(
+                        metrics.get('audio_level', 0),
+                        metrics.get('motion_level', 0),
+                        metrics.get('scene_change', 0)
+                    )
+                else:
+                    # Fallback to fixed thresholds
+                    trigger_reason = self._check_highlight_triggers(metrics)
+                
+                # Apply cooldown to prevent spam clips
+                current_time = time.time()
+                if trigger_reason and (current_time - self.last_clip_time) >= self.clip_cooldown:
                     print(f"Highlight detected: {trigger_reason} at {detection_time}")
                     self._create_highlight_clip(detection_time, trigger_reason)
+                    self.last_clip_time = current_time
+                elif trigger_reason:
+                    print(f"Skipping clip due to cooldown: {trigger_reason}")
                 
                 # Queue metrics for SSE updates
-                self.metrics_queue.put({
+                metrics_update = {
                     'frames_processed': self.frames_processed,
                     'audio_level': metrics.get('audio_level', 0),
                     'motion_level': metrics.get('motion_level', 0),
                     'scene_change': metrics.get('scene_change', 0),
-                })
+                }
+                
+                # Add adaptive detection status
+                if self.use_adaptive_detection:
+                    metrics_update.update({
+                        'calibration_progress': self.baseline_tracker.get_calibration_progress(),
+                        'is_calibrating': self.baseline_tracker.is_calibrating,
+                        'is_calibrated': self.baseline_tracker.is_calibrated,
+                        'detection_mode': 'adaptive'
+                    })
+                else:
+                    metrics_update['detection_mode'] = 'fixed'
+                    
+                self.metrics_queue.put(metrics_update)
                 
                 time.sleep(1)
                 
