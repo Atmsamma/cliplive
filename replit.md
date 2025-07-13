@@ -21,16 +21,16 @@ Preferred communication style: Simple, everyday language.
 ### Backend Architecture
 - **Primary Server**: Express.js with TypeScript (port 5000)
 - **Secondary Server**: Flask with Python (port 5001) - for stream processing
-- **Data Storage**: In-memory storage with file-based persistence
+- **Data Storage**: PostgreSQL database with Drizzle ORM
 - **Real-time Communication**: Server-Sent Events (SSE) for live updates
 
 ### Key Design Decisions
 
 1. **Dual Backend Approach**: Express.js handles the main API while a separate Flask server manages stream processing. This separation allows for specialized tools (FFmpeg, Streamlink) in Python while maintaining a fast TypeScript API.
 
-2. **No Database**: The application rebuilds state from the filesystem, making deployment simpler and reducing dependencies.
+2. **PostgreSQL Database**: The application now uses a PostgreSQL database with Drizzle ORM for persistent data storage, replacing the previous in-memory approach.
 
-3. **File-based Storage**: Video clips are stored directly in the filesystem with metadata managed in memory.
+3. **File-based Storage**: Video clips are stored directly in the filesystem with metadata managed in the PostgreSQL database.
 
 ## Key Components
 

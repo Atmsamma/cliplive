@@ -1,4 +1,6 @@
 import { clips, streamSessions, type Clip, type InsertClip, type StreamSession, type InsertStreamSession } from "@shared/schema";
+import { db } from "./db";
+import { eq, desc } from "drizzle-orm";
 import fs from "fs";
 import path from "path";
 
@@ -16,18 +18,8 @@ export interface IStorage {
   getStreamSessions(): Promise<StreamSession[]>;
 }
 
-export class MemStorage implements IStorage {
-  private clips: Map<number, Clip>;
-  private streamSessions: Map<number, StreamSession>;
-  private currentClipId: number;
-  private currentSessionId: number;
-
+export class DatabaseStorage implements IStorage {
   constructor() {
-    this.clips = new Map();
-    this.streamSessions = new Map();
-    this.currentClipId = 1;
-    this.currentSessionId = 1;
-    
     // Clear any existing clips directory on startup
     this.clearClipsDirectory();
   }
@@ -50,68 +42,65 @@ export class MemStorage implements IStorage {
 
   // Clips
   async createClip(insertClip: InsertClip): Promise<Clip> {
-    const id = this.currentClipId++;
-    const clip: Clip = {
-      ...insertClip,
-      id,
-      createdAt: new Date(),
-    };
-    this.clips.set(id, clip);
+    const [clip] = await db
+      .insert(clips)
+      .values(insertClip)
+      .returning();
     return clip;
   }
 
   async getClips(): Promise<Clip[]> {
-    return Array.from(this.clips.values()).sort(
-      (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
-    );
+    return await db
+      .select()
+      .from(clips)
+      .orderBy(desc(clips.createdAt));
   }
 
   async getClip(id: number): Promise<Clip | undefined> {
-    return this.clips.get(id);
+    const [clip] = await db.select().from(clips).where(eq(clips.id, id));
+    return clip || undefined;
   }
 
   async deleteClip(id: number): Promise<boolean> {
-    return this.clips.delete(id);
+    const result = await db.delete(clips).where(eq(clips.id, id));
+    return result.rowCount > 0;
   }
 
   // Stream Sessions
   async createStreamSession(insertSession: InsertStreamSession): Promise<StreamSession> {
-    const id = this.currentSessionId++;
-    const session: StreamSession = {
-      ...insertSession,
-      id,
-      startedAt: new Date(),
-      stoppedAt: null,
-    };
-    this.streamSessions.set(id, session);
+    const [session] = await db
+      .insert(streamSessions)
+      .values(insertSession)
+      .returning();
     return session;
   }
 
   async getActiveSession(): Promise<StreamSession | undefined> {
-    return Array.from(this.streamSessions.values()).find(
-      session => session.isActive
-    );
+    const [session] = await db
+      .select()
+      .from(streamSessions)
+      .where(eq(streamSessions.isActive, true));
+    return session || undefined;
   }
 
   async updateSessionStatus(id: number, isActive: boolean): Promise<StreamSession | undefined> {
-    const session = this.streamSessions.get(id);
-    if (session) {
-      const updatedSession = {
-        ...session,
+    const [session] = await db
+      .update(streamSessions)
+      .set({ 
         isActive,
         stoppedAt: !isActive ? new Date() : null,
-      };
-      this.streamSessions.set(id, updatedSession);
-      return updatedSession;
-    }
-    return undefined;
+      })
+      .where(eq(streamSessions.id, id))
+      .returning();
+    return session || undefined;
   }
 
   async getStreamSessions(): Promise<StreamSession[]> {
-    return Array.from(this.streamSessions.values()).sort(
-      (a, b) => b.startedAt.getTime() - a.startedAt.getTime()
-    );
+    return await db
+      .select()
+      .from(streamSessions)
+      .orderBy(desc(streamSessions.startedAt));
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
