@@ -1,8 +1,8 @@
-# Stream Clipper Application
+# Clip Live Application
 
 ## Overview
 
-This is an automatic livestream highlight capture tool that detects exciting moments from public streams and creates video clips. The application features a dual backend architecture with real-time processing capabilities and a modern React frontend.
+Clip Live is an automatic livestream highlight capture tool that detects exciting moments from public streams and creates video clips in real-time. The application features a dual backend architecture with real-time processing capabilities and a modern React frontend.
 
 ## User Preferences
 

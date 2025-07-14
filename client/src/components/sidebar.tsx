@@ -1,11 +1,32 @@
 import { Link, useLocation } from "wouter";
-import { Video, Film, Settings } from "lucide-react";
+import { 
+  SidebarContent, 
+  SidebarHeader, 
+  SidebarMenu, 
+  SidebarMenuItem, 
+  SidebarMenuButton,
+  Sidebar as SidebarPrimitive
+} from "@/components/ui/sidebar";
+import { Video, Library, Activity } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 
+const navigation = [
+  {
+    name: "Stream Capture",
+    href: "/",
+    icon: Video,
+  },
+  {
+    name: "Clip Library", 
+    href: "/clips",
+    icon: Library,
+  },
+];
+
 export default function Sidebar() {
   const [location] = useLocation();
-  
+
   const { data: status } = useQuery({
     queryKey: ["/api/status"],
     refetchInterval: 1000,
@@ -36,26 +57,25 @@ export default function Sidebar() {
   ];
 
   return (
-    <div className="w-64 bg-slate-800 border-r border-slate-600 flex flex-col">
-      {/* Logo/Header */}
-      <div className="p-6 border-b border-slate-600">
+    <SidebarPrimitive className="border-r border-slate-600 bg-slate-800">
+      <SidebarHeader className="p-6 border-b border-slate-600">
         <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
-            <Video className="text-white" size={16} />
+          <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+            <Activity className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="text-lg font-semibold text-slate-50">Stream Clipper</h1>
-            <p className="text-xs text-slate-400">Highlight Capture</p>
+            <h1 className="text-lg font-semibold text-slate-50">Clip Live</h1>
+            <p className="text-xs text-slate-400">Real-Time Highlights</p>
           </div>
         </div>
-      </div>
+      </SidebarHeader>
 
       {/* Navigation */}
       <nav className="flex-1 p-4 space-y-2">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = location === item.path;
-          
+
           return (
             <Link key={item.path} href={item.path} asChild>
               <div
@@ -99,6 +119,6 @@ export default function Sidebar() {
           <div>Uptime: {status?.streamUptime || "00:00:00"}</div>
         </div>
       </div>
-    </div>
+    </SidebarPrimitive>
   );
 }

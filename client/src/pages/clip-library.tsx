@@ -21,7 +21,7 @@ export default function ClipLibrary() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-xl font-semibold text-slate-50">Clip Library</h2>
-            <p className="text-slate-400 text-sm">Manage and download your captured highlights</p>
+            <p className="text-slate-400 text-sm">Browse and manage your Clip Live captures</p>
           </div>
           <div className="flex items-center space-x-2">
             <span className="text-sm text-slate-400">Total: {clips.length} clips</span>
