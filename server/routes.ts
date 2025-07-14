@@ -268,39 +268,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const videoPath = path.join(process.cwd(), "clips", filename);
     const thumbnailPath = path.join(process.cwd(), "clips", "thumbnails", `${filename}.jpg`);
 
+    console.log(`Thumbnail request for: ${filename}`);
+    console.log(`Video path: ${videoPath}`);
+    console.log(`Thumbnail path: ${thumbnailPath}`);
+
     if (!fs.existsSync(videoPath)) {
+      console.log(`Video file not found: ${videoPath}`);
       return res.status(404).json({ error: "Video file not found" });
     }
 
     // Create thumbnails directory if it doesn't exist
     const thumbnailDir = path.join(process.cwd(), "clips", "thumbnails");
     if (!fs.existsSync(thumbnailDir)) {
+      console.log(`Creating thumbnails directory: ${thumbnailDir}`);
       fs.mkdirSync(thumbnailDir, { recursive: true });
     }
 
     // Check if thumbnail already exists
     if (fs.existsSync(thumbnailPath)) {
+      console.log(`Serving existing thumbnail: ${thumbnailPath}`);
       return res.sendFile(thumbnailPath);
     }
 
     try {
+      console.log(`Generating thumbnail for: ${filename}`);
       // Generate thumbnail using FFmpeg
       const { exec } = require('child_process');
       await new Promise((resolve, reject) => {
-        exec(
-          `ffmpeg -i "${videoPath}" -ss 00:00:02 -vframes 1 -vf "scale=320:180:force_original_aspect_ratio=decrease,pad=320:180:(ow-iw)/2:(oh-ih)/2" "${thumbnailPath}"`,
-          (error: any, stdout: any, stderr: any) => {
-            if (error) {
-              console.error('Thumbnail generation error:', error);
-              reject(error);
-            } else {
-              resolve(stdout);
-            }
+        const ffmpegCmd = `ffmpeg -i "${videoPath}" -ss 00:00:02 -vframes 1 -vf "scale=320:180:force_original_aspect_ratio=decrease,pad=320:180:(ow-iw)/2:(oh-ih)/2" -y "${thumbnailPath}"`;
+        console.log(`Running FFmpeg command: ${ffmpegCmd}`);
+        
+        exec(ffmpegCmd, (error: any, stdout: any, stderr: any) => {
+          if (error) {
+            console.error('Thumbnail generation error:', error);
+            console.error('FFmpeg stderr:', stderr);
+            reject(error);
+          } else {
+            console.log('Thumbnail generated successfully');
+            console.log('FFmpeg stdout:', stdout);
+            resolve(stdout);
           }
-        );
+        });
       });
 
-      res.sendFile(thumbnailPath);
+      if (fs.existsSync(thumbnailPath)) {
+        console.log(`Sending generated thumbnail: ${thumbnailPath}`);
+        res.sendFile(thumbnailPath);
+      } else {
+        console.error('Thumbnail file was not created');
+        res.status(500).json({ error: "Thumbnail file was not created" });
+      }
     } catch (error) {
       console.error('Failed to generate thumbnail:', error);
       res.status(500).json({ error: "Failed to generate thumbnail" });

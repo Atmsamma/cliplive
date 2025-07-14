@@ -80,9 +80,16 @@ export default function ClipList({ clips, showActions = false }: ClipListProps) 
                 src={`/api/thumbnails/${clip.filename}`}
                 alt={`${clip.filename} thumbnail`}
                 className="w-full h-full object-cover transition-transform duration-200"
+                onLoad={(e) => {
+                  // Hide placeholder when image loads successfully
+                  const placeholder = e.currentTarget.nextElementSibling as HTMLElement;
+                  if (placeholder) placeholder.style.display = 'none';
+                }}
                 onError={(e) => {
-                  // Fallback to placeholder if thumbnail fails to load
+                  // Show placeholder if thumbnail fails to load
                   e.currentTarget.style.display = 'none';
+                  const placeholder = e.currentTarget.nextElementSibling as HTMLElement;
+                  if (placeholder) placeholder.style.display = 'flex';
                 }}
               />
               {/* Fallback placeholder when image fails to load */}
