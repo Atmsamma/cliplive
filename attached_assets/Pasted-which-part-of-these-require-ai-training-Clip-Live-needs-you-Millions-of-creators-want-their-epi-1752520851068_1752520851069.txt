@@ -1,0 +1,89 @@
+which part of these require ai training 🎬 Clip Live needs you!
+Millions of creators want their epic moments caught the very second they explode on-screen. Your brain will power the open-source engine that listens, reads, and slices highlights in real time—no paid software, no waiting.
+
+👔 Your Role
+You are an Expert Open-Source Audio-Video AI Engineer. Your job: build Clip Live’s “Intelligent Phonetic + Semantic Detector.” It must run on any mid-range PC or cloud VM using only free, permissive-license tools.
+
+🛠 Key Tasks
+Ingest the live feed
+
+Use streamlink -O <url> best to pull raw audio+video.
+
+Pipe to FFmpeg (-flags2 +export_mvs) for motion vectors.
+
+Extract real-time phonetic clues
+
+Calculate loudness with FFmpeg astats.
+
+Derive pitch and formants every 0.5 s with pyworld.
+
+Compute spectral centroid & onset strength using librosa.
+
+Run open-source speech-to-text
+
+Stream PCM to Whisper.cpp (tiny or base.en model) OR Vosk if CPU-only.
+
+Keep latency < 2 s; emit interim words.
+
+Semantic analysis on each caption burst
+
+Use NLTK + VADER for sentiment score.
+
+Detect hype words with a fuzzy keyword list (OMG, clutch, insane, etc.).
+
+Generate embeddings via Sentence-Transformers all-MiniLM-L6 to compute cosine similarity against “excited” seed phrases.
+
+Fuse signals into one excitement score
+
+Normalise: z-score loudness, pitch variance, motion magnitude, sentiment.
+
+Feed into a scikit-learn LogisticRegression; trigger when P ≥ 0.80 two seconds in a row.
+
+Save model as model.pkl; allow nightly retrain with fresh labels.
+
+Clip creation
+
+On trigger, call FFmpeg to copy-cut 10 s before + 20 s after the spike.
+
+Name file clip_<timestamp>.mp4; copy caption segment to clip_<timestamp>.srt.
+
+Data logging
+
+Every second, append to events.csv →
+time,loud_db,pitch_var,motion_avg,sentiment,excited_prob,clip_flag.
+
+Feedback loop
+
+Move clips the user keeps to /keep/; those deleted to /drop/.
+
+Nightly script retrains LogisticRegression with new labels.
+
+Packaging & UI
+
+Provide a CLI (python clip_live.py <url>) and optional Flask dashboard that charts live loudness, motion, and captions with Plotly.js.
+
+Containerise with Docker (python:3.11-slim, ffmpeg, whisper.cpp build).
+
+Testing & docs
+
+Unit tests via pytest for feature extractors.
+
+Write a README.md covering install on Windows/Linux/Mac, GPU and CPU modes, env vars, and example commands.
+
+📦 Expected Output
+clip_live/ repo with:
+
+ingest.py, features.py, model.py, clipper.py, app.py, tests/
+
+requirements.txt listing only MIT/BSD/GPL libraries
+
+Dockerfile and docker-compose.yml
+
+At least one demo clip after running five minutes on a public Twitch stream.
+
+Clear comments and docstrings explaining each function in 5th-grade English.
+
+🚀 Take it seriously
+Creators will judge Clip Live by the highlights you capture. Code must be clean, efficient, and crash-proof. Log errors, handle network drops, and keep CPU < 70 % on a modest machine. Remember: only free, open-source tools—no SaaS, no paid APIs.
+
+Go build the smartest, fastest, totally free Clip Live engine the world has ever seen!
