@@ -696,10 +696,12 @@ class StreamProcessor:
                     if size > 50000 or path.endswith(('.ts', '.mp4', '.m4v', '.mkv')):
                         real_video_segments.append(seg)
 
-            # If no real video segments, create mock clip
+            # If no real video segments, FAIL - don't create mock clips
             if not real_video_segments:
-                print("No real video segments found, creating mock clip for development")
-                return self._create_mock_clip(output_path, trigger_reason)
+                print("❌ CRITICAL: No real video segments found - cannot create clip from stream")
+                print("❌ Stream capture has failed - stopping processing")
+                self.is_running = False
+                return False
 
             # Use real video segments for clipping
             segments = real_video_segments
@@ -787,15 +789,18 @@ class StreamProcessor:
                 return True
             else:
                 print(f"❌ FFmpeg error: {result.stderr}")
-                # Fallback to mock clip for development
-                return self._create_mock_clip(output_path, trigger_reason)
+                print("❌ CRITICAL: Real video clipping failed - stopping processing")
+                self.is_running = False
+                return False
 
         except subprocess.TimeoutExpired:
-            print("FFmpeg command timed out")
-            return self._create_mock_clip(output_path, trigger_reason)
+            print("❌ CRITICAL: FFmpeg command timed out - real stream required")
+            self.is_running = False
+            return False
         except Exception as e:
-            print(f"FFmpeg clip creation error: {e}")
-            return self._create_mock_clip(output_path, trigger_reason)
+            print(f"❌ CRITICAL: FFmpeg clip creation error: {e}")
+            self.is_running = False
+            return False
 
     def _create_realtime_clip(self, buffered_segments, output_path, trigger_reason, before_duration, after_duration):
         """Create a clip by combining buffered content with real-time capture to reach full duration."""
@@ -858,11 +863,14 @@ class StreamProcessor:
                 return True
             else:
                 print(f"❌ Real-time FFmpeg error: {result.stderr}")
-                return self._create_mock_clip(output_path, trigger_reason)
+                print("❌ CRITICAL: Real-time clipping failed - stopping processing")
+                self.is_running = False
+                return False
                 
         except Exception as e:
-            print(f"Real-time clip creation error: {e}")
-            return self._create_mock_clip(output_path, trigger_reason)
+            print(f"❌ CRITICAL: Real-time clip creation error: {e}")
+            self.is_running = False
+            return False
 
     def _capture_additional_content(self, duration_needed):
         """Capture additional real-time content to fill the clip duration."""
@@ -919,12 +927,14 @@ class StreamProcessor:
             if result.returncode == 0:
                 return True
             else:
-                # Create mock clip for development
-                return self._create_mock_clip(output_path, trigger_reason)
+                print("❌ CRITICAL: Standard clip creation failed - stopping processing")
+                self.is_running = False
+                return False
 
         except Exception as e:
-            print(f"Standard clip creation error: {e}")
-            return self._create_mock_clip(output_path, trigger_reason)
+            print(f"❌ CRITICAL: Standard clip creation error: {e}")
+            self.is_running = False
+            return False
 
     def _capture_real_segment(self, segment_path: str) -> bool:
         """Capture a real video segment using Streamlink - NO FALLBACKS."""
@@ -1047,16 +1057,7 @@ class StreamProcessor:
         except Exception as e:
             print(f"Error notifying clip creation: {e}")
 
-    def _create_mock_clip(self, clip_path: str, trigger_reason: str) -> bool:
-        """Create a mock clip file for development."""
-        try:
-            # Create a larger file to simulate a video clip
-            with open(clip_path, 'wb') as f:
-                f.write(b'\x00' * (1024 * 1024 * 10))  # 10MB mock file
-            return True
-        except Exception as e:
-            print(f"Error creating mock clip: {e}")
-            return False
+    
 
     def _metrics_update_loop(self):
         """Send periodic metrics updates via SSE."""
