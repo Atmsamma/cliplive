@@ -1,6 +1,6 @@
+
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { TrendingUp } from "lucide-react";
 import { useSSE } from "@/hooks/use-sse";
 
@@ -13,6 +13,32 @@ export default function ProcessingStatus() {
   // Listen for SSE updates
   useSSE("/api/events");
 
+  // Determine animation state based on stream data
+  const getAnimationState = () => {
+    if (!status?.currentSession) return 'idle';
+    
+    const audioLevel = status?.audioLevel || 0;
+    const motionLevel = status?.motionLevel || 0;
+    const sceneChange = status?.sceneChange || 0;
+    
+    // High activity - fast animation
+    if (audioLevel > 60 || motionLevel > 60 || sceneChange > 0.8) {
+      return 'high';
+    }
+    // Medium activity - medium animation
+    if (audioLevel > 30 || motionLevel > 30 || sceneChange > 0.4) {
+      return 'medium';
+    }
+    // Low activity - slow animation
+    if (audioLevel > 10 || motionLevel > 10 || sceneChange > 0.1) {
+      return 'low';
+    }
+    
+    return 'idle';
+  };
+
+  const animationState = getAnimationState();
+
   return (
     <Card className="bg-slate-800 border-slate-600 mb-6">
       <CardHeader>
@@ -22,64 +48,58 @@ export default function ProcessingStatus() {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-          <div className="text-center">
-            <div className="text-3xl font-bold text-slate-300 mb-1">
-              {status?.framesProcessed || 0}
-            </div>
-            <div className="text-sm text-slate-400">Frames Processed</div>
-          </div>
-          <div className="text-center">
+        <div className="flex flex-col items-center justify-center py-8">
+          <div className="text-center mb-6">
             <div className="text-3xl font-bold text-emerald-400 mb-1">
               {status?.currentSession ? 'LIVE' : 'IDLE'}
             </div>
-            <div className="text-sm text-slate-400">Status</div>
-          </div>
-          <div className="text-center">
-            <div className="text-3xl font-bold text-blue-400 mb-1">
+            <div className="text-sm text-slate-400">
               {status?.streamUptime || "00:00:00"}
             </div>
-            <div className="text-sm text-slate-400">Stream Uptime</div>
           </div>
-        </div>
 
-        {/* Real-time Metrics */}
-        <div className="space-y-4">
-          <div>
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-slate-300">Audio Level</span>
-              <span className="text-slate-400">
-                -{Math.floor(Math.random() * 30)}dB
-              </span>
-            </div>
-            <Progress
-              value={status?.audioLevel || 0}
-              className="bg-slate-700 [&>div]:bg-emerald-400"
+          {/* Reactive GIF Animation */}
+          <div className="relative w-32 h-32 mb-4">
+            <div 
+              className={`absolute inset-0 rounded-full bg-gradient-to-r from-emerald-500 to-blue-500 opacity-20 ${
+                animationState === 'high' ? 'animate-ping' :
+                animationState === 'medium' ? 'animate-pulse' :
+                animationState === 'low' ? 'animate-bounce' : ''
+              }`}
+            />
+            <div 
+              className={`absolute inset-2 rounded-full bg-gradient-to-r from-emerald-400 to-blue-400 opacity-40 ${
+                animationState === 'high' ? 'animate-spin' :
+                animationState === 'medium' ? 'animate-pulse' :
+                animationState === 'low' ? 'animate-bounce' : ''
+              }`}
+            />
+            <div 
+              className={`absolute inset-4 rounded-full bg-gradient-to-r from-emerald-300 to-blue-300 opacity-60 ${
+                animationState === 'high' ? 'animate-bounce' :
+                animationState === 'medium' ? 'animate-ping' :
+                animationState === 'low' ? 'animate-pulse' : ''
+              }`}
+            />
+            <div 
+              className={`absolute inset-8 rounded-full bg-white ${
+                animationState === 'high' ? 'animate-pulse' :
+                animationState === 'medium' ? 'animate-bounce' :
+                animationState === 'low' ? 'animate-ping' : 'opacity-50'
+              }`}
             />
           </div>
-          
-          <div>
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-slate-300">Motion Detection</span>
-              <span className="text-slate-400">{status?.motionLevel || 0}%</span>
+
+          {/* Status Text */}
+          <div className="text-center">
+            <div className="text-lg font-medium text-slate-300 mb-1">
+              {animationState === 'high' ? 'High Activity' :
+               animationState === 'medium' ? 'Medium Activity' :
+               animationState === 'low' ? 'Low Activity' : 'Monitoring'}
             </div>
-            <Progress
-              value={status?.motionLevel || 0}
-              className="bg-slate-700 [&>div]:bg-blue-400"
-            />
-          </div>
-          
-          <div>
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-slate-300">Scene Change</span>
-              <span className="text-slate-400">
-                {status?.sceneChange?.toFixed(2) || "0.00"}
-              </span>
+            <div className="text-sm text-slate-400">
+              {status?.framesProcessed || 0} frames processed
             </div>
-            <Progress
-              value={(status?.sceneChange || 0) * 100}
-              className="bg-slate-700 [&>div]:bg-purple-400"
-            />
           </div>
         </div>
       </CardContent>
