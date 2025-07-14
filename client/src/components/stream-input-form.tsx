@@ -15,8 +15,6 @@ import { apiRequest } from "@/lib/queryClient";
 
 const streamConfigSchema = z.object({
   url: z.string().url("Please enter a valid URL"),
-  audioThreshold: z.number().default(6),
-  motionThreshold: z.number().default(30),
   clipLength: z.number().default(20),
 });
 
@@ -35,8 +33,6 @@ export default function StreamInputForm() {
     resolver: zodResolver(streamConfigSchema),
     defaultValues: {
       url: "",
-      audioThreshold: 6,
-      motionThreshold: 30,
       clipLength: 20,
     },
   });
@@ -126,88 +122,37 @@ export default function StreamInputForm() {
               )}
             />
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <FormField
-                control={form.control}
-                name="audioThreshold"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-slate-300">Audio Threshold</FormLabel>
-                    <Select
-                      value={field.value.toString()}
-                      onValueChange={(value) => field.onChange(parseInt(value))}
-                      disabled={status?.isProcessing}
-                    >
-                      <FormControl>
-                        <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-100">
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent className="bg-slate-700 border-slate-600">
-                        <SelectItem value="3" className="text-slate-100">3dB (Sensitive)</SelectItem>
-                        <SelectItem value="6" className="text-slate-100">6dB (Default)</SelectItem>
-                        <SelectItem value="9" className="text-slate-100">9dB (Conservative)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="motionThreshold"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-slate-300">Motion Threshold</FormLabel>
-                    <Select
-                      value={field.value.toString()}
-                      onValueChange={(value) => field.onChange(parseInt(value))}
-                      disabled={status?.isProcessing}
-                    >
-                      <FormControl>
-                        <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-100">
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent className="bg-slate-700 border-slate-600">
-                        <SelectItem value="20" className="text-slate-100">20% (Sensitive)</SelectItem>
-                        <SelectItem value="30" className="text-slate-100">30% (Default)</SelectItem>
-                        <SelectItem value="40" className="text-slate-100">40% (Conservative)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="clipLength"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-slate-300">Clip Length</FormLabel>
-                    <Select
-                      value={field.value.toString()}
-                      onValueChange={(value) => field.onChange(parseInt(value))}
-                      disabled={status?.isProcessing}
-                    >
-                      <FormControl>
-                        <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-100">
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent className="bg-slate-700 border-slate-600">
-                        <SelectItem value="10" className="text-slate-100">10 seconds</SelectItem>
-                        <SelectItem value="15" className="text-slate-100">15 seconds</SelectItem>
-                        <SelectItem value="20" className="text-slate-100">20 seconds</SelectItem>
-                        <SelectItem value="30" className="text-slate-100">30 seconds</SelectItem>
-                        <SelectItem value="45" className="text-slate-100">45 seconds</SelectItem>
-                        <SelectItem value="60" className="text-slate-100">60 seconds</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </FormItem>
-                )}
-              />
-            </div>
+            <FormField
+              control={form.control}
+              name="clipLength"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-slate-300">Clip Length</FormLabel>
+                  <Select
+                    value={field.value.toString()}
+                    onValueChange={(value) => field.onChange(parseInt(value))}
+                    disabled={status?.isProcessing}
+                  >
+                    <FormControl>
+                      <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-100">
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent className="bg-slate-700 border-slate-600">
+                      <SelectItem value="10" className="text-slate-100">10 seconds</SelectItem>
+                      <SelectItem value="15" className="text-slate-100">15 seconds</SelectItem>
+                      <SelectItem value="20" className="text-slate-100">20 seconds</SelectItem>
+                      <SelectItem value="30" className="text-slate-100">30 seconds</SelectItem>
+                      <SelectItem value="45" className="text-slate-100">45 seconds</SelectItem>
+                      <SelectItem value="60" className="text-slate-100">60 seconds</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-slate-400">
+                    System will automatically detect highlights using adaptive thresholds
+                  </p>
+                </FormItem>
+              )}
+            />
 
             <div className="flex space-x-3">
               <Button
