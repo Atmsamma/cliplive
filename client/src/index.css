@@ -81,7 +81,7 @@
 }
 
 .clip-card:hover {
-    @apply bg-slate-650;
+    @apply bg-slate-100 dark:bg-slate-800;
   }
 
   /* Thumbnail styling */
