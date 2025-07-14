@@ -1,4 +1,3 @@
-
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TrendingUp } from "lucide-react";
@@ -16,11 +15,11 @@ export default function ProcessingStatus() {
   // Determine animation state based on stream data
   const getAnimationState = () => {
     if (!status?.currentSession) return 'idle';
-    
+
     const audioLevel = status?.audioLevel || 0;
     const motionLevel = status?.motionLevel || 0;
     const sceneChange = status?.sceneChange || 0;
-    
+
     // High activity - fast animation
     if (audioLevel > 60 || motionLevel > 60 || sceneChange > 0.8) {
       return 'high';
@@ -33,7 +32,7 @@ export default function ProcessingStatus() {
     if (audioLevel > 10 || motionLevel > 10 || sceneChange > 0.1) {
       return 'low';
     }
-    
+
     return 'idle';
   };
 

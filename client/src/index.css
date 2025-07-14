@@ -55,5 +55,27 @@
 
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Improve touch targets on mobile */
+  @media (max-width: 768px) {
+    button, a, [role="button"] {
+      min-height: 44px;
+    }
+  }
+
+  /* Prevent horizontal scroll on mobile */
+  html, body {
+    overflow-x: hidden;
+  }
+
+  /* Better text sizing on mobile */
+  @media (max-width: 640px) {
+    body {
+      font-size: 14px;
+      line-height: 1.5;
+    }
   }
 }

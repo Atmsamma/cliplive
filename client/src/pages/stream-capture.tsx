@@ -10,7 +10,7 @@ import { apiRequest } from "@/lib/queryClient";
 
 export default function StreamCapture() {
   const { toast } = useToast();
-  
+
   const { data: status } = useQuery({
     queryKey: ["/api/status"],
     refetchInterval: 1000,
@@ -25,7 +25,7 @@ export default function StreamCapture() {
     try {
       const response = await apiRequest("GET", "/api/download-all");
       const data = await response.json();
-      
+
       toast({
         title: "Download All",
         description: data.message || "Download started",
@@ -66,7 +66,7 @@ export default function StreamCapture() {
                 {status?.isProcessing ? "Processing" : "Idle"}
               </span>
             </div>
-            
+
             {/* Download All Button */}
             <Button
               variant="outline"

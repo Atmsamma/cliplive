@@ -68,13 +68,13 @@ export default function ClipList({ clips, showActions = false }: ClipListProps) 
       {clips.map((clip) => (
         <div
           key={clip.id}
-          className="flex items-center space-x-4 p-4 bg-slate-700 rounded-lg hover:bg-slate-650 transition-colors group"
+          className="flex flex-col sm:flex-row items-center space-x-4 p-4 bg-slate-700 rounded-lg hover:bg-slate-650 transition-colors group"
         >
           {/* Thumbnail placeholder */}
           <div className="w-20 h-12 bg-slate-600 rounded flex items-center justify-center text-slate-400 flex-shrink-0">
             <Play size={16} />
           </div>
-          
+
           <div className="flex-1 min-w-0">
             <div className="flex items-center space-x-2 mb-1">
               <h4 className="text-sm font-medium text-slate-200 truncate">
@@ -93,7 +93,7 @@ export default function ClipList({ clips, showActions = false }: ClipListProps) 
           </div>
 
           {showActions && (
-            <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity mt-2 sm:mt-0">
               <Button
                 size="sm"
                 variant="ghost"
