@@ -92,7 +92,7 @@ export default function StreamInputForm() {
       <CardHeader>
         <CardTitle className="flex items-center space-x-2 text-slate-50">
           <Link className="text-blue-400" size={20} />
-          <span>Stream Configuration</span>
+          <span>Clip Configuration</span>
         </CardTitle>
       </CardHeader>
       <CardContent>
