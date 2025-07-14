@@ -73,33 +73,19 @@ class SpeechExtractor:
                     return ""
                 
             except ImportError:
-                print("⚠️ Whisper not installed, falling back to mock transcription")
-                return self._get_mock_transcription()
+                print("❌ CRITICAL: Whisper not installed - cannot process real speech")
+                print("❌ Install with: pip install openai-whisper")
+                return ""
             except Exception as whisper_error:
-                print(f"⚠️ Whisper transcription failed: {whisper_error}")
-                return self._get_mock_transcription()
+                print(f"❌ CRITICAL: Whisper transcription failed: {whisper_error}")
+                print("❌ Cannot fall back to mock data - real speech required")
+                return ""
             
         except Exception as e:
             print(f"Speech extraction error: {e}")
             return ""
     
-    def _get_mock_transcription(self) -> str:
-        """Fallback mock transcription for development."""
-        import random
-        mock_phrases = [
-            "oh my god that was insane",
-            "no way that just happened", 
-            "clutch play right there",
-            "that was amazing",
-            "incredible shot",
-            "unbelievable moment",
-            "what a play",
-            "that was sick",
-            "",  # Sometimes no speech
-            "",
-            ""
-        ]
-        return random.choice(mock_phrases)
+    
     
     def cleanup(self):
         """Clean up temporary files."""

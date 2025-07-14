@@ -342,14 +342,14 @@ class StreamProcessor:
                 segment_filename = f"segment_{segment_counter:06d}.ts"
                 segment_path = os.path.join(self.stream_buffer.temp_dir, segment_filename)
 
-                # Use streamlink to capture a 2-second segment
-                # Try real streamlink capture first
+                # Capture REAL video segment - NO MOCK FALLBACKS
                 success = self._capture_real_segment(segment_path)
 
-                # Fallback to mock for development if streamlink fails
                 if not success:
-                    print(f"Streamlink capture failed, creating mock segment for development")
-                    self._create_mock_segment(segment_path)
+                    print(f"❌ CRITICAL: Real stream capture failed - stopping processing")
+                    print(f"❌ Cannot proceed with mock data - user video is required")
+                    self.is_running = False
+                    return
 
                 if os.path.exists(segment_path):
                     self.stream_buffer.add_segment(segment_path, timestamp)
@@ -451,28 +451,21 @@ class StreamProcessor:
                 print(f"Segment file not found: {segment_path}")
                 return self._get_default_metrics()
 
-            # Check if this is a real video segment
+            # ONLY process real video segments - no mock data allowed
             file_size = os.path.getsize(segment_path)
-            is_real_video = file_size > 50000 or segment_path.endswith(('.ts', '.mp4', '.m4v', '.mkv'))
+            
+            if file_size < 50000:
+                print(f"❌ CRITICAL: Segment file too small ({file_size} bytes) - not real video")
+                return self._get_default_metrics()
 
-            if is_real_video:
-                # Use FFmpeg for real video analysis
-                return self._analyze_with_ffmpeg(segment_path)
-            else:
-                # For development with mock files, return random metrics
-                import random
-                metrics = {
-                    'frames_analyzed': 60,  # 2 seconds at 30fps
-                    'audio_level': random.randint(0, 100),
-                    'motion_level': random.randint(0, 100), 
-                    'scene_change': random.random(),
-                    'audio_db_change': random.randint(-3, 12),  # Simulate volume changes
-                }
-                return metrics
+            # Verify it's a real video file by checking format
+            if not segment_path.endswith(('.ts', '.mp4', '.m4v', '.mkv')):
+                print(f"❌ CRITICAL: Invalid video format - real video required")
+                return self._get_default_metrics()
 
-            # Real FFmpeg analysis would go here
-            metrics = self._analyze_with_ffmpeg(segment_path)
-            return metrics
+            print(f"✅ Processing REAL video segment: {file_size} bytes")
+            # Process only real video with FFmpeg
+            return self._analyze_with_ffmpeg(segment_path)
 
         except Exception as e:
             print(f"Error analyzing segment {segment_path}: {e}")
@@ -934,30 +927,31 @@ class StreamProcessor:
             return self._create_mock_clip(output_path, trigger_reason)
 
     def _capture_real_segment(self, segment_path: str) -> bool:
-        """Capture a real video segment using Streamlink with ad handling."""
+        """Capture a real video segment using Streamlink - NO FALLBACKS."""
         try:
             # Use FFmpeg directly to capture from the HLS stream URL
             # First get the stream URL from streamlink
             url_cmd = [
                 'streamlink',
                 self.config['url'],
-                'worst',
+                'best',  # Use best quality instead of worst
                 '--stream-url'
             ]
 
-            print(f"Getting stream URL: {' '.join(url_cmd)}")
-            url_result = subprocess.run(url_cmd, capture_output=True, text=True, timeout=10)
+            print(f"🔄 Getting stream URL: {' '.join(url_cmd)}")
+            url_result = subprocess.run(url_cmd, capture_output=True, text=True, timeout=15)
 
             if url_result.returncode != 0:
-                print(f"Failed to get stream URL: {url_result.stderr}")
+                print(f"❌ CRITICAL: Failed to get stream URL: {url_result.stderr}")
+                print(f"❌ Cannot process mock data - real stream required")
                 return False
 
             stream_url = url_result.stdout.strip()
             if not stream_url:
-                print("Empty stream URL received")
+                print("❌ CRITICAL: Empty stream URL received - cannot process mock data")
                 return False
 
-            print(f"Got stream URL: {stream_url[:100]}...")
+            print(f"✅ Got real stream URL: {stream_url[:100]}...")
 
             # Use FFmpeg to capture a 2-second segment directly from HLS
             ffmpeg_cmd = [
@@ -965,37 +959,35 @@ class StreamProcessor:
                 '-i', stream_url,
                 '-t', '2',  # 2 seconds
                 '-c', 'copy',  # Copy streams without re-encoding
+                '-avoid_negative_ts', 'make_zero',  # Handle timestamp issues
                 '-y',  # Overwrite output
                 segment_path
             ]
 
-            print(f"Capturing with FFmpeg: ffmpeg -i [stream] -t 2 -c copy {segment_path}")
-            ffmpeg_result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=15)
+            print(f"🎥 Capturing REAL video: ffmpeg -i [stream] -t 2 -c copy {segment_path}")
+            ffmpeg_result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=20)
 
             if ffmpeg_result.returncode == 0 and os.path.exists(segment_path):
                 file_size = os.path.getsize(segment_path)
-                if file_size > 10000:  # At least 10KB for real video
-                    print(f"✓ Successfully captured {file_size} byte real video segment with FFmpeg")
+                if file_size > 50000:  # At least 50KB for real video
+                    print(f"✅ SUCCESS: Captured {file_size} byte REAL video segment")
                     return True
                 else:
-                    print(f"✗ FFmpeg segment too small ({file_size} bytes)")
+                    print(f"❌ CRITICAL: Real video segment too small ({file_size} bytes)")
                     return False
             else:
-                print(f"✗ FFmpeg capture failed: {ffmpeg_result.stderr}")
+                print(f"❌ CRITICAL: FFmpeg capture failed: {ffmpeg_result.stderr}")
+                print("❌ Cannot fall back to mock data - real stream processing only")
                 return False
 
         except subprocess.TimeoutExpired:
-            print("✗ Stream capture timed out")
+            print("❌ CRITICAL: Stream capture timed out - real stream required")
             return False
         except Exception as e:
-            print(f"✗ Stream capture error: {e}")
+            print(f"❌ CRITICAL: Stream capture error: {e}")
             return False
 
-    def _create_mock_segment(self, segment_path: str):
-        """Create a mock segment file for development."""
-        # Create a small file to simulate a video segment
-        with open(segment_path, 'wb') as f:
-            f.write(b'\x00' * (1024 * 500))  # 500KB mock file
+    
 
     def _notify_clip_created(self, filename: str, trigger_reason: str, detection_time: float, file_size: int = None):
         """Notify the main server about a new clip."""
