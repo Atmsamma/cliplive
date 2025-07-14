@@ -83,11 +83,11 @@ export default function StreamCapture() {
 
       {/* Main Content Area */}
       <main className="flex-1 overflow-auto p-6">
-        {/* Stream Input Section */}
-        <StreamInputForm />
-
-        {/* Real-time Processing Status */}
-        <ProcessingStatus />
+        {/* Stream Configuration and Processing Status Side by Side */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <StreamInputForm />
+          <ProcessingStatus />
+        </div>
 
         {/* Recent Clips */}
         <div className="bg-slate-800 rounded-xl border border-slate-600 p-6">
