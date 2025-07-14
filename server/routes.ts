@@ -100,6 +100,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     fs.mkdirSync(clipsDir, { recursive: true });
   }
 
+  // Clean up any orphaned clip files on startup
+  try {
+    const existingFiles = fs.readdirSync(clipsDir).filter(file => file.endsWith('.mp4'));
+    console.log(`Found ${existingFiles.length} existing clip files, cleaning up...`);
+    
+    // For development, remove old files to start fresh
+    existingFiles.forEach(file => {
+      const filePath = path.join(clipsDir, file);
+      fs.unlinkSync(filePath);
+    });
+    
+    console.log('✅ Clip directory cleaned');
+  } catch (error) {
+    console.error('Error cleaning clip directory:', error);
+  }
+
   // Server-Sent Events endpoint
   app.get('/api/events', (req, res) => {
     res.writeHead(200, {
