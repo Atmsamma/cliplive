@@ -21,6 +21,16 @@ from collections import deque
 import statistics
 import numpy as np
 
+# Import AI detector
+try:
+    from ai_detector import AIHighlightDetector
+    from setup_nltk import setup_nltk
+    AI_AVAILABLE = True
+    print("🤖 AI detector available")
+except ImportError as e:
+    print(f"⚠️ AI detector not available: {e}")
+    AI_AVAILABLE = False
+
 class BaselineTracker:
     """Tracks baseline metrics for adaptive threshold detection."""
 
@@ -243,6 +253,18 @@ class StreamProcessor:
         self.baseline_tracker = BaselineTracker(calibration_seconds=60)  # Reduced from 120s
         self.use_adaptive_detection = config.get('useAdaptiveDetection', True)
 
+        # Initialize AI detector if available
+        self.ai_detector = None
+        if AI_AVAILABLE:
+            try:
+                # Setup NLTK data first
+                setup_nltk()
+                self.ai_detector = AIHighlightDetector()
+                print("🤖 AI-powered highlight detection enabled")
+            except Exception as e:
+                print(f"⚠️ AI detector initialization failed: {e}")
+                self.ai_detector = None
+
         # Cooldown system to prevent duplicate clips
         self.last_clip_time = 0
         self.clip_cooldown = self.clip_length  # Cooldown matches clip length to prevent overlap
@@ -252,6 +274,7 @@ class StreamProcessor:
         os.makedirs(self.clips_dir, exist_ok=True)
 
         print(f"Stream processor initialized with config: {config}")
+        print(f"AI Detection: {'Enabled' if self.ai_detector else 'Disabled'}")
 
     def start_processing(self) -> bool:
         """Start stream processing."""
@@ -304,6 +327,10 @@ class StreamProcessor:
         if self.stream_buffer:
             self.stream_buffer.cleanup()
             self.stream_buffer = None
+        
+        # Clean up AI detector resources
+        if self.ai_detector:
+            self.ai_detector.cleanup()
 
     def _stream_capture_loop(self):
         """Main loop for capturing stream segments."""
@@ -371,7 +398,7 @@ class StreamProcessor:
 
                 # Always check fixed thresholds as fallback
                 if not trigger_reason:
-                    trigger_reason = self._check_highlight_triggers(metrics)
+                    trigger_reason = self._check_highlight_triggers(metrics, latest_segment['path'])
 
                 # Debug output for detection attempts
                 if self.frames_processed % 300 == 0:  # Every 5 minutes
@@ -560,10 +587,19 @@ class StreamProcessor:
             'audio_db_change': 0,
         }
 
-    def _check_highlight_triggers(self, metrics: Dict[str, float]) -> Optional[str]:
+    def _check_highlight_triggers(self, metrics: Dict[str, float], segment_path: str = None) -> Optional[str]:
         """Check if metrics exceed thresholds for highlight detection."""
 
-        # More sensitive thresholds for better detection
+        # Try AI detection first if available
+        if self.ai_detector and segment_path:
+            try:
+                ai_result = self.ai_detector.analyze_segment(segment_path, metrics)
+                if ai_result.get('should_trigger', False):
+                    return ai_result.get('trigger_reason', 'AI Detection')
+            except Exception as e:
+                print(f"AI detection error: {e}")
+
+        # Fallback to rule-based detection
         audio_level = metrics.get('audio_level', 0)
         motion_level = metrics.get('motion_level', 0)
         scene_change = metrics.get('scene_change', 0)
