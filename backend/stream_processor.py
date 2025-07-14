@@ -342,12 +342,12 @@ class StreamProcessor:
                 segment_filename = f"segment_{segment_counter:06d}.ts"
                 segment_path = os.path.join(self.stream_buffer.temp_dir, segment_filename)
 
-                # Capture REAL video segment - NO MOCK FALLBACKS
+                # Capture REAL video segment - NO FALLBACKS ALLOWED
                 success = self._capture_real_segment(segment_path)
 
                 if not success:
                     print(f"❌ CRITICAL: Real stream capture failed - stopping processing")
-                    print(f"❌ Cannot proceed with mock data - user video is required")
+                    print(f"❌ System configured for REAL STREAMING DATA ONLY")
                     self.is_running = False
                     return
 
@@ -470,41 +470,9 @@ class StreamProcessor:
             return self._get_default_metrics()
 
     def _analyze_with_ffmpeg(self, segment_path: str) -> Dict[str, float]:
-        """Use FFmpeg to analyze video segment for metrics."""
+        """Use FFmpeg to analyze video segment for metrics - REAL VIDEO ONLY."""
         try:
-            # Check if this is a development/synthetic segment
-            is_dev_segment = 'testsrc' in str(segment_path) or os.path.getsize(segment_path) < 100000
-            
-            if is_dev_segment:
-                # Generate synthetic but realistic metrics for development
-                import random
-                import time
-                
-                # Create varying metrics that occasionally trigger highlights
-                timestamp = time.time()
-                base_audio = 45 + random.uniform(0, 15)
-                base_motion = 20 + random.uniform(0, 25)
-                base_scene = random.uniform(0.05, 0.2)
-                
-                # Occasionally create "highlight moments" for testing
-                if random.random() < 0.1:  # 10% chance of highlight
-                    if random.random() < 0.5:
-                        # Audio spike
-                        base_audio = 85 + random.uniform(0, 15)
-                    else:
-                        # Motion spike
-                        base_motion = 60 + random.uniform(0, 40)
-                        base_scene = random.uniform(0.35, 0.6)
-                
-                return {
-                    'frames_analyzed': 60,
-                    'audio_level': base_audio,
-                    'motion_level': base_motion,
-                    'scene_change': base_scene,
-                    'audio_db_change': max(0, (base_audio - 60) * 0.3),
-                }
-            
-            # Try real FFmpeg analysis
+            # Perform real FFmpeg analysis only
             result = subprocess.run([
                 'ffmpeg',
                 '-i', segment_path,
@@ -703,10 +671,10 @@ class StreamProcessor:
                     if size > 50000 or path.endswith(('.ts', '.mp4', '.m4v', '.mkv')):
                         real_video_segments.append(seg)
 
-            # If no real video segments, create mock clip
+            # If no real video segments, fail the clip creation
             if not real_video_segments:
-                print("No real video segments found, creating mock clip for development")
-                return self._create_mock_clip(output_path, trigger_reason)
+                print("❌ CRITICAL: No real video segments found for clipping")
+                return False
 
             # Use real video segments for clipping
             segments = real_video_segments
@@ -794,15 +762,14 @@ class StreamProcessor:
                 return True
             else:
                 print(f"❌ FFmpeg error: {result.stderr}")
-                # Fallback to mock clip for development
-                return self._create_mock_clip(output_path, trigger_reason)
+                return False
 
         except subprocess.TimeoutExpired:
             print("FFmpeg command timed out")
-            return self._create_mock_clip(output_path, trigger_reason)
+            return False
         except Exception as e:
             print(f"FFmpeg clip creation error: {e}")
-            return self._create_mock_clip(output_path, trigger_reason)
+            return False
 
     def _create_realtime_clip(self, buffered_segments, output_path, trigger_reason, before_duration, after_duration):
         """Create a clip by combining buffered content with real-time capture to reach full duration."""
@@ -865,11 +832,11 @@ class StreamProcessor:
                 return True
             else:
                 print(f"❌ Real-time FFmpeg error: {result.stderr}")
-                return self._create_mock_clip(output_path, trigger_reason)
+                return False
                 
         except Exception as e:
             print(f"Real-time clip creation error: {e}")
-            return self._create_mock_clip(output_path, trigger_reason)
+            return False
 
     def _capture_additional_content(self, duration_needed):
         """Capture additional real-time content to fill the clip duration."""
@@ -926,20 +893,17 @@ class StreamProcessor:
             if result.returncode == 0:
                 return True
             else:
-                # Create mock clip for development
-                return self._create_mock_clip(output_path, trigger_reason)
+                print(f"❌ Standard clip creation failed: {result.stderr}")
+                return False
 
         except Exception as e:
             print(f"Standard clip creation error: {e}")
-            return self._create_mock_clip(output_path, trigger_reason)
+            return False
 
     def _capture_real_segment(self, segment_path: str) -> bool:
-        """Capture a real video segment using Streamlink with development fallback."""
+        """Capture a real video segment using Streamlink - NO FALLBACKS."""
         try:
-            # Check if we're in development mode (no real stream available)
-            dev_mode = self.config.get('developmentMode', True)
-            
-            # Try to get real stream URL first
+            # Get real stream URL
             url_cmd = [
                 'streamlink',
                 self.config['url'],
@@ -950,75 +914,53 @@ class StreamProcessor:
             print(f"🔄 Getting stream URL: {' '.join(url_cmd)}")
             url_result = subprocess.run(url_cmd, capture_output=True, text=True, timeout=10)
 
-            if url_result.returncode == 0:
-                stream_url = url_result.stdout.strip()
-                if stream_url:
-                    # Try to capture real video
-                    ffmpeg_cmd = [
-                        'ffmpeg',
-                        '-i', stream_url,
-                        '-t', '2',
-                        '-c', 'copy',
-                        '-avoid_negative_ts', 'make_zero',
-                        '-y',
-                        segment_path
-                    ]
-
-                    print(f"🎥 Capturing REAL video: ffmpeg -i [stream] -t 2 -c copy {segment_path}")
-                    ffmpeg_result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=15)
-
-                    if ffmpeg_result.returncode == 0 and os.path.exists(segment_path):
-                        file_size = os.path.getsize(segment_path)
-                        if file_size > 50000:
-                            print(f"✅ SUCCESS: Captured {file_size} byte REAL video segment")
-                            return True
-
-            # Fallback to development mode if real stream fails
-            if dev_mode:
-                print("⚠️  Real stream unavailable, using development mode")
-                return self._create_dev_segment(segment_path)
-            else:
-                print(f"❌ CRITICAL: Failed to get stream URL and development mode disabled")
+            if url_result.returncode != 0:
+                print(f"❌ CRITICAL: Streamlink failed to get URL: {url_result.stderr}")
                 return False
 
-        except Exception as e:
-            if dev_mode:
-                print(f"⚠️  Stream capture error, using development mode: {e}")
-                return self._create_dev_segment(segment_path)
-            else:
-                print(f"❌ CRITICAL: Stream capture error: {e}")
+            stream_url = url_result.stdout.strip()
+            if not stream_url:
+                print(f"❌ CRITICAL: No stream URL returned from Streamlink")
                 return False
 
-    def _create_dev_segment(self, segment_path: str) -> bool:
-        """Create a development segment with synthetic video."""
-        try:
-            # Generate a 2-second video with color bars and audio tone
+            # Capture real video only
             ffmpeg_cmd = [
                 'ffmpeg',
-                '-f', 'lavfi',
-                '-i', 'testsrc2=duration=2:size=1280x720:rate=30',
-                '-f', 'lavfi', 
-                '-i', 'sine=frequency=440:duration=2',
-                '-c:v', 'libx264',
-                '-c:a', 'aac',
+                '-i', stream_url,
                 '-t', '2',
+                '-c', 'copy',
+                '-avoid_negative_ts', 'make_zero',
                 '-y',
                 segment_path
             ]
 
-            result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=10)
-            
-            if result.returncode == 0 and os.path.exists(segment_path):
-                file_size = os.path.getsize(segment_path)
-                print(f"🧪 DEV: Created {file_size} byte synthetic segment")
-                return True
-            else:
-                print(f"❌ DEV: Failed to create synthetic segment: {result.stderr}")
+            print(f"🎥 Capturing REAL video: ffmpeg -i [stream] -t 2 -c copy {segment_path}")
+            ffmpeg_result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=15)
+
+            if ffmpeg_result.returncode != 0:
+                print(f"❌ CRITICAL: FFmpeg capture failed: {ffmpeg_result.stderr}")
                 return False
 
-        except Exception as e:
-            print(f"❌ DEV: Error creating synthetic segment: {e}")
+            if not os.path.exists(segment_path):
+                print(f"❌ CRITICAL: Output file not created: {segment_path}")
+                return False
+
+            file_size = os.path.getsize(segment_path)
+            if file_size < 50000:
+                print(f"❌ CRITICAL: Captured file too small ({file_size} bytes), likely corrupted")
+                return False
+
+            print(f"✅ SUCCESS: Captured {file_size} byte REAL video segment")
+            return True
+
+        except subprocess.TimeoutExpired:
+            print(f"❌ CRITICAL: Stream capture timed out")
             return False
+        except Exception as e:
+            print(f"❌ CRITICAL: Stream capture error: {e}")
+            return False
+
+    
 
     
 
@@ -1048,16 +990,7 @@ class StreamProcessor:
         except Exception as e:
             print(f"Error notifying clip creation: {e}")
 
-    def _create_mock_clip(self, clip_path: str, trigger_reason: str) -> bool:
-        """Create a mock clip file for development."""
-        try:
-            # Create a larger file to simulate a video clip
-            with open(clip_path, 'wb') as f:
-                f.write(b'\x00' * (1024 * 1024 * 10))  # 10MB mock file
-            return True
-        except Exception as e:
-            print(f"Error creating mock clip: {e}")
-            return False
+    
 
     def _metrics_update_loop(self):
         """Send periodic metrics updates via SSE."""
