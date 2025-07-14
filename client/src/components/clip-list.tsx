@@ -74,11 +74,27 @@ export default function ClipList({ clips, showActions = false }: ClipListProps) 
             className="flex flex-col sm:flex-row items-start space-y-3 sm:space-y-0 sm:space-x-4 p-4 bg-slate-700 rounded-lg hover:bg-slate-650 transition-colors group"
           >
             {/* Video Preview Thumbnail */}
-            <div className="w-full sm:w-32 h-20 sm:h-18 bg-slate-600 rounded flex items-center justify-center text-slate-400 flex-shrink-0 cursor-pointer hover:bg-slate-500 transition-colors"
+            <div className="w-full sm:w-32 h-20 sm:h-18 bg-slate-600 rounded flex items-center justify-center text-slate-400 flex-shrink-0 cursor-pointer transition-all duration-200 relative overflow-hidden group thumbnail-container"
                  onClick={() => setPreviewingClip(clip)}>
-              <div className="flex flex-col items-center">
+              <img 
+                src={`/api/thumbnails/${clip.filename}`}
+                alt={`${clip.filename} thumbnail`}
+                className="w-full h-full object-cover transition-transform duration-200"
+                onError={(e) => {
+                  // Fallback to placeholder if thumbnail fails to load
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
+              {/* Fallback placeholder when image fails to load */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-600">
                 <Play size={20} className="mb-1" />
                 <span className="text-xs">Preview</span>
+              </div>
+              {/* Play overlay */}
+              <div className="absolute inset-0 play-overlay flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                <div className="bg-white/20 rounded-full p-2 backdrop-blur-sm">
+                  <Play size={20} className="text-white fill-white" />
+                </div>
               </div>
             </div>
 

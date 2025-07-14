@@ -39,30 +39,30 @@ function startStreamProcessor(config: any): boolean {
   try {
     // Stop any existing processor
     stopStreamProcessor();
-    
+
     const pythonPath = 'python3';
     const scriptPath = path.join(process.cwd(), 'backend', 'stream_processor.py');
     const configJson = JSON.stringify(config);
-    
+
     console.log(`Starting stream processor with config: ${configJson}`);
-    
+
     streamProcessor = spawn(pythonPath, [scriptPath, configJson], {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: process.cwd(),
     });
-    
+
     if (streamProcessor.stdout) {
       streamProcessor.stdout.on('data', (data) => {
         console.log(`[StreamProcessor]: ${data.toString().trim()}`);
       });
     }
-    
+
     if (streamProcessor.stderr) {
       streamProcessor.stderr.on('data', (data) => {
         console.error(`[StreamProcessor Error]: ${data.toString().trim()}`);
       });
     }
-    
+
     streamProcessor.on('exit', (code) => {
       console.log(`Stream processor exited with code: ${code}`);
       if (processingStatus.isProcessing) {
@@ -73,11 +73,11 @@ function startStreamProcessor(config: any): boolean {
         });
       }
     });
-    
+
     streamProcessor.on('error', (error) => {
       console.error(`Stream processor error: ${error}`);
     });
-    
+
     return true;
   } catch (error) {
     console.error(`Failed to start stream processor: ${error}`);
@@ -136,20 +136,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/start', async (req, res) => {
     try {
       const validatedData = insertStreamSessionSchema.parse(req.body);
-      
+
       // Stop any active sessions
       const activeSession = await storage.getActiveSession();
       if (activeSession) {
         await storage.updateSessionStatus(activeSession.id, false);
         stopStreamProcessor();
       }
-      
+
       // Create new session
       const session = await storage.createStreamSession({
         ...validatedData,
         isActive: true,
       });
-      
+
       // Start Python stream processor with real FFmpeg integration
       const processorConfig = {
         url: session.url,
@@ -157,21 +157,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         motionThreshold: session.motionThreshold,
         clipLength: session.clipLength,
       };
-      
+
       const started = startStreamProcessor(processorConfig);
-      
+
       if (started) {
         // Update processing status
         processingStatus.isProcessing = true;
         processingStatus.framesProcessed = 0;
         processingStatus.currentSession = session;
         sessionStartTime = new Date();
-        
+
         broadcastSSE({
           type: 'session-started',
           data: session,
         });
-        
+
         res.json(session);
       } else {
         // Failed to start processor
@@ -191,22 +191,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!activeSession) {
         return res.status(400).json({ error: 'No active session' });
       }
-      
+
       const updatedSession = await storage.updateSessionStatus(activeSession.id, false);
-      
+
       // Stop Python stream processor
       stopStreamProcessor();
-      
+
       // Update processing status
       processingStatus.isProcessing = false;
       processingStatus.currentSession = undefined;
       sessionStartTime = null;
-      
+
       broadcastSSE({
         type: 'session-stopped',
         data: updatedSession,
       });
-      
+
       res.json(updatedSession);
     } catch (error) {
       res.status(500).json({ error: 'Failed to stop session' });
@@ -237,13 +237,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!clip) {
         return res.status(404).json({ error: 'Clip not found' });
       }
-      
+
       // Delete file
       const filePath = path.join(clipsDir, clip.filename);
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }
-      
+
       // Delete from storage
       await storage.deleteClip(id);
       res.json({ success: true });
@@ -252,16 +252,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Serve clip files
-  app.get('/clips/:filename', (req, res) => {
+  app.get("/clips/:filename", (req, res) => {
     const filename = req.params.filename;
-    const filePath = path.join(clipsDir, filename);
-    
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'File not found' });
+    const filePath = path.join(process.cwd(), "clips", filename);
+
+    if (fs.existsSync(filePath)) {
+      res.sendFile(filePath);
+    } else {
+      res.status(404).json({ error: "File not found" });
     }
-    
-    res.download(filePath);
+  });
+
+  app.get("/api/thumbnails/:filename", async (req, res) => {
+    const filename = req.params.filename;
+    const videoPath = path.join(process.cwd(), "clips", filename);
+    const thumbnailPath = path.join(process.cwd(), "clips", "thumbnails", `${filename}.jpg`);
+
+    if (!fs.existsSync(videoPath)) {
+      return res.status(404).json({ error: "Video file not found" });
+    }
+
+    // Create thumbnails directory if it doesn't exist
+    const thumbnailDir = path.join(process.cwd(), "clips", "thumbnails");
+    if (!fs.existsSync(thumbnailDir)) {
+      fs.mkdirSync(thumbnailDir, { recursive: true });
+    }
+
+    // Check if thumbnail already exists
+    if (fs.existsSync(thumbnailPath)) {
+      return res.sendFile(thumbnailPath);
+    }
+
+    try {
+      // Generate thumbnail using FFmpeg
+      const { exec } = require('child_process');
+      await new Promise((resolve, reject) => {
+        exec(
+          `ffmpeg -i "${videoPath}" -ss 00:00:02 -vframes 1 -vf "scale=320:180:force_original_aspect_ratio=decrease,pad=320:180:(ow-iw)/2:(oh-ih)/2" "${thumbnailPath}"`,
+          (error: any, stdout: any, stderr: any) => {
+            if (error) {
+              console.error('Thumbnail generation error:', error);
+              reject(error);
+            } else {
+              resolve(stdout);
+            }
+          }
+        );
+      });
+
+      res.sendFile(thumbnailPath);
+    } catch (error) {
+      console.error('Failed to generate thumbnail:', error);
+      res.status(500).json({ error: "Failed to generate thumbnail" });
+    }
   });
 
   // Download all clips as ZIP
@@ -271,7 +314,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (clips.length === 0) {
         return res.status(400).json({ error: 'No clips to download' });
       }
-      
+
       // For now, just return the list of clips
       // In a real implementation, you'd create a ZIP file
       res.json({ 
@@ -288,13 +331,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validatedData = insertClipSchema.parse(req.body);
       const clip = await storage.createClip(validatedData);
-      
+
       // Broadcast SSE event about new clip
       broadcastSSE({
         type: 'clip-generated',
         data: clip,
       });
-      
+
       res.json(clip);
     } catch (error) {
       console.error('Error creating clip:', error);
@@ -307,7 +350,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       // Update processing status with data from Python processor
       const metricsData = req.body;
-      
+
       // Update uptime if session is active
       if (sessionStartTime && metricsData.isProcessing) {
         const uptime = Date.now() - sessionStartTime.getTime();
@@ -316,16 +359,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const seconds = Math.floor((uptime % (1000 * 60)) / 1000);
         metricsData.streamUptime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
       }
-      
+
       // Update global processing status
       processingStatus = { ...processingStatus, ...metricsData };
-      
+
       // Broadcast updated metrics via SSE
       broadcastSSE({
         type: 'processing-status',
         data: processingStatus,
       });
-      
+
       res.json({ success: true });
     } catch (error) {
       console.error('Error updating metrics:', error);
