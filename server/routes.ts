@@ -7,7 +7,7 @@ import fs from "fs";
 import path from "path";
 import { spawn, ChildProcess } from "child_process";
 
-// Processing state
+// Processing state - ensure completely reset
 let processingStatus: ProcessingStatus = {
   isProcessing: false,
   framesProcessed: 0,
