@@ -929,62 +929,94 @@ class StreamProcessor:
     def _capture_real_segment(self, segment_path: str) -> bool:
         """Capture a real video segment using Streamlink - NO FALLBACKS."""
         try:
-            # Use FFmpeg directly to capture from the HLS stream URL
-            # First get the stream URL from streamlink
+            # Check if streamlink is installed
+            streamlink_check = subprocess.run(['which', 'streamlink'], capture_output=True, text=True)
+            if streamlink_check.returncode != 0:
+                print("❌ CRITICAL: streamlink not found. Installing...")
+                install_result = subprocess.run(['pip', 'install', 'streamlink'], capture_output=True, text=True)
+                if install_result.returncode != 0:
+                    print(f"❌ CRITICAL: Failed to install streamlink: {install_result.stderr}")
+                    return False
+                print("✅ streamlink installed successfully")
+
+            # First get the stream URL from streamlink with better error handling
             url_cmd = [
                 'streamlink',
                 self.config['url'],
-                'best',  # Use best quality instead of worst
-                '--stream-url'
+                'worst',  # Use worst quality for faster processing and smaller files
+                '--stream-url',
+                '--retry-streams', '3',
+                '--retry-max', '5'
             ]
 
-            print(f"🔄 Getting stream URL: {' '.join(url_cmd)}")
-            url_result = subprocess.run(url_cmd, capture_output=True, text=True, timeout=15)
+            print(f"🔄 Getting stream URL: streamlink {self.config['url']} worst --stream-url")
+            url_result = subprocess.run(url_cmd, capture_output=True, text=True, timeout=30)
 
             if url_result.returncode != 0:
-                print(f"❌ CRITICAL: Failed to get stream URL: {url_result.stderr}")
-                print(f"❌ Cannot process mock data - real stream required")
-                return False
+                print(f"❌ CRITICAL: streamlink failed with return code {url_result.returncode}")
+                print(f"❌ stdout: {url_result.stdout}")
+                print(f"❌ stderr: {url_result.stderr}")
+                
+                # Try with different quality options
+                for quality in ['360p', '480p', 'best']:
+                    print(f"🔄 Trying quality: {quality}")
+                    retry_cmd = url_cmd.copy()
+                    retry_cmd[2] = quality
+                    retry_result = subprocess.run(retry_cmd, capture_output=True, text=True, timeout=30)
+                    if retry_result.returncode == 0 and retry_result.stdout.strip():
+                        url_result = retry_result
+                        break
+                else:
+                    print("❌ CRITICAL: All quality options failed")
+                    return False
 
             stream_url = url_result.stdout.strip()
-            if not stream_url:
-                print("❌ CRITICAL: Empty stream URL received - cannot process mock data")
+            if not stream_url or not stream_url.startswith('http'):
+                print(f"❌ CRITICAL: Invalid stream URL received: '{stream_url}'")
                 return False
 
-            print(f"✅ Got real stream URL: {stream_url[:100]}...")
+            print(f"✅ Got stream URL: {stream_url[:80]}...")
 
             # Use FFmpeg to capture a 2-second segment directly from HLS
             ffmpeg_cmd = [
                 'ffmpeg',
                 '-i', stream_url,
                 '-t', '2',  # 2 seconds
-                '-c', 'copy',  # Copy streams without re-encoding
-                '-avoid_negative_ts', 'make_zero',  # Handle timestamp issues
-                '-y',  # Overwrite output
+                '-c:v', 'libx264',  # Re-encode video for compatibility
+                '-c:a', 'aac',      # Re-encode audio for compatibility
+                '-preset', 'ultrafast',  # Fastest encoding
+                '-crf', '30',       # Lower quality for speed
+                '-avoid_negative_ts', 'make_zero',
+                '-f', 'mp4',        # Force MP4 format
+                '-y',               # Overwrite output
                 segment_path
             ]
 
-            print(f"🎥 Capturing REAL video: ffmpeg -i [stream] -t 2 -c copy {segment_path}")
-            ffmpeg_result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=20)
+            print(f"🎥 Capturing video segment...")
+            ffmpeg_result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=30)
 
             if ffmpeg_result.returncode == 0 and os.path.exists(segment_path):
                 file_size = os.path.getsize(segment_path)
-                if file_size > 50000:  # At least 50KB for real video
-                    print(f"✅ SUCCESS: Captured {file_size} byte REAL video segment")
+                if file_size > 10000:  # Lowered threshold to 10KB
+                    print(f"✅ SUCCESS: Captured {file_size} byte video segment")
                     return True
                 else:
-                    print(f"❌ CRITICAL: Real video segment too small ({file_size} bytes)")
+                    print(f"❌ CRITICAL: Video segment too small ({file_size} bytes)")
+                    print(f"❌ FFmpeg stderr: {ffmpeg_result.stderr}")
                     return False
             else:
-                print(f"❌ CRITICAL: FFmpeg capture failed: {ffmpeg_result.stderr}")
-                print("❌ Cannot fall back to mock data - real stream processing only")
+                print(f"❌ CRITICAL: FFmpeg capture failed")
+                print(f"❌ FFmpeg stdout: {ffmpeg_result.stdout}")
+                print(f"❌ FFmpeg stderr: {ffmpeg_result.stderr}")
                 return False
 
         except subprocess.TimeoutExpired:
-            print("❌ CRITICAL: Stream capture timed out - real stream required")
+            print("❌ CRITICAL: Stream capture timed out")
             return False
         except Exception as e:
             print(f"❌ CRITICAL: Stream capture error: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
     
