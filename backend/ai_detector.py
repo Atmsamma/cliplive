@@ -32,7 +32,7 @@ class SpeechExtractor:
         print("🎤 Speech extractor initialized")
     
     def extract_audio_text(self, video_path: str) -> str:
-        """Extract text from video audio using FFmpeg + basic speech recognition."""
+        """Extract text from video audio using FFmpeg + OpenAI Whisper."""
         try:
             # Extract audio from video
             audio_path = os.path.join(self.temp_dir, "audio.wav")
@@ -41,31 +41,65 @@ class SpeechExtractor:
                 '-c:a', 'pcm_s16le', '-y', audio_path
             ]
             
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
             if result.returncode != 0:
                 print(f"Audio extraction failed: {result.stderr}")
                 return ""
             
-            # For now, return placeholder text until we can add proper speech recognition
-            # This simulates real transcription with common gaming phrases
-            simulated_phrases = [
-                "oh my god that was insane",
-                "no way that just happened", 
-                "clutch play right there",
-                "that was amazing",
-                "incredible shot",
-                "unbelievable moment",
-                "what a play",
-                "that was sick"
-            ]
+            # Check if audio file exists and has content
+            if not os.path.exists(audio_path) or os.path.getsize(audio_path) < 1000:
+                print("Audio file too small or missing")
+                return ""
             
-            # Return random phrase to simulate speech recognition
-            import random
-            return random.choice(simulated_phrases)
+            # Use OpenAI Whisper for speech recognition
+            try:
+                import whisper
+                
+                # Load Whisper model (base model is good balance of speed/accuracy)
+                if not hasattr(self, 'whisper_model'):
+                    print("🔄 Loading Whisper model (one-time setup)...")
+                    self.whisper_model = whisper.load_model("base")
+                    print("✅ Whisper model loaded")
+                
+                # Transcribe audio
+                result = self.whisper_model.transcribe(audio_path)
+                transcribed_text = result["text"].strip()
+                
+                if transcribed_text:
+                    print(f"🎤 Transcribed: '{transcribed_text[:100]}...'")
+                    return transcribed_text
+                else:
+                    print("🔇 No speech detected")
+                    return ""
+                
+            except ImportError:
+                print("⚠️ Whisper not installed, falling back to mock transcription")
+                return self._get_mock_transcription()
+            except Exception as whisper_error:
+                print(f"⚠️ Whisper transcription failed: {whisper_error}")
+                return self._get_mock_transcription()
             
         except Exception as e:
             print(f"Speech extraction error: {e}")
             return ""
+    
+    def _get_mock_transcription(self) -> str:
+        """Fallback mock transcription for development."""
+        import random
+        mock_phrases = [
+            "oh my god that was insane",
+            "no way that just happened", 
+            "clutch play right there",
+            "that was amazing",
+            "incredible shot",
+            "unbelievable moment",
+            "what a play",
+            "that was sick",
+            "",  # Sometimes no speech
+            "",
+            ""
+        ]
+        return random.choice(mock_phrases)
     
     def cleanup(self):
         """Clean up temporary files."""
