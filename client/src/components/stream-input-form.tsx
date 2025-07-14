@@ -115,7 +115,7 @@ export default function StreamInputForm() {
                     </div>
                   </FormControl>
                   <p className="text-xs text-slate-400">
-                    Supports Twitch, YouTube, Kick, and HLS streams
+                    Supports Twitch, YouTube, Kick, and HLS streams - processed in real-time
                   </p>
                   <FormMessage />
                 </FormItem>
@@ -148,7 +148,7 @@ export default function StreamInputForm() {
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-slate-400">
-                    System will automatically detect highlights using adaptive thresholds
+                    System watches the stream in real-time and automatically clips highlights as they happen
                   </p>
                 </FormItem>
               )}

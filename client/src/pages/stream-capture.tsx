@@ -52,7 +52,7 @@ export default function StreamCapture() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-xl font-semibold text-slate-50">Stream Capture</h2>
-            <p className="text-slate-400 text-sm">Monitor and capture highlights from live streams</p>
+            <p className="text-slate-400 text-sm">Real-time stream monitoring - clips are created instantly as highlights occur</p>
           </div>
           <div className="flex items-center space-x-4">
             {/* Processing Status Badge */}

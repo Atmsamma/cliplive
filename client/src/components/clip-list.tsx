@@ -58,7 +58,7 @@ export default function ClipList({ clips, showActions = false }: ClipListProps) 
       <div className="text-center py-12 text-slate-400">
         <div className="text-4xl mb-4 text-slate-600">🎬</div>
         <h4 className="text-lg font-medium mb-2 text-slate-300">No clips captured yet</h4>
-        <p className="text-sm">Start capturing a stream to automatically generate highlight clips</p>
+        <p className="text-sm">Start capturing a stream and clips will appear here in real-time as highlights are detected</p>
       </div>
     );
   }
