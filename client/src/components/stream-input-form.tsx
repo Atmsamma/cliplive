@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Link, Play, Square } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -182,106 +182,4 @@ export default function StreamInputForm() {
       </CardContent>
     </Card>
   );
-}
-```
-
-```
-import { useState } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { z } from "zod";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Link, Play, Square } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
-import { Loader2 } from "lucide-react";
-
-// Replacing the StreamInputForm component with the mobile-optimized version
-export function StreamInputForm() {
-  const [url, setUrl] = useState('')
-  const [isProcessing, setIsProcessing] = useState(false)
-  const { toast } = useToast()
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!url.trim()) return
-
-    setIsProcessing(true)
-
-    try {
-      const response = await fetch('/api/process-stream', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ url: url.trim() }),
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to start stream processing')
-      }
-
-      toast({
-        title: "Stream processing started",
-        description: "Clip Live is now watching your stream in real-time and will automatically capture exciting moments.",
-      })
-
-      setUrl('')
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to start stream processing. Please check the URL and try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setIsProcessing(false)
-    }
-  }
-
-  return (
-    <Card className="w-full">
-      <CardHeader className="pb-4">
-        <CardTitle className="text-lg sm:text-xl">Start Real-Time Stream Capture</CardTitle>
-        <CardDescription className="text-sm sm:text-base">
-          Enter a public stream URL and Clip Live will monitor it in real-time, automatically detecting and clipping exciting moments as they happen.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="pt-0">
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="stream-url" className="text-sm font-medium">Stream URL</Label>
-            <Input
-              id="stream-url"
-              type="url"
-              placeholder="https://example.com/stream.m3u8"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              disabled={isProcessing}
-              className="text-sm sm:text-base h-11 sm:h-10"
-            />
-          </div>
-          <Button 
-            type="submit" 
-            disabled={!url.trim() || isProcessing}
-            className="w-full h-11 sm:h-10 text-sm sm:text-base font-medium"
-          >
-            {isProcessing ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Starting Real-Time Analysis...
-              </>
-            ) : (
-              'Start Live Capture'
-            )}
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
-  )
 }
