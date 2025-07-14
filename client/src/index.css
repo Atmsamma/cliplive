@@ -92,14 +92,6 @@
   }
 
   .thumbnail-container img {
-    transition: opacity 0.2s ease-in-out;
-  }
-
-  .thumbnail-container img[style*="display: none"] ~ div {
-    display: flex !important;
-  }
-
-  .thumbnail-container img {
     transition: transform 0.2s ease;
   }
 
