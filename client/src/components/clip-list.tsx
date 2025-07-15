@@ -98,52 +98,56 @@ export default function ClipList({ clips, showActions = false }: ClipListProps) 
               </div>
             </div>
 
-            <div className="flex-1 min-w-0 w-full">
+            <div className="flex-1 min-w-0 w-full flex flex-col justify-between">
               <div className="flex flex-col space-y-1 mb-2">
-                <h4 className="text-sm font-medium text-slate-200 truncate">
+                <h4 className="text-xs font-medium text-slate-200 truncate leading-tight">
                   {clip.filename}
                 </h4>
-                <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded-full w-fit">
+                <span className="text-xs text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded-full w-fit">
                   NEW
                 </span>
               </div>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                <span>{formatDate(clip.createdAt)}</span>
-                <span>{clip.duration}s</span>
-                <span>{formatSize(clip.fileSize)}</span>
-                <span className="text-blue-400">{clip.triggerReason}</span>
+              <div className="flex flex-col gap-1 text-xs text-slate-400 mb-2">
+                <div className="flex justify-between items-center">
+                  <span className="truncate text-xs">{formatDate(clip.createdAt).split(',')[0]}</span>
+                  <span className="text-blue-400 text-xs px-1 py-0.5 bg-blue-400/10 rounded text-center">{clip.triggerReason}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span>{clip.duration}s</span>
+                  <span>{formatSize(clip.fileSize)}</span>
+                </div>
               </div>
             </div>
 
             {showActions && (
-              <div className="flex items-center space-x-1 opacity-100 group-hover:opacity-100 transition-opacity w-full justify-center">
+              <div className="flex items-center space-x-0.5 opacity-100 group-hover:opacity-100 transition-opacity w-full justify-center">
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="p-1 text-slate-400 hover:text-blue-400 flex-1"
+                  className="p-1 text-slate-400 hover:text-blue-400 flex-1 min-w-0 h-8"
                   onClick={() => setPreviewingClip(clip)}
                 >
-                  <Play size={14} />
-                  <span className="ml-1 text-xs hidden sm:inline">Preview</span>
+                  <Play size={10} className="flex-shrink-0" />
+                  <span className="ml-0.5 text-xs hidden xl:inline truncate">Play</span>
                 </Button>
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="p-1 text-slate-400 hover:text-green-400 flex-1"
+                  className="p-1 text-slate-400 hover:text-green-400 flex-1 min-w-0 h-8"
                   onClick={() => handleDownload(clip.filename)}
                 >
-                  <Download size={14} />
-                  <span className="ml-1 text-xs hidden sm:inline">Download</span>
+                  <Download size={10} className="flex-shrink-0" />
+                  <span className="ml-0.5 text-xs hidden xl:inline truncate">Get</span>
                 </Button>
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="p-1 text-slate-400 hover:text-red-400 flex-1"
+                  className="p-1 text-slate-400 hover:text-red-400 flex-1 min-w-0 h-8"
                   onClick={() => handleDelete(clip.id)}
                   disabled={deleteMutation.isPending}
                 >
-                  <Trash2 size={14} />
-                  <span className="ml-1 text-xs hidden sm:inline">Delete</span>
+                  <Trash2 size={10} className="flex-shrink-0" />
+                  <span className="ml-0.5 text-xs hidden xl:inline truncate">Del</span>
                 </Button>
               </div>
             )}
