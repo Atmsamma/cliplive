@@ -244,6 +244,12 @@ class StreamProcessor:
         self.clips_generated = 0
         self.start_time = None
 
+        # Stream end detection
+        self.consecutive_failures = 0
+        self.max_consecutive_failures = 5  # Consider stream ended after 5 consecutive failures
+        self.stream_ended = False
+        self.last_successful_capture = None
+
         # Detection thresholds (legacy - will be replaced by adaptive)
         self.audio_threshold = config.get('audioThreshold', 6)  # dB
         self.motion_threshold = config.get('motionThreshold', 30)  # percentage
@@ -342,23 +348,36 @@ class StreamProcessor:
                 segment_filename = f"segment_{segment_counter:06d}.ts"
                 segment_path = os.path.join(self.stream_buffer.temp_dir, segment_filename)
 
-                # Capture REAL video segment - NO MOCK FALLBACKS
+                # Capture REAL video segment with stream end detection
                 success = self._capture_real_segment(segment_path)
 
-                if not success:
-                    print(f"❌ CRITICAL: Real stream capture failed - stopping processing")
-                    print(f"❌ Cannot proceed with mock data - user video is required")
-                    self.is_running = False
-                    return
-
-                if os.path.exists(segment_path):
+                if success:
+                    # Reset failure counter on successful capture
+                    self.consecutive_failures = 0
+                    self.last_successful_capture = timestamp
                     self.stream_buffer.add_segment(segment_path, timestamp)
                     segment_counter += 1
+                else:
+                    # Increment failure counter
+                    self.consecutive_failures += 1
+                    print(f"⚠️ Stream capture failed ({self.consecutive_failures}/{self.max_consecutive_failures})")
+                    
+                    # Check if stream has ended
+                    if self.consecutive_failures >= self.max_consecutive_failures:
+                        if not self.stream_ended:
+                            self.stream_ended = True
+                            self._notify_stream_ended()
+                            print(f"📺 STREAM ENDED: {self.max_consecutive_failures} consecutive failures detected")
+                        
+                        # Continue monitoring for potential stream restart
+                        time.sleep(10)  # Wait longer between attempts when stream has ended
+                        continue
 
                 time.sleep(2)  # Wait for next segment
 
             except Exception as e:
                 print(f"Error in stream capture: {e}")
+                self.consecutive_failures += 1
                 time.sleep(1)
 
     def _stream_analysis_loop(self):
@@ -1028,7 +1047,7 @@ class StreamProcessor:
                         url_result = retry_result
                         break
                 else:
-                    print("❌ CRITICAL: All quality options failed")
+                    print("❌ CRITICAL: All quality options failed - stream may have ended")
                     return False
 
             stream_url = url_result.stdout.strip()
@@ -1122,6 +1141,32 @@ class StreamProcessor:
         except Exception as e:
             print(f"Error notifying clip creation: {e}")
 
+    def _notify_stream_ended(self):
+        """Notify the main server that the stream has ended."""
+        try:
+            stream_end_data = {
+                'url': self.config['url'],
+                'endTime': time.time(),
+                'totalClips': self.clips_generated,
+                'totalDuration': time.time() - self.start_time if self.start_time else 0,
+                'lastSuccessfulCapture': self.last_successful_capture
+            }
+
+            # Send to main server API
+            response = requests.post(
+                'http://0.0.0.0:5000/api/internal/stream-ended',
+                json=stream_end_data,
+                timeout=5
+            )
+
+            if response.status_code == 200:
+                print(f"✅ Successfully notified server about stream end")
+            else:
+                print(f"⚠️ Failed to notify server about stream end: {response.status_code}")
+
+        except Exception as e:
+            print(f"⚠️ Error notifying stream end: {e}")
+
     
 
     def _metrics_update_loop(self):
@@ -1150,6 +1195,9 @@ class StreamProcessor:
                     'motionLevel': latest_metrics.get('motion_level', 0),
                     'sceneChange': latest_metrics.get('scene_change', 0),
                     'clipsGenerated': self.clips_generated,
+                    'streamEnded': self.stream_ended,
+                    'consecutiveFailures': self.consecutive_failures,
+                    'lastSuccessfulCapture': self.last_successful_capture,
                 }
 
                 # Send to main server for SSE broadcast

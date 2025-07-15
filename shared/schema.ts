@@ -48,10 +48,13 @@ export interface ProcessingStatus {
   motionLevel: number;
   sceneChange: number;
   currentSession?: StreamSession;
+  streamEnded?: boolean;
+  consecutiveFailures?: number;
+  lastSuccessfulCapture?: number;
 }
 
 // SSE event types
 export interface SSEEvent {
-  type: 'clip-generated' | 'processing-status' | 'session-started' | 'session-stopped' | 'error';
+  type: 'clip-generated' | 'processing-status' | 'session-started' | 'session-stopped' | 'stream-ended' | 'error';
   data: any;
 }

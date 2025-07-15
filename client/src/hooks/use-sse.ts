@@ -43,6 +43,15 @@ export function useSSE(url: string) {
             queryClient.invalidateQueries({ queryKey: ["/api/status"] });
             break;
             
+          case 'stream-ended':
+            toast({
+              title: "Stream Has Ended",
+              description: sseEvent.data.message || "The stream is no longer available",
+              variant: "destructive",
+            });
+            queryClient.invalidateQueries({ queryKey: ["/api/status"] });
+            break;
+            
           case 'error':
             toast({
               title: "Error",

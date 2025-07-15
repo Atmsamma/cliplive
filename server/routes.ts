@@ -104,7 +104,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   try {
     const existingFiles = fs.readdirSync(clipsDir).filter(file => file.endsWith('.mp4'));
     console.log(`Found ${existingFiles.length} existing clip files, cleaning up...`);
-    
+
     // For development, remove old files to start fresh
     existingFiles.forEach(file => {
       const filePath = path.join(clipsDir, file);
@@ -116,13 +116,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (fs.existsSync(thumbnailsDir)) {
       const existingThumbnails = fs.readdirSync(thumbnailsDir).filter(file => file.endsWith('.jpg'));
       console.log(`Found ${existingThumbnails.length} existing thumbnail files, cleaning up...`);
-      
+
       existingThumbnails.forEach(thumbnail => {
         const thumbnailPath = path.join(thumbnailsDir, thumbnail);
         fs.unlinkSync(thumbnailPath);
       });
     }
-    
+
     console.log('✅ Clip directory and thumbnails cleaned');
   } catch (error) {
     console.error('Error cleaning clip directory:', error);
@@ -231,12 +231,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (fs.existsSync(thumbnailsDir)) {
           const thumbnails = fs.readdirSync(thumbnailsDir).filter(file => file.endsWith('.jpg'));
           console.log(`Cleaning up ${thumbnails.length} thumbnail files...`);
-          
+
           thumbnails.forEach(thumbnail => {
             const thumbnailPath = path.join(thumbnailsDir, thumbnail);
             fs.unlinkSync(thumbnailPath);
           });
-          
+
           console.log('✅ Thumbnails cleaned up successfully');
         }
       } catch (cleanupError) {
@@ -311,7 +311,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/thumbnails/:filename", (req, res) => {
     const filename = req.params.filename;
-    
+
     // Remove the extension and add .jpg for thumbnail
     const baseFilename = filename.replace(/\.[^/.]+$/, "");
     const thumbnailPath = path.join(process.cwd(), "clips", "thumbnails", `${baseFilename}.jpg`);
@@ -392,6 +392,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error('Error updating metrics:', error);
       res.status(500).json({ error: 'Failed to update metrics' });
     }
+  });
+
+  // Internal stream ended notification endpoint
+  app.post('/api/internal/stream-ended', (req, res) => {
+    const { url, endTime, totalClips, totalDuration, lastSuccessfulCapture } = req.body;
+
+    console.log(`Stream ended notification: ${url} after ${totalDuration}s with ${totalClips} clips`);
+
+    // Update processing status
+    processingStatus.isProcessing = false;
+
+    // Notify all connected clients
+    broadcastSSE({
+      type: 'stream-ended',
+      data: {
+        message: `Stream has ended after ${Math.round(totalDuration / 60)} minutes`,
+        url,
+        totalClips,
+        totalDuration: Math.round(totalDuration),
+        endTime: new Date(endTime * 1000).toISOString(),
+      },
+    });
+
+    res.json({ success: true });
   });
 
   const httpServer = createServer(app);

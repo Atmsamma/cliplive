@@ -49,12 +49,28 @@ export default function ProcessingStatus() {
       <CardContent>
         <div className="flex flex-col items-center justify-center py-8">
           <div className="text-center mb-6">
-            <div className="text-3xl font-bold text-emerald-400 mb-1">
-              {status?.currentSession ? 'LIVE' : 'IDLE'}
+            <div className="text-3xl font-bold mb-1">
+              <span className={
+                status?.streamEnded ? 'text-red-400' :
+                status?.currentSession ? 'text-emerald-400' : 'text-slate-400'
+              }>
+                {status?.streamEnded ? 'ENDED' :
+                 status?.currentSession ? 'LIVE' : 'IDLE'}
+              </span>
             </div>
             <div className="text-sm text-slate-400">
               {status?.streamUptime || "00:00:00"}
             </div>
+            {status?.streamEnded && (
+              <div className="text-xs text-red-400 mt-1">
+                Stream no longer available
+              </div>
+            )}
+            {status?.consecutiveFailures > 0 && status?.consecutiveFailures < 5 && (
+              <div className="text-xs text-yellow-400 mt-1">
+                Connection issues ({status.consecutiveFailures}/5)
+              </div>
+            )}
           </div>
 
           {/* Reactive GIF Animation */}
