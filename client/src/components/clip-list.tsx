@@ -67,14 +67,14 @@ export default function ClipList({ clips, showActions = false }: ClipListProps) 
 
   return (
     <>
-      <div className="space-y-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
         {clips.map((clip) => (
           <div
             key={clip.id}
-            className="flex flex-col items-start space-y-3 p-4 bg-slate-700 rounded-lg hover:bg-slate-650 transition-colors group"
+            className="flex flex-col items-start space-y-3 p-4 bg-slate-700 rounded-lg hover:bg-slate-650 transition-colors group h-fit"
           >
             {/* Video Preview Thumbnail */}
-            <div className="w-full h-20 bg-slate-600 rounded flex items-center justify-center text-slate-400 flex-shrink-0 cursor-pointer transition-all duration-200 relative overflow-hidden group thumbnail-container"
+            <div className="w-full h-24 bg-slate-600 rounded flex items-center justify-center text-slate-400 flex-shrink-0 cursor-pointer transition-all duration-200 relative overflow-hidden group thumbnail-container"
                  onClick={() => setPreviewingClip(clip)}>
               <img 
                 src={`/api/thumbnails/${clip.filename}`}
@@ -116,34 +116,34 @@ export default function ClipList({ clips, showActions = false }: ClipListProps) 
             </div>
 
             {showActions && (
-              <div className="flex items-center space-x-2 opacity-100 group-hover:opacity-100 transition-opacity w-full justify-center">
+              <div className="flex items-center space-x-1 opacity-100 group-hover:opacity-100 transition-opacity w-full justify-center">
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="p-2 text-slate-400 hover:text-blue-400"
+                  className="p-1 text-slate-400 hover:text-blue-400 flex-1"
                   onClick={() => setPreviewingClip(clip)}
                 >
-                  <Play size={16} />
-                  <span className="ml-1 text-xs">Preview</span>
+                  <Play size={14} />
+                  <span className="ml-1 text-xs hidden sm:inline">Preview</span>
                 </Button>
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="p-2 text-slate-400 hover:text-green-400"
+                  className="p-1 text-slate-400 hover:text-green-400 flex-1"
                   onClick={() => handleDownload(clip.filename)}
                 >
-                  <Download size={16} />
-                  <span className="ml-1 text-xs">Download</span>
+                  <Download size={14} />
+                  <span className="ml-1 text-xs hidden sm:inline">Download</span>
                 </Button>
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="p-2 text-slate-400 hover:text-red-400"
+                  className="p-1 text-slate-400 hover:text-red-400 flex-1"
                   onClick={() => handleDelete(clip.id)}
                   disabled={deleteMutation.isPending}
                 >
-                  <Trash2 size={16} />
-                  <span className="ml-1 text-xs">Delete</span>
+                  <Trash2 size={14} />
+                  <span className="ml-1 text-xs hidden sm:inline">Delete</span>
                 </Button>
               </div>
             )}
