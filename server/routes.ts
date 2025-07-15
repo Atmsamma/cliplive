@@ -279,92 +279,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/thumbnails/:filename", async (req, res) => {
+  app.get("/api/thumbnails/:filename", (req, res) => {
     const filename = req.params.filename;
-    const videoPath = path.join(process.cwd(), "clips", filename);
-    const thumbnailPath = path.join(process.cwd(), "clips", "thumbnails", `${filename}.jpg`);
+    
+    // Remove the extension and add .jpg for thumbnail
+    const baseFilename = filename.replace(/\.[^/.]+$/, "");
+    const thumbnailPath = path.join(process.cwd(), "clips", "thumbnails", `${baseFilename}.jpg`);
 
-    console.log(`Thumbnail requested for: ${filename}`);
-
-    if (!fs.existsSync(videoPath)) {
-      console.log(`Video file not found: ${videoPath}`);
-      return res.status(404).json({ error: "Video file not found" });
-    }
-
-    // Create thumbnails directory if it doesn't exist
-    const thumbnailDir = path.join(process.cwd(), "clips", "thumbnails");
-    if (!fs.existsSync(thumbnailDir)) {
-      fs.mkdirSync(thumbnailDir, { recursive: true });
-      console.log(`Created thumbnails directory: ${thumbnailDir}`);
-    }
-
-    // Check if thumbnail already exists
+    // Check if thumbnail exists and serve it
     if (fs.existsSync(thumbnailPath)) {
-      console.log(`Serving existing thumbnail: ${thumbnailPath}`);
       return res.sendFile(thumbnailPath);
     }
 
-    try {
-      console.log(`Generating thumbnail for: ${videoPath}`);
-      
-      // Generate thumbnail using FFmpeg with better error handling
-      const { exec } = require('child_process');
-      await new Promise((resolve, reject) => {
-        // Simpler FFmpeg command that's more likely to work
-        const ffmpegCmd = `ffmpeg -i "${videoPath}" -ss 1 -vframes 1 -vf "scale=320:180" -q:v 2 -y "${thumbnailPath}"`;
-        
-        console.log(`Running FFmpeg command: ${ffmpegCmd}`);
-        
-        exec(ffmpegCmd, { timeout: 30000 }, (error: any, stdout: any, stderr: any) => {
-          if (error) {
-            console.error('Thumbnail generation error:', error);
-            console.error('FFmpeg stderr:', stderr);
-            reject(error);
-          } else {
-            console.log(`Thumbnail generated successfully: ${thumbnailPath}`);
-            resolve(stdout);
-          }
-        });
-      });
-
-      // Verify thumbnail was created
-      if (!fs.existsSync(thumbnailPath)) {
-        throw new Error('Thumbnail file was not created');
-      }
-
-      const thumbnailSize = fs.statSync(thumbnailPath).size;
-      console.log(`Thumbnail size: ${thumbnailSize} bytes`);
-
-      res.sendFile(thumbnailPath);
-    } catch (error) {
-      console.error('Failed to generate thumbnail:', error);
-      
-      // Generate a simple fallback thumbnail
-      try {
-        const fallbackCmd = `ffmpeg -f lavfi -i "color=gray:s=320x180:d=1" -vframes 1 -y "${thumbnailPath}"`;
-        
-        const { exec } = require('child_process');
-        await new Promise((resolve, reject) => {
-          exec(fallbackCmd, { timeout: 10000 }, (error: any) => {
-            if (error) {
-              console.error('Fallback thumbnail generation failed:', error);
-              reject(error);
-            } else {
-              console.log('Fallback thumbnail generated');
-              resolve(null);
-            }
-          });
-        });
-
-        if (fs.existsSync(thumbnailPath)) {
-          return res.sendFile(thumbnailPath);
-        }
-      } catch (fallbackError) {
-        console.error('Fallback thumbnail generation failed:', fallbackError);
-      }
-      
-      res.status(500).json({ error: "Failed to generate thumbnail" });
-    }
+    // If thumbnail doesn't exist, return 404
+    res.status(404).json({ error: "Thumbnail not found" });
   });
 
   // Download all clips as ZIP
