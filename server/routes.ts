@@ -284,7 +284,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const videoPath = path.join(process.cwd(), "clips", filename);
     const thumbnailPath = path.join(process.cwd(), "clips", "thumbnails", `${filename}.jpg`);
 
+    console.log(`Thumbnail requested for: ${filename}`);
+
     if (!fs.existsSync(videoPath)) {
+      console.log(`Video file not found: ${videoPath}`);
       return res.status(404).json({ error: "Video file not found" });
     }
 
@@ -292,33 +295,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const thumbnailDir = path.join(process.cwd(), "clips", "thumbnails");
     if (!fs.existsSync(thumbnailDir)) {
       fs.mkdirSync(thumbnailDir, { recursive: true });
+      console.log(`Created thumbnails directory: ${thumbnailDir}`);
     }
 
     // Check if thumbnail already exists
     if (fs.existsSync(thumbnailPath)) {
+      console.log(`Serving existing thumbnail: ${thumbnailPath}`);
       return res.sendFile(thumbnailPath);
     }
 
     try {
-      // Generate thumbnail using FFmpeg
+      console.log(`Generating thumbnail for: ${videoPath}`);
+      
+      // Generate thumbnail using FFmpeg with better error handling
       const { exec } = require('child_process');
       await new Promise((resolve, reject) => {
-        exec(
-          `ffmpeg -i "${videoPath}" -ss 00:00:02 -vframes 1 -vf "scale=320:180:force_original_aspect_ratio=decrease,pad=320:180:(ow-iw)/2:(oh-ih)/2" "${thumbnailPath}"`,
-          (error: any, stdout: any, stderr: any) => {
-            if (error) {
-              console.error('Thumbnail generation error:', error);
-              reject(error);
-            } else {
-              resolve(stdout);
-            }
+        const ffmpegCmd = `ffmpeg -i "${videoPath}" -ss 00:00:01 -vframes 1 -vf "scale=320:180:force_original_aspect_ratio=decrease,pad=320:180:(ow-iw)/2:(oh-ih)/2" -y "${thumbnailPath}"`;
+        
+        console.log(`Running FFmpeg command: ${ffmpegCmd}`);
+        
+        exec(ffmpegCmd, (error: any, stdout: any, stderr: any) => {
+          if (error) {
+            console.error('Thumbnail generation error:', error);
+            console.error('FFmpeg stderr:', stderr);
+            reject(error);
+          } else {
+            console.log('FFmpeg stdout:', stdout);
+            console.log('FFmpeg stderr:', stderr);
+            console.log(`Thumbnail generated successfully: ${thumbnailPath}`);
+            resolve(stdout);
           }
-        );
+        });
       });
+
+      // Verify thumbnail was created
+      if (!fs.existsSync(thumbnailPath)) {
+        throw new Error('Thumbnail file was not created');
+      }
+
+      const thumbnailSize = fs.statSync(thumbnailPath).size;
+      console.log(`Thumbnail size: ${thumbnailSize} bytes`);
 
       res.sendFile(thumbnailPath);
     } catch (error) {
       console.error('Failed to generate thumbnail:', error);
+      
+      // Generate a fallback thumbnail with a solid color and text
+      try {
+        const fallbackCmd = `ffmpeg -f lavfi -i "color=c=gray:s=320x180:d=1" -vf "drawtext=text='${filename}':fontcolor=white:fontsize=16:x=(w-text_w)/2:y=(h-text_h)/2" -vframes 1 -y "${thumbnailPath}"`;
+        
+        const { exec } = require('child_process');
+        await new Promise((resolve, reject) => {
+          exec(fallbackCmd, (error: any) => {
+            if (error) {
+              console.error('Fallback thumbnail generation failed:', error);
+              reject(error);
+            } else {
+              console.log('Fallback thumbnail generated');
+              resolve(null);
+            }
+          });
+        });
+
+        if (fs.existsSync(thumbnailPath)) {
+          return res.sendFile(thumbnailPath);
+        }
+      } catch (fallbackError) {
+        console.error('Fallback thumbnail generation failed:', fallbackError);
+      }
+      
       res.status(500).json({ error: "Failed to generate thumbnail" });
     }
   });

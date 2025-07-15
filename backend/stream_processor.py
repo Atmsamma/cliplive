@@ -1051,6 +1051,20 @@ class StreamProcessor:
 
             if response.status_code == 200:
                 print(f"Successfully notified server about clip: {filename}")
+                
+                # Trigger thumbnail generation by making a request to the thumbnail endpoint
+                try:
+                    print(f"Triggering thumbnail generation for: {filename}")
+                    thumbnail_response = requests.get(
+                        f'http://localhost:5000/api/thumbnails/{filename}',
+                        timeout=10
+                    )
+                    if thumbnail_response.status_code == 200:
+                        print(f"✅ Thumbnail generated successfully for: {filename}")
+                    else:
+                        print(f"⚠️ Thumbnail generation failed with status: {thumbnail_response.status_code}")
+                except Exception as thumb_error:
+                    print(f"⚠️ Error triggering thumbnail generation: {thumb_error}")
             else:
                 print(f"Failed to notify server: {response.status_code}")
 

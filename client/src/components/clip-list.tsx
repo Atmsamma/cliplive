@@ -80,16 +80,29 @@ export default function ClipList({ clips, showActions = false }: ClipListProps) 
                 src={`/api/thumbnails/${clip.filename}`}
                 alt={`${clip.filename} thumbnail`}
                 className="w-full h-full object-cover transition-transform duration-200"
+                loading="lazy"
                 onLoad={(e) => {
                   // Hide fallback when image loads successfully
                   const fallback = e.currentTarget.nextElementSibling as HTMLElement;
-                  if (fallback) fallback.style.display = 'none';
+                  if (fallback) {
+                    fallback.style.display = 'none';
+                  }
                 }}
                 onError={(e) => {
                   // Hide image and show fallback if thumbnail fails to load
                   e.currentTarget.style.display = 'none';
                   const fallback = e.currentTarget.nextElementSibling as HTMLElement;
-                  if (fallback) fallback.style.display = 'flex';
+                  if (fallback) {
+                    fallback.style.display = 'flex';
+                  }
+                  
+                  // Retry thumbnail generation after a delay
+                  setTimeout(() => {
+                    const img = e.currentTarget as HTMLImageElement;
+                    const originalSrc = img.src;
+                    img.src = '';
+                    img.src = originalSrc + '?retry=' + Date.now();
+                  }, 2000);
                 }}
               />
               {/* Fallback placeholder when image fails to load */}
