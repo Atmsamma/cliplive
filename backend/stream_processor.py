@@ -772,8 +772,9 @@ class StreamProcessor:
                 '-t', str(actual_clip_duration),  # Actual available duration
                 '-c:v', 'libx264',  # Video codec
                 '-c:a', 'aac',      # Audio codec
-                '-preset', 'fast',   # Encoding speed
-                '-crf', '23',        # Quality
+                '-preset', 'medium', # Better quality encoding
+                '-crf', '18',        # High quality (18 = visually lossless)
+                '-pix_fmt', 'yuv420p',  # Ensure compatibility
                 '-movflags', '+faststart',  # Web optimization
                 '-y',  # Overwrite output
                 output_path
@@ -845,8 +846,9 @@ class StreamProcessor:
                 '-t', str(self.clip_length),  # Use exact clip length
                 '-c:v', 'libx264',
                 '-c:a', 'aac',
-                '-preset', 'fast',
-                '-crf', '23',
+                '-preset', 'medium', # Better quality encoding
+                '-crf', '18',        # High quality
+                '-pix_fmt', 'yuv420p',  # Ensure compatibility
                 '-movflags', '+faststart',
                 '-y',
                 output_path
@@ -1002,13 +1004,13 @@ class StreamProcessor:
             url_cmd = [
                 'streamlink',
                 self.config['url'],
-                'worst',  # Use worst quality for faster processing and smaller files
+                'best',  # Use best quality for high-definition clips
                 '--stream-url',
                 '--retry-streams', '3',
                 '--retry-max', '5'
             ]
 
-            print(f"🔄 Getting stream URL: streamlink {self.config['url']} worst --stream-url")
+            print(f"🔄 Getting stream URL: streamlink {self.config['url']} best --stream-url")
             url_result = subprocess.run(url_cmd, capture_output=True, text=True, timeout=30)
 
             if url_result.returncode != 0:
@@ -1016,8 +1018,8 @@ class StreamProcessor:
                 print(f"❌ stdout: {url_result.stdout}")
                 print(f"❌ stderr: {url_result.stderr}")
                 
-                # Try with different quality options
-                for quality in ['360p', '480p', 'best']:
+                # Try with different quality options (prioritize higher quality)
+                for quality in ['720p', '1080p', '480p', '360p']:
                     print(f"🔄 Trying quality: {quality}")
                     retry_cmd = url_cmd.copy()
                     retry_cmd[2] = quality
@@ -1043,8 +1045,8 @@ class StreamProcessor:
                 '-t', '2',  # 2 seconds
                 '-c:v', 'libx264',  # Re-encode video for compatibility
                 '-c:a', 'aac',      # Re-encode audio for compatibility
-                '-preset', 'ultrafast',  # Fastest encoding
-                '-crf', '30',       # Lower quality for speed
+                '-preset', 'fast',  # Balanced encoding speed/quality
+                '-crf', '18',       # High quality (lower CRF = better quality)
                 '-avoid_negative_ts', 'make_zero',
                 '-f', 'mp4',        # Force MP4 format
                 '-y',               # Overwrite output
