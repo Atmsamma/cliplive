@@ -100,7 +100,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     fs.mkdirSync(clipsDir, { recursive: true });
   }
 
-  // Clean up any orphaned clip files on startup
+  // Clean up any orphaned clip files and thumbnails on startup
   try {
     const existingFiles = fs.readdirSync(clipsDir).filter(file => file.endsWith('.mp4'));
     console.log(`Found ${existingFiles.length} existing clip files, cleaning up...`);
@@ -110,8 +110,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const filePath = path.join(clipsDir, file);
       fs.unlinkSync(filePath);
     });
+
+    // Also clean up thumbnails
+    const thumbnailsDir = path.join(clipsDir, 'thumbnails');
+    if (fs.existsSync(thumbnailsDir)) {
+      const existingThumbnails = fs.readdirSync(thumbnailsDir).filter(file => file.endsWith('.jpg'));
+      console.log(`Found ${existingThumbnails.length} existing thumbnail files, cleaning up...`);
+      
+      existingThumbnails.forEach(thumbnail => {
+        const thumbnailPath = path.join(thumbnailsDir, thumbnail);
+        fs.unlinkSync(thumbnailPath);
+      });
+    }
     
-    console.log('✅ Clip directory cleaned');
+    console.log('✅ Clip directory and thumbnails cleaned');
   } catch (error) {
     console.error('Error cleaning clip directory:', error);
   }
@@ -212,6 +224,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Stop Python stream processor
       stopStreamProcessor();
+
+      // Clean up thumbnails from this session
+      try {
+        const thumbnailsDir = path.join(process.cwd(), 'clips', 'thumbnails');
+        if (fs.existsSync(thumbnailsDir)) {
+          const thumbnails = fs.readdirSync(thumbnailsDir).filter(file => file.endsWith('.jpg'));
+          console.log(`Cleaning up ${thumbnails.length} thumbnail files...`);
+          
+          thumbnails.forEach(thumbnail => {
+            const thumbnailPath = path.join(thumbnailsDir, thumbnail);
+            fs.unlinkSync(thumbnailPath);
+          });
+          
+          console.log('✅ Thumbnails cleaned up successfully');
+        }
+      } catch (cleanupError) {
+        console.error('Error cleaning up thumbnails:', cleanupError);
+      }
 
       // Update processing status
       processingStatus.isProcessing = false;
