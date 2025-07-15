@@ -633,6 +633,10 @@ class StreamProcessor:
             timestamp = datetime.fromtimestamp(detection_time)
             clip_filename = f"highlight_{timestamp.strftime('%Y%m%d_%H%M%S')}.mp4"
             clip_path = os.path.join(self.clips_dir, clip_filename)
+            
+            # Capture thumbnail frame at detection moment BEFORE creating the clip
+            thumbnail_filename = f"{clip_filename.replace('.mp4', '.jpg')}"
+            self._capture_detection_frame(detection_time, clip_segments, thumbnail_filename)
 
             # Calculate precise timing for 20%/80% strategy
             before_duration = self.clip_length * 0.2  # 20% before detection
@@ -897,6 +901,51 @@ class StreamProcessor:
                 break
         
         return additional_segments
+
+    def _capture_detection_frame(self, detection_time: float, clip_segments: List[Dict], thumbnail_filename: str):
+        """Capture a frame at the exact detection moment for thumbnail."""
+        try:
+            # Find the segment containing the detection moment
+            detection_segment = None
+            segment_offset = 0
+            
+            for segment in clip_segments:
+                segment_end = segment['timestamp'] + segment['duration']
+                if segment['timestamp'] <= detection_time <= segment_end:
+                    detection_segment = segment
+                    segment_offset = detection_time - segment['timestamp']
+                    break
+            
+            if not detection_segment:
+                print("Could not find segment for frame capture")
+                return
+            
+            # Create thumbnail directory if it doesn't exist
+            thumbnails_dir = os.path.join(self.clips_dir, 'thumbnails')
+            os.makedirs(thumbnails_dir, exist_ok=True)
+            
+            thumbnail_path = os.path.join(thumbnails_dir, thumbnail_filename)
+            
+            # Use FFmpeg to extract frame at exact detection moment
+            cmd = [
+                'ffmpeg',
+                '-i', detection_segment['path'],
+                '-ss', str(segment_offset),  # Seek to detection moment within segment
+                '-vframes', '1',             # Extract exactly 1 frame
+                '-y',                        # Overwrite output
+                thumbnail_path
+            ]
+            
+            print(f"🖼️ Capturing frame at detection moment: {segment_offset:.1f}s into segment")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            
+            if result.returncode == 0 and os.path.exists(thumbnail_path):
+                print(f"✅ Frame captured successfully: {thumbnail_filename}")
+            else:
+                print(f"❌ Frame capture failed: {result.stderr}")
+                
+        except Exception as e:
+            print(f"Error capturing detection frame: {e}")
 
     def _create_standard_clip(self, segments, output_path, filename, trigger_reason, detection_time):
         """Fallback method for standard clipping without precise timing."""
