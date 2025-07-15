@@ -80,9 +80,16 @@ export default function ClipList({ clips, showActions = false }: ClipListProps) 
                 src={`/api/thumbnails/${clip.filename}`}
                 alt={`${clip.filename} thumbnail`}
                 className="w-full h-full object-cover transition-transform duration-200"
+                onLoad={(e) => {
+                  // Hide fallback when image loads successfully
+                  const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                  if (fallback) fallback.style.display = 'none';
+                }}
                 onError={(e) => {
-                  // Fallback to placeholder if thumbnail fails to load
+                  // Hide image and show fallback if thumbnail fails to load
                   e.currentTarget.style.display = 'none';
+                  const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                  if (fallback) fallback.style.display = 'flex';
                 }}
               />
               {/* Fallback placeholder when image fails to load */}
@@ -91,7 +98,7 @@ export default function ClipList({ clips, showActions = false }: ClipListProps) 
                 <span className="text-xs">Preview</span>
               </div>
               {/* Play overlay */}
-              <div className="absolute inset-0 play-overlay flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+              <div className="absolute inset-0 play-overlay flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">
                 <div className="bg-white/20 rounded-full p-2 backdrop-blur-sm">
                   <Play size={20} className="text-white fill-white" />
                 </div>
