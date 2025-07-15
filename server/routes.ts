@@ -310,18 +310,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Generate thumbnail using FFmpeg with better error handling
       const { exec } = require('child_process');
       await new Promise((resolve, reject) => {
-        const ffmpegCmd = `ffmpeg -i "${videoPath}" -ss 00:00:01 -vframes 1 -vf "scale=320:180:force_original_aspect_ratio=decrease,pad=320:180:(ow-iw)/2:(oh-ih)/2" -y "${thumbnailPath}"`;
+        // Simpler FFmpeg command that's more likely to work
+        const ffmpegCmd = `ffmpeg -i "${videoPath}" -ss 1 -vframes 1 -vf "scale=320:180" -q:v 2 -y "${thumbnailPath}"`;
         
         console.log(`Running FFmpeg command: ${ffmpegCmd}`);
         
-        exec(ffmpegCmd, (error: any, stdout: any, stderr: any) => {
+        exec(ffmpegCmd, { timeout: 30000 }, (error: any, stdout: any, stderr: any) => {
           if (error) {
             console.error('Thumbnail generation error:', error);
             console.error('FFmpeg stderr:', stderr);
             reject(error);
           } else {
-            console.log('FFmpeg stdout:', stdout);
-            console.log('FFmpeg stderr:', stderr);
             console.log(`Thumbnail generated successfully: ${thumbnailPath}`);
             resolve(stdout);
           }
@@ -340,13 +339,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Failed to generate thumbnail:', error);
       
-      // Generate a fallback thumbnail with a solid color and text
+      // Generate a simple fallback thumbnail
       try {
-        const fallbackCmd = `ffmpeg -f lavfi -i "color=c=gray:s=320x180:d=1" -vf "drawtext=text='${filename}':fontcolor=white:fontsize=16:x=(w-text_w)/2:y=(h-text_h)/2" -vframes 1 -y "${thumbnailPath}"`;
+        const fallbackCmd = `ffmpeg -f lavfi -i "color=gray:s=320x180:d=1" -vframes 1 -y "${thumbnailPath}"`;
         
         const { exec } = require('child_process');
         await new Promise((resolve, reject) => {
-          exec(fallbackCmd, (error: any) => {
+          exec(fallbackCmd, { timeout: 10000 }, (error: any) => {
             if (error) {
               console.error('Fallback thumbnail generation failed:', error);
               reject(error);

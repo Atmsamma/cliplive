@@ -1044,7 +1044,7 @@ class StreamProcessor:
 
             # Send to main server API
             response = requests.post(
-                'http://localhost:5000/api/clips',
+                'http://0.0.0.0:5000/api/clips',
                 json=clip_data,
                 timeout=5
             )
@@ -1056,8 +1056,8 @@ class StreamProcessor:
                 try:
                     print(f"Triggering thumbnail generation for: {filename}")
                     thumbnail_response = requests.get(
-                        f'http://localhost:5000/api/thumbnails/{filename}',
-                        timeout=10
+                        f'http://0.0.0.0:5000/api/thumbnails/{filename}',
+                        timeout=15
                     )
                     if thumbnail_response.status_code == 200:
                         print(f"✅ Thumbnail generated successfully for: {filename}")
@@ -1103,7 +1103,7 @@ class StreamProcessor:
 
                 # Send to main server for SSE broadcast
                 requests.post(
-                    'http://localhost:5000/api/internal/metrics',
+                    'http://0.0.0.0:5000/api/internal/metrics',
                     json=status_data,
                     timeout=2
                 )
