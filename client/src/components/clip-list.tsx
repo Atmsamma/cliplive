@@ -71,10 +71,10 @@ export default function ClipList({ clips, showActions = false }: ClipListProps) 
         {clips.map((clip) => (
           <div
             key={clip.id}
-            className="flex flex-col sm:flex-row items-start space-y-3 sm:space-y-0 sm:space-x-4 p-4 bg-slate-700 rounded-lg hover:bg-slate-650 transition-colors group"
+            className="flex flex-col items-start space-y-3 p-4 bg-slate-700 rounded-lg hover:bg-slate-650 transition-colors group"
           >
             {/* Video Preview Thumbnail */}
-            <div className="w-full sm:w-32 h-20 sm:h-18 bg-slate-600 rounded flex items-center justify-center text-slate-400 flex-shrink-0 cursor-pointer transition-all duration-200 relative overflow-hidden group thumbnail-container"
+            <div className="w-full h-20 bg-slate-600 rounded flex items-center justify-center text-slate-400 flex-shrink-0 cursor-pointer transition-all duration-200 relative overflow-hidden group thumbnail-container"
                  onClick={() => setPreviewingClip(clip)}>
               <img 
                 src={`/api/thumbnails/${clip.filename}`}
@@ -98,8 +98,8 @@ export default function ClipList({ clips, showActions = false }: ClipListProps) 
               </div>
             </div>
 
-            <div className="flex-1 min-w-0 w-full sm:w-auto">
-              <div className="flex flex-col sm:flex-row sm:items-center space-y-1 sm:space-y-0 sm:space-x-2 mb-2">
+            <div className="flex-1 min-w-0 w-full">
+              <div className="flex flex-col space-y-1 mb-2">
                 <h4 className="text-sm font-medium text-slate-200 truncate">
                   {clip.filename}
                 </h4>
@@ -107,7 +107,7 @@ export default function ClipList({ clips, showActions = false }: ClipListProps) 
                   NEW
                 </span>
               </div>
-              <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs text-slate-400">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
                 <span>{formatDate(clip.createdAt)}</span>
                 <span>{clip.duration}s</span>
                 <span>{formatSize(clip.fileSize)}</span>
@@ -116,7 +116,7 @@ export default function ClipList({ clips, showActions = false }: ClipListProps) 
             </div>
 
             {showActions && (
-              <div className="flex items-center space-x-2 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity w-full sm:w-auto justify-center sm:justify-start">
+              <div className="flex items-center space-x-2 opacity-100 group-hover:opacity-100 transition-opacity w-full justify-center">
                 <Button
                   size="sm"
                   variant="ghost"
