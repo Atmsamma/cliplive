@@ -53,25 +53,13 @@ function startStreamProcessor(config: any): boolean {
 
     if (streamProcessor.stdout) {
       streamProcessor.stdout.on('data', (data) => {
-        const output = data.toString().trim();
-        console.log(`[StreamProcessor STDOUT]: ${output}`);
-        
-        // Log important status messages
-        if (output.includes('CRITICAL') || output.includes('SUCCESS') || output.includes('Stream buffer')) {
-          console.log(`[IMPORTANT]: ${output}`);
-        }
+        console.log(`[StreamProcessor]: ${data.toString().trim()}`);
       });
     }
 
     if (streamProcessor.stderr) {
       streamProcessor.stderr.on('data', (data) => {
-        const error = data.toString().trim();
-        console.error(`[StreamProcessor STDERR]: ${error}`);
-        
-        // Log critical errors prominently
-        if (error.includes('CRITICAL') || error.includes('ERROR') || error.includes('Failed')) {
-          console.error(`[CRITICAL ERROR]: ${error}`);
-        }
+        console.error(`[StreamProcessor Error]: ${data.toString().trim()}`);
       });
     }
 
