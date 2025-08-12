@@ -384,7 +384,15 @@ class StreamProcessor:
         """Analyze stream segments for highlights."""
         while self.is_running:
             try:
-                if len(self.stream_buffer.segments) < 3:
+                current_segments = len(self.stream_buffer.segments) if self.stream_buffer else 0
+                
+                # Log buffer status every 10 seconds
+                if int(time.time()) % 10 == 0:
+                    print(f"📊 Buffer status: {current_segments} segments available")
+                    if current_segments == 0:
+                        print("⚠️ No segments in buffer - stream capture may be failing")
+                
+                if current_segments < 3:
                     time.sleep(1)
                     continue
 
@@ -1009,6 +1017,8 @@ class StreamProcessor:
     def _capture_real_segment(self, segment_path: str) -> bool:
         """Capture a real video segment using Streamlink - NO FALLBACKS."""
         try:
+            print(f"🎥 Starting segment capture to: {segment_path}")
+            
             # Check if streamlink is installed
             streamlink_check = subprocess.run(['which', 'streamlink'], capture_output=True, text=True)
             if streamlink_check.returncode != 0:
