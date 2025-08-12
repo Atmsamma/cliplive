@@ -284,8 +284,6 @@ class StreamProcessor:
 
     def start_processing(self) -> bool:
         """Start stream processing."""
-        print("🚀 StreamProcessor.start_processing() called")
-        
         if self.is_running:
             print("Stream processor is already running")
             return False
@@ -1216,20 +1214,15 @@ class StreamProcessor:
 
 def main():
     """Main entry point for stream processor."""
-    print("🔧 Python stream processor started")
-    print(f"🔧 Python version: {sys.version}")
-    print(f"🔧 Arguments: {sys.argv}")
-    
     if len(sys.argv) < 2:
         print("Usage: python stream_processor.py <config_json>")
         sys.exit(1)
 
     try:
         config = json.loads(sys.argv[1])
-        print(f"🔧 Parsed config: {config}")
         processor = StreamProcessor(config)
 
-        print(f"🚀 Starting stream processor for: {config['url']}")
+        print(f"Starting stream processor for: {config['url']}")
 
         if processor.start_processing():
             try:
