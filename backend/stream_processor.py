@@ -386,22 +386,33 @@ class StreamProcessor:
                             self._notify_stream_ended()
                             print(f"📺 STREAM ENDED: {self.max_consecutive_failures} consecutive failures detected")
                         
-                        # Continue monitoring for potential stream restart
-                        time.sleep(10)  # Wait longer between attempts when stream has ended
+                        # Continue monitoring for potential stream restart with longer delays
+                        time.sleep(30)  # Wait longer between attempts when stream has ended
                         continue
 
-                time.sleep(2)  # Wait for next segment
+                # Always wait between segments, regardless of success/failure
+                time.sleep(2)
 
             except Exception as e:
-                print(f"Error in stream capture: {e}")
+                print(f"❌ CRITICAL ERROR in stream capture: {e}")
+                import traceback
+                traceback.print_exc()
                 self.consecutive_failures += 1
-                time.sleep(1)
+                
+                # If we hit too many exceptions, stop processing
+                if self.consecutive_failures >= self.max_consecutive_failures:
+                    print("❌ Too many critical errors, stopping stream processing")
+                    self.is_running = False
+                    break
+                
+                time.sleep(5)  # Wait longer after exceptions
 
     def _stream_analysis_loop(self):
         """Analyze stream segments for highlights."""
         while self.is_running:
             try:
-                if len(self.stream_buffer.segments) < 3:
+                # Wait for at least one segment, but don't require 3
+                if len(self.stream_buffer.segments) < 1:
                     time.sleep(1)
                     continue
 
@@ -1024,66 +1035,34 @@ class StreamProcessor:
             return False
 
     def _capture_real_segment(self, segment_path: str) -> bool:
-        """Capture a real video segment using Streamlink - NO FALLBACKS."""
+        """Capture a real video segment using Streamlink with improved error handling."""
         try:
             # Check if streamlink is installed
-            streamlink_check = subprocess.run(['which', 'streamlink'], capture_output=True, text=True)
+            streamlink_check = subprocess.run(['which', 'streamlink'], capture_output=True, text=True, timeout=10)
             if streamlink_check.returncode != 0:
-                print("❌ CRITICAL: streamlink not found. Installing...")
-                install_result = subprocess.run(['pip', 'install', 'streamlink'], capture_output=True, text=True)
+                print("⚠️ streamlink not found, attempting to install...")
+                install_result = subprocess.run(['pip', 'install', 'streamlink'], capture_output=True, text=True, timeout=60)
                 if install_result.returncode != 0:
-                    print(f"❌ CRITICAL: Failed to install streamlink: {install_result.stderr}")
+                    print(f"❌ Failed to install streamlink: {install_result.stderr}")
                     return False
                 print("✅ streamlink installed successfully")
 
-            # First check if the stream is available with verbose output
-            check_cmd = [
-                'streamlink',
-                self.config['url'],
-                '--json'  # Get JSON output to see available streams
-            ]
-
-            print(f"🔍 DIAGNOSTIC: Checking available streams for {self.config['url']}")
-            check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=30)
-            
-            if check_result.returncode != 0:
-                print(f"❌ DIAGNOSTIC: Stream check failed")
-                print(f"   stdout: {check_result.stdout}")
-                print(f"   stderr: {check_result.stderr}")
-                
-                # Check if it's a YouTube issue specifically
-                if "youtube" in self.config['url'].lower():
-                    print("🔧 DIAGNOSTIC: YouTube stream detected, checking yt-dlp availability")
-                    ytdlp_check = subprocess.run(['which', 'yt-dlp'], capture_output=True, text=True)
-                    if ytdlp_check.returncode != 0:
-                        print("🔧 Installing yt-dlp for better YouTube support...")
-                        install_yt = subprocess.run(['pip', 'install', 'yt-dlp'], capture_output=True, text=True)
-                        if install_yt.returncode == 0:
-                            print("✅ yt-dlp installed")
-                        else:
-                            print(f"❌ Failed to install yt-dlp: {install_yt.stderr}")
-            else:
-                print("✅ DIAGNOSTIC: Stream is accessible, available streams:")
-                print(check_result.stdout[:500] + "..." if len(check_result.stdout) > 500 else check_result.stdout)
-
-            # Get the stream URL from streamlink with better error handling
+            # Get the stream URL from streamlink with timeout protection
             url_cmd = [
                 'streamlink',
                 self.config['url'],
-                'best',  # Use best quality for high-definition clips
+                'best',
                 '--stream-url',
-                '--retry-streams', '2',
-                '--retry-max', '3',
-                '--hls-live-edge', '3'  # Get closer to live edge
+                '--retry-streams', '1',
+                '--retry-max', '2',
+                '--hls-timeout', '30'
             ]
 
-            print(f"🔄 Getting stream URL: streamlink {self.config['url']} best --stream-url")
+            print(f"🔄 Getting stream URL for: {self.config['url']}")
             url_result = subprocess.run(url_cmd, capture_output=True, text=True, timeout=45)
 
             if url_result.returncode != 0:
-                print(f"❌ CRITICAL: streamlink failed with return code {url_result.returncode}")
-                print(f"❌ stdout: {url_result.stdout}")
-                print(f"❌ stderr: {url_result.stderr}")
+                print(f"⚠️ streamlink failed, trying fallback qualities...")
                 
                 # Try with different quality options
                 for quality in ['720p', '480p', '360p', 'worst']:
@@ -1096,81 +1075,66 @@ class StreamProcessor:
                         print(f"✅ Success with quality: {quality}")
                         break
                 else:
-                    print("❌ CRITICAL: All quality options failed")
-                    print("❌ Possible causes:")
-                    print("   - Stream is not live")
-                    print("   - Stream requires authentication")
-                    print("   - Network connectivity issues")
-                    print("   - Platform blocking access")
+                    print("❌ All streamlink attempts failed")
+                    # Provide helpful diagnostic info only once per stream
+                    if self.consecutive_failures == 0:
+                        print(f"❌ Streamlink stderr: {url_result.stderr[:200]}...")
+                        if "No playable streams found" in url_result.stderr:
+                            print("💡 HINT: Stream might not be live or may require authentication")
+                        elif "HTTP 403" in url_result.stderr:
+                            print("💡 HINT: Stream access is forbidden - check if stream requires login")
+                        elif "HTTP 404" in url_result.stderr:
+                            print("💡 HINT: Stream URL not found - verify the URL is correct")
                     return False
 
             stream_url = url_result.stdout.strip()
             if not stream_url or not stream_url.startswith('http'):
-                print(f"❌ CRITICAL: Invalid stream URL received: '{stream_url[:100]}...'")
+                print(f"❌ Invalid stream URL received: '{stream_url[:50]}...'")
                 return False
 
-            print(f"✅ Got stream URL: {stream_url[:80]}...")
-
-            # Use FFmpeg to capture a 2-second segment with more robust settings
+            # Use FFmpeg to capture segment with optimized settings
             ffmpeg_cmd = [
                 'ffmpeg',
                 '-i', stream_url,
-                '-t', '2',  # 2 seconds
+                '-t', '2',
                 '-c:v', 'libx264',
                 '-c:a', 'aac',
-                '-preset', 'ultrafast',  # Fastest encoding to prevent timeouts
-                '-crf', '28',  # Lower quality but more reliable
+                '-preset', 'ultrafast',
+                '-crf', '28',
                 '-avoid_negative_ts', 'make_zero',
                 '-f', 'mp4',
-                '-reconnect', '1',  # Allow reconnection
+                '-reconnect', '1',
                 '-reconnect_at_eof', '1',
                 '-reconnect_streamed', '1',
                 '-y',
                 segment_path
             ]
 
-            print(f"🎥 Capturing 2s video segment with FFmpeg...")
-            ffmpeg_result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=45)
+            ffmpeg_result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=30)
 
             if ffmpeg_result.returncode == 0 and os.path.exists(segment_path):
                 file_size = os.path.getsize(segment_path)
-                if file_size > 5000:  # Even lower threshold
-                    print(f"✅ SUCCESS: Captured {file_size} byte video segment")
-                    # Verify it's actually a video file
-                    verify_cmd = ['ffprobe', '-v', 'quiet', '-select_streams', 'v:0', '-show_entries', 'stream=duration', '-of', 'csv=p=0', segment_path]
-                    verify_result = subprocess.run(verify_cmd, capture_output=True, text=True, timeout=10)
-                    if verify_result.returncode == 0:
-                        print(f"✅ Video verification passed")
-                        return True
-                    else:
-                        print(f"⚠️ Video verification failed but file exists, proceeding anyway")
-                        return True
+                if file_size > 1000:  # Lowered threshold further
+                    print(f"✅ Captured {file_size} byte video segment")
+                    return True
                 else:
-                    print(f"❌ CRITICAL: Video segment too small ({file_size} bytes)")
-                    print(f"❌ FFmpeg stderr: {ffmpeg_result.stderr}")
+                    print(f"⚠️ Segment too small: {file_size} bytes")
+                    # Clean up small file
+                    if os.path.exists(segment_path):
+                        os.remove(segment_path)
                     return False
             else:
-                print(f"❌ CRITICAL: FFmpeg capture failed (exit code: {ffmpeg_result.returncode})")
-                print(f"❌ FFmpeg stdout: {ffmpeg_result.stdout}")
-                print(f"❌ FFmpeg stderr: {ffmpeg_result.stderr}")
-                
-                # Additional diagnostics
-                if "403" in ffmpeg_result.stderr or "Forbidden" in ffmpeg_result.stderr:
-                    print("❌ ANALYSIS: Stream URL is forbidden - likely authentication required")
-                elif "404" in ffmpeg_result.stderr or "Not Found" in ffmpeg_result.stderr:
-                    print("❌ ANALYSIS: Stream URL not found - stream may have ended")
-                elif "timeout" in ffmpeg_result.stderr.lower():
-                    print("❌ ANALYSIS: Connection timeout - network or stream issues")
-                
+                print(f"⚠️ FFmpeg failed (exit {ffmpeg_result.returncode})")
+                # Only show detailed error on first few failures to avoid spam
+                if self.consecutive_failures < 3:
+                    print(f"   FFmpeg stderr: {ffmpeg_result.stderr[:200]}...")
                 return False
 
         except subprocess.TimeoutExpired:
-            print("❌ CRITICAL: Stream capture timed out - stream may be slow or unavailable")
+            print("⚠️ Stream capture timed out")
             return False
         except Exception as e:
-            print(f"❌ CRITICAL: Stream capture error: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"⚠️ Stream capture error: {e}")
             return False
 
     
