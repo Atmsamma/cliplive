@@ -348,8 +348,10 @@ class StreamProcessor:
                 segment_filename = f"segment_{segment_counter:06d}.ts"
                 segment_path = os.path.join(self.stream_buffer.temp_dir, segment_filename)
 
+                print(f"🎥 Attempting to capture segment {segment_counter}: {segment_filename}")
                 # Capture REAL video segment with stream end detection
                 success = self._capture_real_segment(segment_path)
+                print(f"📊 Capture result for segment {segment_counter}: {'SUCCESS' if success else 'FAILED'}")
 
                 if success:
                     # Reset failure counter on successful capture
@@ -384,12 +386,16 @@ class StreamProcessor:
         """Analyze stream segments for highlights."""
         while self.is_running:
             try:
-                if len(self.stream_buffer.segments) < 3:
+                print(f"🔍 Analysis loop: Buffer has {len(self.stream_buffer.segments) if self.stream_buffer else 0} segments")
+                
+                if not self.stream_buffer or len(self.stream_buffer.segments) < 3:
+                    print(f"⏳ Waiting for segments... (need 3, have {len(self.stream_buffer.segments) if self.stream_buffer else 0})")
                     time.sleep(1)
                     continue
 
                 # Analyze latest segment
                 latest_segment = self.stream_buffer.segments[-1]
+                print(f"🎬 Analyzing segment: {latest_segment['path']}")
                 metrics = self._analyze_segment(latest_segment['path'])
 
                 # Update processing stats
