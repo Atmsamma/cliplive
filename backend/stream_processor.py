@@ -781,7 +781,7 @@ class StreamProcessor:
             
             print(f"Final clip: start={clip_start_time:.1f}s, duration={actual_clip_duration:.1f}s")
 
-            # FFmpeg command for precise clipping
+            # FFmpeg command for precise clipping with smooth frame handling
             cmd = [
                 'ffmpeg',
                 '-f', 'concat',
@@ -794,6 +794,12 @@ class StreamProcessor:
                 '-preset', 'medium', # Better quality encoding
                 '-crf', '18',        # High quality (18 = visually lossless)
                 '-pix_fmt', 'yuv420p',  # Ensure compatibility
+                '-r', '30',          # Force consistent 30fps output
+                '-vsync', 'cfr',     # Constant frame rate to prevent drops
+                '-async', '1',       # Audio sync adjustment
+                '-bsf:v', 'h264_mp4toannexb,h264_metadata=aud=insert', # Fix frame boundaries
+                '-avoid_negative_ts', 'make_zero',  # Handle timestamp issues
+                '-fflags', '+genpts', # Generate presentation timestamps
                 '-movflags', '+faststart',  # Web optimization
                 '-y',  # Overwrite output
                 output_path
@@ -856,7 +862,7 @@ class StreamProcessor:
                     escaped_path = segment_path.replace("'", "'\\''")
                     f.write(f"file '{escaped_path}'\n")
             
-            # Use FFmpeg to create the final clip
+            # Use FFmpeg to create the final clip with smooth frame handling
             cmd = [
                 'ffmpeg',
                 '-f', 'concat',
@@ -868,6 +874,12 @@ class StreamProcessor:
                 '-preset', 'medium', # Better quality encoding
                 '-crf', '18',        # High quality
                 '-pix_fmt', 'yuv420p',  # Ensure compatibility
+                '-r', '30',          # Force consistent 30fps output
+                '-vsync', 'cfr',     # Constant frame rate to prevent drops
+                '-async', '1',       # Audio sync adjustment
+                '-bsf:v', 'h264_mp4toannexb,h264_metadata=aud=insert', # Fix frame boundaries
+                '-avoid_negative_ts', 'make_zero',  # Handle timestamp issues
+                '-fflags', '+genpts', # Generate presentation timestamps
                 '-movflags', '+faststart',
                 '-y',
                 output_path
@@ -1057,7 +1069,7 @@ class StreamProcessor:
 
             print(f"✅ Got stream URL: {stream_url[:80]}...")
 
-            # Use FFmpeg to capture a 2-second segment directly from HLS
+            # Use FFmpeg to capture a 2-second segment directly from HLS with consistent frame handling
             ffmpeg_cmd = [
                 'ffmpeg',
                 '-i', stream_url,
@@ -1066,7 +1078,11 @@ class StreamProcessor:
                 '-c:a', 'aac',      # Re-encode audio for compatibility
                 '-preset', 'fast',  # Balanced encoding speed/quality
                 '-crf', '18',       # High quality (lower CRF = better quality)
+                '-r', '30',         # Force consistent 30fps capture
+                '-vsync', 'cfr',    # Constant frame rate
+                '-async', '1',      # Audio sync
                 '-avoid_negative_ts', 'make_zero',
+                '-fflags', '+genpts', # Generate proper timestamps
                 '-f', 'mp4',        # Force MP4 format
                 '-y',               # Overwrite output
                 segment_path
