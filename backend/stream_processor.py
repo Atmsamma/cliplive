@@ -342,18 +342,12 @@ class StreamProcessor:
         """Main loop for capturing stream segments."""
         segment_counter = 0
 
-        # Add initial diagnostic
-        print(f"🎬 Starting stream capture loop for: {self.config['url']}")
-        print(f"🎬 Target: {self.max_consecutive_failures} max failures before stream end detection")
-
         while self.is_running:
             try:
                 timestamp = time.time()
                 segment_filename = f"segment_{segment_counter:06d}.ts"
                 segment_path = os.path.join(self.stream_buffer.temp_dir, segment_filename)
 
-                print(f"🎬 Attempt {segment_counter + 1}: Capturing segment...")
-                
                 # Capture REAL video segment with stream end detection
                 success = self._capture_real_segment(segment_path)
 
@@ -363,21 +357,10 @@ class StreamProcessor:
                     self.last_successful_capture = timestamp
                     self.stream_buffer.add_segment(segment_path, timestamp)
                     segment_counter += 1
-                    print(f"✅ Segment {segment_counter} captured successfully")
                 else:
                     # Increment failure counter
                     self.consecutive_failures += 1
                     print(f"⚠️ Stream capture failed ({self.consecutive_failures}/{self.max_consecutive_failures})")
-                    
-                    # Provide more context on first failure
-                    if self.consecutive_failures == 1:
-                        print("🔍 FIRST FAILURE ANALYSIS:")
-                        print(f"   - URL: {self.config['url']}")
-                        print("   - This could indicate:")
-                        print("     * Stream is not currently live")
-                        print("     * Network connectivity issues")
-                        print("     * Authentication required")
-                        print("     * Platform restrictions")
                     
                     # Check if stream has ended
                     if self.consecutive_failures >= self.max_consecutive_failures:
@@ -386,33 +369,22 @@ class StreamProcessor:
                             self._notify_stream_ended()
                             print(f"📺 STREAM ENDED: {self.max_consecutive_failures} consecutive failures detected")
                         
-                        # Continue monitoring for potential stream restart with longer delays
-                        time.sleep(30)  # Wait longer between attempts when stream has ended
+                        # Continue monitoring for potential stream restart
+                        time.sleep(10)  # Wait longer between attempts when stream has ended
                         continue
 
-                # Always wait between segments, regardless of success/failure
-                time.sleep(2)
+                time.sleep(2)  # Wait for next segment
 
             except Exception as e:
-                print(f"❌ CRITICAL ERROR in stream capture: {e}")
-                import traceback
-                traceback.print_exc()
+                print(f"Error in stream capture: {e}")
                 self.consecutive_failures += 1
-                
-                # If we hit too many exceptions, stop processing
-                if self.consecutive_failures >= self.max_consecutive_failures:
-                    print("❌ Too many critical errors, stopping stream processing")
-                    self.is_running = False
-                    break
-                
-                time.sleep(5)  # Wait longer after exceptions
+                time.sleep(1)
 
     def _stream_analysis_loop(self):
         """Analyze stream segments for highlights."""
         while self.is_running:
             try:
-                # Wait for at least one segment, but don't require 3
-                if len(self.stream_buffer.segments) < 1:
+                if len(self.stream_buffer.segments) < 3:
                     time.sleep(1)
                     continue
 
@@ -809,7 +781,7 @@ class StreamProcessor:
             
             print(f"Final clip: start={clip_start_time:.1f}s, duration={actual_clip_duration:.1f}s")
 
-            # FFmpeg command for precise clipping with smooth frame handling
+            # FFmpeg command for precise clipping
             cmd = [
                 'ffmpeg',
                 '-f', 'concat',
@@ -819,8 +791,8 @@ class StreamProcessor:
                 '-t', str(actual_clip_duration),  # Actual available duration
                 '-c:v', 'libx264',  # Video codec
                 '-c:a', 'aac',      # Audio codec
-                '-preset', 'fast',   # Faster encoding for reliability
-                '-crf', '23',        # Good quality balance
+                '-preset', 'medium', # Better quality encoding
+                '-crf', '18',        # High quality (18 = visually lossless)
                 '-pix_fmt', 'yuv420p',  # Ensure compatibility
                 '-movflags', '+faststart',  # Web optimization
                 '-y',  # Overwrite output
@@ -884,7 +856,7 @@ class StreamProcessor:
                     escaped_path = segment_path.replace("'", "'\\''")
                     f.write(f"file '{escaped_path}'\n")
             
-            # Use FFmpeg to create the final clip with smooth frame handling
+            # Use FFmpeg to create the final clip
             cmd = [
                 'ffmpeg',
                 '-f', 'concat',
@@ -893,8 +865,8 @@ class StreamProcessor:
                 '-t', str(self.clip_length),  # Use exact clip length
                 '-c:v', 'libx264',
                 '-c:a', 'aac',
-                '-preset', 'fast',   # Faster encoding
-                '-crf', '23',        # Good quality balance
+                '-preset', 'medium', # Better quality encoding
+                '-crf', '18',        # High quality
                 '-pix_fmt', 'yuv420p',  # Ensure compatibility
                 '-movflags', '+faststart',
                 '-y',
@@ -1035,106 +1007,96 @@ class StreamProcessor:
             return False
 
     def _capture_real_segment(self, segment_path: str) -> bool:
-        """Capture a real video segment using Streamlink with improved error handling."""
+        """Capture a real video segment using Streamlink - NO FALLBACKS."""
         try:
             # Check if streamlink is installed
-            streamlink_check = subprocess.run(['which', 'streamlink'], capture_output=True, text=True, timeout=10)
+            streamlink_check = subprocess.run(['which', 'streamlink'], capture_output=True, text=True)
             if streamlink_check.returncode != 0:
-                print("⚠️ streamlink not found, attempting to install...")
-                install_result = subprocess.run(['pip', 'install', 'streamlink'], capture_output=True, text=True, timeout=60)
+                print("❌ CRITICAL: streamlink not found. Installing...")
+                install_result = subprocess.run(['pip', 'install', 'streamlink'], capture_output=True, text=True)
                 if install_result.returncode != 0:
-                    print(f"❌ Failed to install streamlink: {install_result.stderr}")
+                    print(f"❌ CRITICAL: Failed to install streamlink: {install_result.stderr}")
                     return False
                 print("✅ streamlink installed successfully")
 
-            # Get the stream URL from streamlink with timeout protection
+            # First get the stream URL from streamlink with better error handling
             url_cmd = [
                 'streamlink',
                 self.config['url'],
-                'best',
+                'best',  # Use best quality for high-definition clips
                 '--stream-url',
-                '--retry-streams', '1',
-                '--retry-max', '2',
-                '--hls-timeout', '30'
+                '--retry-streams', '3',
+                '--retry-max', '5'
             ]
 
-            print(f"🔄 Getting stream URL for: {self.config['url']}")
-            url_result = subprocess.run(url_cmd, capture_output=True, text=True, timeout=45)
+            print(f"🔄 Getting stream URL: streamlink {self.config['url']} best --stream-url")
+            url_result = subprocess.run(url_cmd, capture_output=True, text=True, timeout=30)
 
             if url_result.returncode != 0:
-                print(f"⚠️ streamlink failed, trying fallback qualities...")
+                print(f"❌ CRITICAL: streamlink failed with return code {url_result.returncode}")
+                print(f"❌ stdout: {url_result.stdout}")
+                print(f"❌ stderr: {url_result.stderr}")
                 
-                # Try with different quality options
-                for quality in ['720p', '480p', '360p', 'worst']:
+                # Try with different quality options (prioritize higher quality)
+                for quality in ['720p', '1080p', '480p', '360p']:
                     print(f"🔄 Trying quality: {quality}")
                     retry_cmd = url_cmd.copy()
                     retry_cmd[2] = quality
                     retry_result = subprocess.run(retry_cmd, capture_output=True, text=True, timeout=30)
                     if retry_result.returncode == 0 and retry_result.stdout.strip():
                         url_result = retry_result
-                        print(f"✅ Success with quality: {quality}")
                         break
                 else:
-                    print("❌ All streamlink attempts failed")
-                    # Provide helpful diagnostic info only once per stream
-                    if self.consecutive_failures == 0:
-                        print(f"❌ Streamlink stderr: {url_result.stderr[:200]}...")
-                        if "No playable streams found" in url_result.stderr:
-                            print("💡 HINT: Stream might not be live or may require authentication")
-                        elif "HTTP 403" in url_result.stderr:
-                            print("💡 HINT: Stream access is forbidden - check if stream requires login")
-                        elif "HTTP 404" in url_result.stderr:
-                            print("💡 HINT: Stream URL not found - verify the URL is correct")
+                    print("❌ CRITICAL: All quality options failed - stream may have ended")
                     return False
 
             stream_url = url_result.stdout.strip()
             if not stream_url or not stream_url.startswith('http'):
-                print(f"❌ Invalid stream URL received: '{stream_url[:50]}...'")
+                print(f"❌ CRITICAL: Invalid stream URL received: '{stream_url}'")
                 return False
 
-            # Use FFmpeg to capture segment with optimized settings
+            print(f"✅ Got stream URL: {stream_url[:80]}...")
+
+            # Use FFmpeg to capture a 2-second segment directly from HLS
             ffmpeg_cmd = [
                 'ffmpeg',
                 '-i', stream_url,
-                '-t', '2',
-                '-c:v', 'libx264',
-                '-c:a', 'aac',
-                '-preset', 'ultrafast',
-                '-crf', '28',
+                '-t', '2',  # 2 seconds
+                '-c:v', 'libx264',  # Re-encode video for compatibility
+                '-c:a', 'aac',      # Re-encode audio for compatibility
+                '-preset', 'fast',  # Balanced encoding speed/quality
+                '-crf', '18',       # High quality (lower CRF = better quality)
                 '-avoid_negative_ts', 'make_zero',
-                '-f', 'mp4',
-                '-reconnect', '1',
-                '-reconnect_at_eof', '1',
-                '-reconnect_streamed', '1',
-                '-y',
+                '-f', 'mp4',        # Force MP4 format
+                '-y',               # Overwrite output
                 segment_path
             ]
 
+            print(f"🎥 Capturing video segment...")
             ffmpeg_result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=30)
 
             if ffmpeg_result.returncode == 0 and os.path.exists(segment_path):
                 file_size = os.path.getsize(segment_path)
-                if file_size > 1000:  # Lowered threshold further
-                    print(f"✅ Captured {file_size} byte video segment")
+                if file_size > 10000:  # Lowered threshold to 10KB
+                    print(f"✅ SUCCESS: Captured {file_size} byte video segment")
                     return True
                 else:
-                    print(f"⚠️ Segment too small: {file_size} bytes")
-                    # Clean up small file
-                    if os.path.exists(segment_path):
-                        os.remove(segment_path)
+                    print(f"❌ CRITICAL: Video segment too small ({file_size} bytes)")
+                    print(f"❌ FFmpeg stderr: {ffmpeg_result.stderr}")
                     return False
             else:
-                print(f"⚠️ FFmpeg failed (exit {ffmpeg_result.returncode})")
-                # Only show detailed error on first few failures to avoid spam
-                if self.consecutive_failures < 3:
-                    print(f"   FFmpeg stderr: {ffmpeg_result.stderr[:200]}...")
+                print(f"❌ CRITICAL: FFmpeg capture failed")
+                print(f"❌ FFmpeg stdout: {ffmpeg_result.stdout}")
+                print(f"❌ FFmpeg stderr: {ffmpeg_result.stderr}")
                 return False
 
         except subprocess.TimeoutExpired:
-            print("⚠️ Stream capture timed out")
+            print("❌ CRITICAL: Stream capture timed out")
             return False
         except Exception as e:
-            print(f"⚠️ Stream capture error: {e}")
+            print(f"❌ CRITICAL: Stream capture error: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
     
