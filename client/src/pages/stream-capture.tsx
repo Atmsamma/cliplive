@@ -62,7 +62,7 @@ export default function StreamCapture() {
             <div className="flex items-center space-x-2 px-3 py-1 bg-slate-700 rounded-full text-sm">
               <div
                 className={`w-2 h-2 rounded-full ${
-                  status?.isProcessing ? "bg-emerald-500 animate-pulse" : "bg-red-500"
+                  status?.isProcessing ? "bg-red-500 animate-pulse" : "bg-slate-500"
                 }`}
               />
               <span className="text-slate-300">

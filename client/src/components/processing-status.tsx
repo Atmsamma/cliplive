@@ -54,7 +54,7 @@ export default function ProcessingStatus() {
             <div className="text-2xl font-bold mb-1">
               <span className={
                 status?.streamEnded ? 'text-red-400' :
-                status?.currentSession ? 'text-emerald-400' : 'text-slate-400'
+                status?.currentSession ? 'text-red-400' : 'text-slate-400'
               }>
                 {status?.streamEnded ? 'ENDED' :
                  status?.currentSession ? 'LIVE' : 'IDLE'}
@@ -101,8 +101,8 @@ export default function ProcessingStatus() {
             {status?.currentSession && (
               <div className={`absolute top-3 right-3 w-4 h-4 rounded-full ${
                 animationState === 'high' ? 'bg-red-500 animate-ping' :
-                animationState === 'medium' ? 'bg-yellow-500 animate-pulse' :
-                animationState === 'low' ? 'bg-green-500 animate-pulse' : 'bg-slate-500'
+                animationState === 'medium' ? 'bg-red-400 animate-pulse' :
+                animationState === 'low' ? 'bg-red-300 animate-pulse' : 'bg-slate-500'
               }`} />
             )}
 
@@ -116,12 +116,7 @@ export default function ProcessingStatus() {
               </div>
             )}
 
-            {/* Frame counter overlay */}
-            {status?.currentSession && (
-              <div className="absolute bottom-3 left-3 bg-black bg-opacity-60 px-2 py-1 rounded text-xs text-white">
-                {status?.framesProcessed || 0} frames processed
-              </div>
-            )}
+            
           </div>
         </div>
       </CardContent>
