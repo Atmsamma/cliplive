@@ -62,11 +62,7 @@ export default function ProcessingStatus() {
                 Stream no longer available
               </div>
             )}
-            {status?.consecutiveFailures && status.consecutiveFailures > 0 && status.consecutiveFailures < 5 && (
-              <div className="text-xs text-yellow-400 mt-1">
-                Connection issues ({status.consecutiveFailures}/5)
-              </div>
-            )}
+            
           </div>
 
           {/* Static Stream Screenshot - Full Size */}
