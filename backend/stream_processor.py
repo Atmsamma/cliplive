@@ -328,17 +328,25 @@ class StreamProcessor:
         self.is_running = True
         self.consecutive_failures = 0
         self.last_successful_capture = time.time()
+        self.start_time = time.time()
 
         print(f"🚀 Starting stream processor for: {url}")
         print(f"📊 Thresholds - Audio: {audio_threshold}, Motion: {motion_threshold}")
         print(f"⏱️ Clip length: {clip_length}s")
 
+        # Initialize stream buffer
+        self.stream_buffer = StreamBuffer(buffer_seconds=60, segment_duration=2)
+
+        # Start baseline calibration
+        if self.use_adaptive_detection:
+            self.baseline_tracker.start_calibration()
+
         # Capture initial session screenshot
         self._capture_session_screenshot()
 
         # Start capture and analysis threads
-        self.capture_thread = threading.Thread(target=self._capture_segments, daemon=True)
-        self.analysis_thread = threading.Thread(target=self._analysis_loop, daemon=True)
+        self.capture_thread = threading.Thread(target=self._stream_capture_loop, daemon=True)
+        self.analysis_thread = threading.Thread(target=self._stream_analysis_loop, daemon=True)
 
         self.capture_thread.start()
         self.analysis_thread.start()
@@ -1288,11 +1296,10 @@ class StreamProcessor:
                 channel_match = re.search(r'twitch\.tv/([^/?]+)', self.url)
                 if channel_match:
                     channel = channel_match.group(1)
-                    from ad_gatekeeper import AdGatekeeper
-                    gatekeeper = AdGatekeeper()
-                    clean_url = gatekeeper.get_clean_hls_url(channel)
-                    if clean_url:
-                        self.url = clean_url
+                    if self.ad_gatekeeper:
+                        clean_url = self.ad_gatekeeper.get_clean_twitch_url(channel)
+                        if clean_url:
+                            self.url = clean_url
 
             session_id = getattr(self, 'session_id', 'default')
             frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", f"session_{session_id}_frame.jpg")

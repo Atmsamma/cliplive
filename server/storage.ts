@@ -6,7 +6,7 @@ export interface IStorage {
   getClips(): Promise<Clip[]>;
   getClip(id: number): Promise<Clip | undefined>;
   deleteClip(id: number): Promise<boolean>;
-  
+
   // Stream Sessions
   createStreamSession(session: InsertStreamSession): Promise<StreamSession>;
   getActiveSession(): Promise<StreamSession | undefined>;

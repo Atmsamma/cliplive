@@ -17,7 +17,7 @@ export default function StreamCapture() {
     refetchInterval: 1000,
   });
 
-  const { data: clips } = useQuery<Clip[]>({
+  const { data: clips = [] } = useQuery<Clip[]>({
     queryKey: ["/api/clips"],
     refetchInterval: 5000,
   });

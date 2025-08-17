@@ -72,6 +72,10 @@ class AdGatekeeper:
 
         return bool(AD_RE.search(m3u8_text))
 
+    def get_clean_hls_url(self, channel: str, quality: str = "best") -> Optional[str]:
+        """Alias for get_clean_twitch_url for backwards compatibility."""
+        return self.get_clean_twitch_url(channel, quality)
+
     def get_clean_twitch_url(self, channel: str, quality: str = "best") -> Optional[str]:
         """
         Get a clean Twitch HLS URL without ad markers.
