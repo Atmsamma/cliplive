@@ -51,6 +51,7 @@ export interface ProcessingStatus {
   streamEnded?: boolean;
   consecutiveFailures?: number;
   lastSuccessfulCapture?: number;
+  currentFrame?: boolean; // Indicates if a current frame is available
 }
 
 // SSE event types

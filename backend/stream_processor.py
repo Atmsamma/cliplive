@@ -57,7 +57,7 @@ class BaselineTracker:
 
         # Metric collections for baseline calculation
         self.audio_levels = deque(maxlen=1000)
-        self.motion_levels = deque(maxlen=1000) 
+        self.motion_levels = deque(maxlen=1000)
         self.scene_changes = deque(maxlen=1000)
 
         # Calculated baseline statistics
@@ -242,11 +242,12 @@ class StreamProcessor:
     def __init__(self, config: Dict[str, Any]):
         """Initialize stream processor with configuration."""
         self.config = config
-        self.is_running = False
-        self.current_session = None
+        self.clip_length = config.get('clipLength', 30)
         self.stream_buffer = None
-        self.metrics_queue = Queue()
-        self.clip_queue = Queue()
+        self.is_running = False
+        self.capture_thread = None
+        self.analysis_thread = None
+        self.current_frame_path = os.path.join(os.getcwd(), 'temp', 'current_frame.jpg')
 
         # Processing stats
         self.frames_processed = 0
@@ -262,7 +263,7 @@ class StreamProcessor:
         # Detection thresholds (legacy - will be replaced by adaptive)
         self.audio_threshold = config.get('audioThreshold', 6)  # dB
         self.motion_threshold = config.get('motionThreshold', 30)  # percentage
-        self.clip_length = config.get('clipLength', 20)  # seconds
+        self.clip_length = config.get('clipLength', 30)
 
         # Adaptive baseline detection with shorter calibration for testing
         self.baseline_tracker = BaselineTracker(calibration_seconds=60)  # Reduced from 120s
@@ -287,7 +288,7 @@ class StreamProcessor:
         # Initialize Ad Gatekeeper if available and enabled
         self.ad_gatekeeper = None
         self.use_ad_gatekeeper = config.get('useAdGatekeeper', True)
-        
+
         if AD_GATEKEEPER_AVAILABLE and self.use_ad_gatekeeper:
             try:
                 self.ad_gatekeeper = AdGatekeeper()
@@ -298,9 +299,12 @@ class StreamProcessor:
         elif not self.use_ad_gatekeeper:
             print("🛡️ Ad Gatekeeper disabled by configuration")
 
-        # Ensure clips directory exists
-        self.clips_dir = os.path.join(os.getcwd(), 'clips')
-        os.makedirs(self.clips_dir, exist_ok=True)
+        # Ensure clips and temp directories exist
+        clips_dir = os.path.join(os.getcwd(), 'clips')
+        os.makedirs(clips_dir, exist_ok=True)
+
+        temp_dir = os.path.join(os.getcwd(), 'temp')
+        os.makedirs(temp_dir, exist_ok=True)
 
         print(f"Stream processor initialized with config: {config}")
         print(f"AI Detection: {'Enabled' if self.ai_detector else 'Disabled'}")
@@ -357,7 +361,7 @@ class StreamProcessor:
         if self.stream_buffer:
             self.stream_buffer.cleanup()
             self.stream_buffer = None
-        
+
         # Clean up AI detector resources
         if self.ai_detector:
             self.ai_detector.cleanup()
@@ -383,18 +387,20 @@ class StreamProcessor:
                     self.last_successful_capture = timestamp
                     self.stream_buffer.add_segment(segment_path, timestamp)
                     segment_counter += 1
+                    # Extract current frame for live preview
+                    self._extract_current_frame(segment_path)
                 else:
                     # Increment failure counter
                     self.consecutive_failures += 1
                     print(f"⚠️ Stream capture failed ({self.consecutive_failures}/{self.max_consecutive_failures})")
-                    
+
                     # Check if stream has ended
                     if self.consecutive_failures >= self.max_consecutive_failures:
                         if not self.stream_ended:
                             self.stream_ended = True
                             self._notify_stream_ended()
                             print(f"📺 STREAM ENDED: {self.max_consecutive_failures} consecutive failures detected")
-                        
+
                         # Continue monitoring for potential stream restart
                         time.sleep(10)  # Wait longer between attempts when stream has ended
                         continue
@@ -411,7 +417,7 @@ class StreamProcessor:
         while self.is_running:
             try:
                 print(f"🔍 Analysis loop: Buffer has {len(self.stream_buffer.segments) if self.stream_buffer else 0} segments")
-                
+
                 if not self.stream_buffer or len(self.stream_buffer.segments) < 3:
                     print(f"⏳ Waiting for segments... (need 3, have {len(self.stream_buffer.segments) if self.stream_buffer else 0})")
                     time.sleep(1)
@@ -502,7 +508,7 @@ class StreamProcessor:
 
             # ONLY process real video segments - no mock data allowed
             file_size = os.path.getsize(segment_path)
-            
+
             if file_size < 50000:
                 print(f"❌ CRITICAL: Segment file too small ({file_size} bytes) - not real video")
                 return self._get_default_metrics()
@@ -654,7 +660,7 @@ class StreamProcessor:
         if audio_level >= 80:  # High audio level
             return f"High Audio Level ({audio_level:.1f})"
 
-        # Motion threshold check  
+        # Motion threshold check
         if motion_level >= self.motion_threshold:
             return f"Motion Detected ({motion_level:.1f}%)"
 
@@ -682,7 +688,7 @@ class StreamProcessor:
             timestamp = datetime.fromtimestamp(detection_time)
             clip_filename = f"highlight_{timestamp.strftime('%Y%m%d_%H%M%S')}.mp4"
             clip_path = os.path.join(self.clips_dir, clip_filename)
-            
+
             # Capture thumbnail frame at detection moment BEFORE creating the clip
             thumbnail_filename = f"{clip_filename.replace('.mp4', '.jpg')}"
             self._capture_detection_frame(detection_time, clip_segments, thumbnail_filename)
@@ -714,8 +720,8 @@ class StreamProcessor:
 
             # Create the clip with precise timing using FFmpeg
             success = self._create_ffmpeg_clip(
-                clip_segments, 
-                detection_segment, 
+                clip_segments,
+                detection_segment,
                 segment_offset,
                 before_duration,
                 after_duration,
@@ -779,10 +785,10 @@ class StreamProcessor:
             if total_available_duration < self.clip_length:
                 print(f"WARNING: Buffer only has {total_available_duration}s but need {self.clip_length}s")
                 print("Will capture additional real-time content to reach full clip duration")
-                
+
                 # Use the real-time capture approach for full duration
                 return self._create_realtime_clip(segments, output_path, trigger_reason, before_duration, after_duration)
-                
+
             else:
                 # We have enough content - use proper 20%/80% strategy
                 # Find detection moment position in the concatenated timeline
@@ -793,22 +799,22 @@ class StreamProcessor:
                         break
 
                 print(f"Detection moment at {detection_moment_in_timeline}s in concatenated timeline")
-                
+
                 # Calculate optimal start time for 20%/80% strategy
                 ideal_start_time = detection_moment_in_timeline - before_duration
-                
+
                 # Ensure we don't go before the start of available content
                 clip_start_time = max(0, ideal_start_time)
-                
+
                 # Ensure we don't exceed available content
                 available_duration_from_start = total_available_duration - clip_start_time
                 actual_clip_duration = min(self.clip_length, available_duration_from_start)
-                
+
                 print(f"20%/80% strategy: start={clip_start_time:.1f}s, detection at {detection_moment_in_timeline:.1f}s")
-            
+
             # Always use user-specified duration if possible
             actual_clip_duration = self.clip_length
-            
+
             print(f"Final clip: start={clip_start_time:.1f}s, duration={actual_clip_duration:.1f}s")
 
             # FFmpeg command for precise clipping
@@ -860,32 +866,32 @@ class StreamProcessor:
         """Create a clip by combining buffered content with real-time capture to reach full duration."""
         try:
             print(f"Creating real-time clip: {self.clip_length}s total ({before_duration}s + {after_duration}s)")
-            
+
             # Step 1: Use all available buffered content
             buffered_duration = len(buffered_segments) * 2
             print(f"Using {buffered_duration}s of buffered content")
-            
+
             # Step 2: Calculate how much additional content we need
             additional_needed = self.clip_length - buffered_duration
             print(f"Need {additional_needed}s additional real-time content")
-            
+
             # Step 3: Capture additional real-time content
             temp_files = []
             if additional_needed > 0:
                 print(f"Capturing {additional_needed}s of additional real-time content...")
                 additional_segments = self._capture_additional_content(additional_needed)
                 temp_files.extend(additional_segments)
-            
+
             # Step 4: Combine all segments into final clip
             all_segments = [seg['path'] for seg in buffered_segments] + temp_files
-            
+
             # Create concatenation file
             concat_file = os.path.join(self.stream_buffer.temp_dir, f"realtime_{int(time.time())}.txt")
             with open(concat_file, 'w') as f:
                 for segment_path in all_segments:
                     escaped_path = segment_path.replace("'", "'\\''")
                     f.write(f"file '{escaped_path}'\n")
-            
+
             # Use FFmpeg to create the final clip
             cmd = [
                 'ffmpeg',
@@ -902,17 +908,17 @@ class StreamProcessor:
                 '-y',
                 output_path
             ]
-            
+
             print(f"Creating real-time clip: ffmpeg ... -t {self.clip_length} {output_path}")
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-            
+
             # Clean up temporary files
             if os.path.exists(concat_file):
                 os.remove(concat_file)
             for temp_file in temp_files:
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
-            
+
             if result.returncode == 0:
                 print(f"✅ Real-time clip creation successful: {output_path} ({self.clip_length}s)")
                 return True
@@ -921,7 +927,7 @@ class StreamProcessor:
                 print("❌ CRITICAL: Real-time clipping failed - stopping processing")
                 self.is_running = False
                 return False
-                
+
         except Exception as e:
             print(f"❌ CRITICAL: Real-time clip creation error: {e}")
             self.is_running = False
@@ -931,14 +937,14 @@ class StreamProcessor:
         """Capture additional real-time content to fill the clip duration."""
         additional_segments = []
         segments_needed = max(1, int(duration_needed / 2))  # 2 seconds per segment
-        
+
         print(f"Capturing {segments_needed} additional segments ({segments_needed * 2}s)")
-        
+
         for i in range(segments_needed):
             try:
                 temp_filename = f"additional_{int(time.time())}_{i}.ts"
                 temp_path = os.path.join(self.stream_buffer.temp_dir, temp_filename)
-                
+
                 # Capture segment using existing method
                 if self._capture_real_segment(temp_path):
                     additional_segments.append(temp_path)
@@ -946,11 +952,11 @@ class StreamProcessor:
                 else:
                     print(f"✗ Failed to capture additional segment {i+1}")
                     break
-                    
+
             except Exception as e:
                 print(f"Error capturing additional segment {i}: {e}")
                 break
-        
+
         return additional_segments
 
     def _capture_detection_frame(self, detection_time: float, clip_segments: List[Dict], thumbnail_filename: str):
@@ -959,24 +965,24 @@ class StreamProcessor:
             # Find the segment containing the detection moment
             detection_segment = None
             segment_offset = 0
-            
+
             for segment in clip_segments:
                 segment_end = segment['timestamp'] + segment['duration']
                 if segment['timestamp'] <= detection_time <= segment_end:
                     detection_segment = segment
                     segment_offset = detection_time - segment['timestamp']
                     break
-            
+
             if not detection_segment:
                 print("Could not find segment for frame capture")
                 return
-            
+
             # Create thumbnail directory if it doesn't exist
             thumbnails_dir = os.path.join(self.clips_dir, 'thumbnails')
             os.makedirs(thumbnails_dir, exist_ok=True)
-            
+
             thumbnail_path = os.path.join(thumbnails_dir, thumbnail_filename)
-            
+
             # Use FFmpeg to extract frame at exact detection moment
             cmd = [
                 'ffmpeg',
@@ -986,15 +992,15 @@ class StreamProcessor:
                 '-y',                        # Overwrite output
                 thumbnail_path
             ]
-            
+
             print(f"🖼️ Capturing frame at detection moment: {segment_offset:.1f}s into segment")
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-            
+
             if result.returncode == 0 and os.path.exists(thumbnail_path):
                 print(f"✅ Frame captured successfully: {thumbnail_filename}")
             else:
                 print(f"❌ Frame capture failed: {result.stderr}")
-                
+
         except Exception as e:
             print(f"Error capturing detection frame: {e}")
 
@@ -1010,7 +1016,7 @@ class StreamProcessor:
 
             cmd = [
                 'ffmpeg',
-                '-f', 'concat', 
+                '-f', 'concat',
                 '-safe', '0',
                 '-i', concat_file,
                 '-t', str(self.clip_length),
@@ -1064,7 +1070,7 @@ class StreamProcessor:
             if self.ad_gatekeeper and channel_name:
                 print(f"🛡️ Using Ad Gatekeeper for channel: {channel_name}")
                 stream_url = self.ad_gatekeeper.get_clean_twitch_url(channel_name, quality='best')
-                
+
                 if stream_url:
                     print(f"✅ Got clean stream URL via Ad Gatekeeper: {stream_url[:80]}...")
                 else:
@@ -1089,7 +1095,7 @@ class StreamProcessor:
                     print(f"❌ CRITICAL: streamlink failed with return code {url_result.returncode}")
                     print(f"❌ stdout: {url_result.stdout}")
                     print(f"❌ stderr: {url_result.stderr}")
-                    
+
                     # Try with different quality options (prioritize higher quality)
                     for quality in ['720p', '1080p', '480p', '360p']:
                         print(f"🔄 Trying quality: {quality}")
@@ -1152,8 +1158,6 @@ class StreamProcessor:
             traceback.print_exc()
             return False
 
-    
-
     def _notify_clip_created(self, filename: str, trigger_reason: str, detection_time: float, file_size: int = None):
         """Notify the main server about a new clip."""
         try:
@@ -1174,7 +1178,7 @@ class StreamProcessor:
 
             if response.status_code == 200:
                 print(f"Successfully notified server about clip: {filename}")
-                
+
                 # Trigger thumbnail generation by making a request to the thumbnail endpoint
                 try:
                     print(f"Triggering thumbnail generation for: {filename}")
@@ -1220,8 +1224,6 @@ class StreamProcessor:
         except Exception as e:
             print(f"⚠️ Error notifying stream end: {e}")
 
-    
-
     def _metrics_update_loop(self):
         """Send periodic metrics updates via SSE."""
         while self.is_running:
@@ -1264,6 +1266,26 @@ class StreamProcessor:
                 print(f"Error updating metrics: {e}")
 
             time.sleep(1)
+
+    def _extract_current_frame(self, segment_path):
+        """Extract current frame for live preview."""
+        try:
+            if not os.path.exists(segment_path):
+                return
+
+            cmd = [
+                'ffmpeg', '-y', '-i', segment_path,
+                '-vf', 'scale=320:180',  # Small size for web display
+                '-frames:v', '1',
+                '-f', 'image2',
+                self.current_frame_path
+            ]
+
+            subprocess.run(cmd, capture_output=True, timeout=5)
+        except Exception as e:
+            # Silent fail - frame extraction is not critical
+            pass
+
 
 def main():
     """Main entry point for stream processor."""

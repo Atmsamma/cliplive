@@ -73,36 +73,46 @@ export default function ProcessingStatus() {
             )}
           </div>
 
-          {/* Reactive GIF Animation */}
-          <div className="relative w-32 h-32 mb-4">
-            <div 
-              className={`absolute inset-0 rounded-full bg-gradient-to-r from-emerald-500 to-blue-500 opacity-20 ${
-                animationState === 'high' ? 'animate-ping' :
-                animationState === 'medium' ? 'animate-pulse' :
-                animationState === 'low' ? 'animate-bounce' : ''
-              }`}
-            />
-            <div 
-              className={`absolute inset-2 rounded-full bg-gradient-to-r from-emerald-400 to-blue-400 opacity-40 ${
-                animationState === 'high' ? 'animate-spin' :
-                animationState === 'medium' ? 'animate-pulse' :
-                animationState === 'low' ? 'animate-bounce' : ''
-              }`}
-            />
-            <div 
-              className={`absolute inset-4 rounded-full bg-gradient-to-r from-emerald-300 to-blue-300 opacity-60 ${
-                animationState === 'high' ? 'animate-bounce' :
-                animationState === 'medium' ? 'animate-ping' :
-                animationState === 'low' ? 'animate-pulse' : ''
-              }`}
-            />
-            <div 
-              className={`absolute inset-8 rounded-full bg-white ${
-                animationState === 'high' ? 'animate-pulse' :
-                animationState === 'medium' ? 'animate-bounce' :
-                animationState === 'low' ? 'animate-ping' : 'opacity-50'
-              }`}
-            />
+          {/* Live Frame Preview */}
+          <div className="relative w-48 h-32 mb-4 bg-slate-700 rounded-lg overflow-hidden border border-slate-600">
+            {status?.currentFrame ? (
+              <img 
+                src={`/api/current-frame?t=${Date.now()}`}
+                alt="Current frame being processed"
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  // Fallback to placeholder on error
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <div className={`text-slate-400 text-center ${
+                  status?.currentSession ? 'animate-pulse' : ''
+                }`}>
+                  {status?.currentSession ? (
+                    <div>
+                      <div className="text-lg mb-1">📹</div>
+                      <div className="text-xs">Processing...</div>
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="text-lg mb-1">⏸️</div>
+                      <div className="text-xs">No Stream</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {/* Activity indicator overlay */}
+            {status?.currentSession && (
+              <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${
+                animationState === 'high' ? 'bg-red-500 animate-pulse' :
+                animationState === 'medium' ? 'bg-yellow-500 animate-pulse' :
+                animationState === 'low' ? 'bg-green-500' : 'bg-slate-500'
+              }`} />
+            )}
           </div>
 
           {/* Status Text */}

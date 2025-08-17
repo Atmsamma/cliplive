@@ -152,11 +152,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get processing status
-  app.get('/api/status', async (req, res) => {
-    const activeSession = await storage.getActiveSession();
+  app.get("/api/status", (req, res) => {
+    // Check if current frame exists and is recent
+    const framePath = path.join(process.cwd(), 'temp', 'current_frame.jpg');
+    let currentFrame = false;
+
+    try {
+      const stats = fs.statSync(framePath);
+      const frameAge = Date.now() - stats.mtime.getTime();
+      currentFrame = frameAge < 5000; // Frame is less than 5 seconds old
+    } catch (error) {
+      currentFrame = false;
+    }
+
     res.json({
       ...processingStatus,
-      currentSession: activeSession,
+      currentFrame
     });
   });
 
@@ -259,10 +270,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get all clips
-  app.get('/api/clips', async (req, res) => {
-    const clips = await storage.getClips();
+  // Get clips
+  app.get("/api/clips", (req, res) => {
+    const clips = storage.getClips();
     res.json(clips);
+  });
+
+  // Get current frame being processed
+  app.get("/api/current-frame", (req, res) => {
+    const framePath = path.join(process.cwd(), 'temp', 'current_frame.jpg');
+
+    // Check if frame exists and is recent (within last 5 seconds)
+    try {
+      const stats = fs.statSync(framePath);
+      const now = Date.now();
+      const frameAge = now - stats.mtime.getTime();
+
+      if (frameAge < 5000) { // 5 seconds
+        res.sendFile(framePath);
+      } else {
+        res.status(404).json({ error: 'No recent frame available' });
+      }
+    } catch (error) {
+      res.status(404).json({ error: 'No frame available' });
+    }
   });
 
   // Get single clip
