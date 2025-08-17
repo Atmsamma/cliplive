@@ -263,6 +263,7 @@ class StreamProcessor:
         # Detection thresholds (legacy - will be replaced by adaptive)
         self.audio_threshold = config.get('audioThreshold', 6)  # dB
         self.motion_threshold = config.get('motionThreshold', 30)  # percentage
+        self.scene_threshold = config.get('sceneThreshold', 0.3)  # Scene change threshold
         self.clip_length = config.get('clipLength', 30)
 
         # Adaptive baseline detection with shorter calibration for testing
