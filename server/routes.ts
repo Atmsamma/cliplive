@@ -281,9 +281,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get clips
-  app.get("/api/clips", (req, res) => {
-    const clips = storage.getClips();
-    res.json(clips);
+  app.get("/api/clips", async (req, res) => {
+    try {
+      const clips = await storage.getClips();
+      res.json(clips || []);
+    } catch (error) {
+      console.error('Error fetching clips:', error);
+      res.json([]);
+    }
   });
 
   // Get current frame being processed
