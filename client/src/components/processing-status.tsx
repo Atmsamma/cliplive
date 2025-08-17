@@ -47,9 +47,10 @@ export default function ProcessingStatus() {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="flex flex-col items-center justify-center py-8">
-          <div className="text-center mb-6">
-            <div className="text-3xl font-bold mb-1">
+        <div className="flex flex-col h-full">
+          {/* Status Header */}
+          <div className="text-center mb-4">
+            <div className="text-2xl font-bold mb-1">
               <span className={
                 status?.streamEnded ? 'text-red-400' :
                 status?.currentSession ? 'text-emerald-400' : 'text-slate-400'
@@ -73,16 +74,17 @@ export default function ProcessingStatus() {
             )}
           </div>
 
-          {/* Live Frame Preview */}
-          <div className="relative w-48 h-32 mb-4 bg-slate-700 rounded-lg overflow-hidden border border-slate-600">
-            {status?.currentFrame ? (
+          {/* Live Frame Preview - Full Size */}
+          <div className="relative flex-1 bg-slate-700 rounded-lg overflow-hidden border border-slate-600 min-h-48">
+            {status?.currentSession && status?.currentFrame ? (
               <img 
                 src={`/api/current-frame?t=${Date.now()}`}
                 alt="Current frame being processed"
                 className="w-full h-full object-cover"
+                style={{ display: 'block' }}
                 onError={(e) => {
-                  // Fallback to placeholder on error
-                  e.currentTarget.style.display = 'none';
+                  // Don't hide on error, just log it
+                  console.log('Frame load error, but keeping placeholder');
                 }}
               />
             ) : (
@@ -92,39 +94,40 @@ export default function ProcessingStatus() {
                 }`}>
                   {status?.currentSession ? (
                     <div>
-                      <div className="text-lg mb-1">📹</div>
-                      <div className="text-xs">Processing...</div>
+                      <div className="text-4xl mb-2">📹</div>
+                      <div className="text-lg">Processing...</div>
+                      <div className="text-sm text-slate-500 mt-2">
+                        {animationState === 'high' ? 'High Activity' :
+                         animationState === 'medium' ? 'Medium Activity' :
+                         animationState === 'low' ? 'Low Activity' : 'Monitoring'}
+                      </div>
                     </div>
                   ) : (
                     <div>
-                      <div className="text-lg mb-1">⏸️</div>
-                      <div className="text-xs">No Stream</div>
+                      <div className="text-4xl mb-2">⏸️</div>
+                      <div className="text-lg">No Stream</div>
+                      <div className="text-sm text-slate-500 mt-2">Waiting for input</div>
                     </div>
                   )}
                 </div>
               </div>
             )}
-            
+
             {/* Activity indicator overlay */}
             {status?.currentSession && (
-              <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${
-                animationState === 'high' ? 'bg-red-500 animate-pulse' :
+              <div className={`absolute top-3 right-3 w-4 h-4 rounded-full ${
+                animationState === 'high' ? 'bg-red-500 animate-ping' :
                 animationState === 'medium' ? 'bg-yellow-500 animate-pulse' :
-                animationState === 'low' ? 'bg-green-500' : 'bg-slate-500'
+                animationState === 'low' ? 'bg-green-500 animate-pulse' : 'bg-slate-500'
               }`} />
             )}
-          </div>
 
-          {/* Status Text */}
-          <div className="text-center">
-            <div className="text-lg font-medium text-slate-300 mb-1">
-              {animationState === 'high' ? 'High Activity' :
-               animationState === 'medium' ? 'Medium Activity' :
-               animationState === 'low' ? 'Low Activity' : 'Monitoring'}
-            </div>
-            <div className="text-sm text-slate-400">
-              {status?.framesProcessed || 0} frames processed
-            </div>
+            {/* Frame counter overlay */}
+            {status?.currentSession && (
+              <div className="absolute bottom-3 left-3 bg-black bg-opacity-60 px-2 py-1 rounded text-xs text-white">
+                {status?.framesProcessed || 0} frames
+              </div>
+            )}
           </div>
         </div>
       </CardContent>
