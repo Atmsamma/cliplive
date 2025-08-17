@@ -167,12 +167,12 @@ export default function StreamInputForm() {
                 {status?.isProcessing ? (
                   <>
                     <Square size={16} className="mr-2" />
-                    Stop Capture
+                    Stop Clipping
                   </>
                 ) : (
                   <>
                     <Play size={16} className="mr-2" />
-                    Start Capture
+                    Start Clipping
                   </>
                 )}
               </Button>

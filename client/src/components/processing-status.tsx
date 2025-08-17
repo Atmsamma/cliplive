@@ -83,10 +83,10 @@ export default function ProcessingStatus() {
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
-                <div className="text-slate-400 text-center">
+                <div className="text-center">
                   <div className="text-4xl mb-2">⏸️</div>
                   <div className="text-lg">No Stream</div>
-                  <div className="text-sm text-slate-500 mt-2">Waiting for input</div>
+                  <div className="text-sm text-slate-500 mt-2">Enter a URL and click Start Clipping</div>
                 </div>
               </div>
             )}
@@ -110,7 +110,7 @@ export default function ProcessingStatus() {
               </div>
             )}
 
-            
+
           </div>
         </div>
       </CardContent>
