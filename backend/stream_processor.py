@@ -31,6 +31,15 @@ except ImportError as e:
     print(f"⚠️ AI detector not available: {e}")
     AI_AVAILABLE = False
 
+# Import Ad Gatekeeper
+try:
+    from ad_gatekeeper import AdGatekeeper
+    AD_GATEKEEPER_AVAILABLE = True
+    print("🛡️ Ad Gatekeeper available")
+except ImportError as e:
+    print(f"⚠️ Ad Gatekeeper not available: {e}")
+    AD_GATEKEEPER_AVAILABLE = False
+
 class BaselineTracker:
     """Tracks baseline metrics for adaptive threshold detection."""
 
@@ -275,12 +284,27 @@ class StreamProcessor:
         self.last_clip_time = 0
         self.clip_cooldown = self.clip_length  # Cooldown matches clip length to prevent overlap
 
+        # Initialize Ad Gatekeeper if available and enabled
+        self.ad_gatekeeper = None
+        self.use_ad_gatekeeper = config.get('useAdGatekeeper', True)
+        
+        if AD_GATEKEEPER_AVAILABLE and self.use_ad_gatekeeper:
+            try:
+                self.ad_gatekeeper = AdGatekeeper()
+                print("🛡️ Ad Gatekeeper initialized for clean stream filtering")
+            except Exception as e:
+                print(f"⚠️ Ad Gatekeeper initialization failed: {e}")
+                self.ad_gatekeeper = None
+        elif not self.use_ad_gatekeeper:
+            print("🛡️ Ad Gatekeeper disabled by configuration")
+
         # Ensure clips directory exists
         self.clips_dir = os.path.join(os.getcwd(), 'clips')
         os.makedirs(self.clips_dir, exist_ok=True)
 
         print(f"Stream processor initialized with config: {config}")
         print(f"AI Detection: {'Enabled' if self.ai_detector else 'Disabled'}")
+        print(f"Ad Gatekeeper: {'Enabled' if self.ad_gatekeeper else 'Disabled'}")
 
     def start_processing(self) -> bool:
         """Start stream processing."""
@@ -1013,7 +1037,7 @@ class StreamProcessor:
             return False
 
     def _capture_real_segment(self, segment_path: str) -> bool:
-        """Capture a real video segment using Streamlink - NO FALLBACKS."""
+        """Capture a real video segment using Ad Gatekeeper filtered Streamlink - NO FALLBACKS."""
         try:
             # Check if streamlink is installed
             streamlink_check = subprocess.run(['which', 'streamlink'], capture_output=True, text=True)
@@ -1025,43 +1049,66 @@ class StreamProcessor:
                     return False
                 print("✅ streamlink installed successfully")
 
-            # First get the stream URL from streamlink with better error handling
-            url_cmd = [
-                'streamlink',
-                self.config['url'],
-                'best',  # Use best quality for high-definition clips
-                '--stream-url',
-                '--retry-streams', '3',
-                '--retry-max', '5'
-            ]
+            # Extract channel name from URL for Ad Gatekeeper
+            channel_name = None
+            if 'twitch.tv/' in self.config['url']:
+                try:
+                    # Extract channel from URLs like https://www.twitch.tv/papaplatte
+                    channel_name = self.config['url'].split('twitch.tv/')[-1].split('/')[0].split('?')[0]
+                except:
+                    pass
 
-            print(f"🔄 Getting stream URL: streamlink {self.config['url']} best --stream-url")
-            url_result = subprocess.run(url_cmd, capture_output=True, text=True, timeout=30)
+            stream_url = None
 
-            if url_result.returncode != 0:
-                print(f"❌ CRITICAL: streamlink failed with return code {url_result.returncode}")
-                print(f"❌ stdout: {url_result.stdout}")
-                print(f"❌ stderr: {url_result.stderr}")
+            # Use Ad Gatekeeper if available and we have a channel name
+            if self.ad_gatekeeper and channel_name:
+                print(f"🛡️ Using Ad Gatekeeper for channel: {channel_name}")
+                stream_url = self.ad_gatekeeper.get_clean_twitch_url(channel_name, quality='best')
                 
-                # Try with different quality options (prioritize higher quality)
-                for quality in ['720p', '1080p', '480p', '360p']:
-                    print(f"🔄 Trying quality: {quality}")
-                    retry_cmd = url_cmd.copy()
-                    retry_cmd[2] = quality
-                    retry_result = subprocess.run(retry_cmd, capture_output=True, text=True, timeout=30)
-                    if retry_result.returncode == 0 and retry_result.stdout.strip():
-                        url_result = retry_result
-                        break
+                if stream_url:
+                    print(f"✅ Got clean stream URL via Ad Gatekeeper: {stream_url[:80]}...")
                 else:
-                    print("❌ CRITICAL: All quality options failed - stream may have ended")
+                    print("❌ CRITICAL: Ad Gatekeeper failed to get clean URL")
+                    return False
+            else:
+                # Fallback to direct streamlink (legacy behavior)
+                print(f"⚠️ Ad Gatekeeper not available, using direct streamlink")
+                url_cmd = [
+                    'streamlink',
+                    self.config['url'],
+                    'best',  # Use best quality for high-definition clips
+                    '--stream-url',
+                    '--retry-streams', '3',
+                    '--retry-max', '5'
+                ]
+
+                print(f"🔄 Getting stream URL: streamlink {self.config['url']} best --stream-url")
+                url_result = subprocess.run(url_cmd, capture_output=True, text=True, timeout=30)
+
+                if url_result.returncode != 0:
+                    print(f"❌ CRITICAL: streamlink failed with return code {url_result.returncode}")
+                    print(f"❌ stdout: {url_result.stdout}")
+                    print(f"❌ stderr: {url_result.stderr}")
+                    
+                    # Try with different quality options (prioritize higher quality)
+                    for quality in ['720p', '1080p', '480p', '360p']:
+                        print(f"🔄 Trying quality: {quality}")
+                        retry_cmd = url_cmd.copy()
+                        retry_cmd[2] = quality
+                        retry_result = subprocess.run(retry_cmd, capture_output=True, text=True, timeout=30)
+                        if retry_result.returncode == 0 and retry_result.stdout.strip():
+                            url_result = retry_result
+                            break
+                    else:
+                        print("❌ CRITICAL: All quality options failed - stream may have ended")
+                        return False
+
+                stream_url = url_result.stdout.strip()
+                if not stream_url or not stream_url.startswith('http'):
+                    print(f"❌ CRITICAL: Invalid stream URL received: '{stream_url}'")
                     return False
 
-            stream_url = url_result.stdout.strip()
-            if not stream_url or not stream_url.startswith('http'):
-                print(f"❌ CRITICAL: Invalid stream URL received: '{stream_url}'")
-                return False
-
-            print(f"✅ Got stream URL: {stream_url[:80]}...")
+                print(f"✅ Got stream URL: {stream_url[:80]}...")
 
             # Use FFmpeg to capture a 2-second segment directly from HLS
             ffmpeg_cmd = [
