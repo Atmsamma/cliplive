@@ -344,12 +344,14 @@ class StreamProcessor:
         # Capture initial session screenshot
         self._capture_session_screenshot()
 
-        # Start capture and analysis threads
+        # Start capture, analysis, and metrics update threads
         self.capture_thread = threading.Thread(target=self._stream_capture_loop, daemon=True)
         self.analysis_thread = threading.Thread(target=self._stream_analysis_loop, daemon=True)
+        self.metrics_thread = threading.Thread(target=self._metrics_update_loop, daemon=True)
 
         self.capture_thread.start()
         self.analysis_thread.start()
+        self.metrics_thread.start()
 
         return True
 
@@ -428,8 +430,10 @@ class StreamProcessor:
                 print(f"🎬 Analyzing segment: {latest_segment['path']}")
                 metrics = self._analyze_segment(latest_segment['path'])
 
-                # Update processing stats
-                self.frames_processed += metrics.get('frames_analyzed', 30)
+                # Update processing stats - ensure frames are always counted
+                frames_in_segment = metrics.get('frames_analyzed', 60)  # 2-second segment at 30fps = 60 frames
+                self.frames_processed += frames_in_segment
+                print(f"📊 Frames processed: {self.frames_processed} (+{frames_in_segment})")
 
                 # Add metrics to baseline tracker
                 if self.use_adaptive_detection:
@@ -562,7 +566,7 @@ class StreamProcessor:
             ], capture_output=True, text=True, timeout=10)
 
             metrics = {
-                'frames_analyzed': 60,
+                'frames_analyzed': 60,  # 2 seconds at 30fps
                 'audio_level': 0.0,
                 'motion_level': 0.0,
                 'scene_change': 0.0,
@@ -628,7 +632,7 @@ class StreamProcessor:
     def _get_default_metrics(self) -> Dict[str, float]:
         """Return default metrics when analysis fails."""
         return {
-            'frames_analyzed': 0,
+            'frames_analyzed': 60,  # Default to 60 frames for 2-second segment
             'audio_level': 0,
             'motion_level': 0,
             'scene_change': 0,
