@@ -164,7 +164,9 @@ class MLFusionModel:
         self.scaler = None
         self.feature_names = [
             'audio_level', 'motion_level', 'scene_change',
-            'sentiment', 'excitement', 'hype_score'
+            'sentiment', 'excitement', 'hype_score',
+            'audio_threshold_exceeded', 'motion_threshold_exceeded', 
+            'scene_threshold_exceeded', 'combined_rule_score'
         ]
         
         # Create models directory
@@ -269,7 +271,11 @@ class MLFusionModel:
                 features.get('scene_change', 0.0),
                 features.get('sentiment', 0.0),
                 features.get('excitement', 0.0),
-                features.get('hype_score', 0.0)
+                features.get('hype_score', 0.0),
+                features.get('audio_threshold_exceeded', 0.0),
+                features.get('motion_threshold_exceeded', 0.0),
+                features.get('scene_threshold_exceeded', 0.0),
+                features.get('combined_rule_score', 0.0)
             ]])
             
             # Scale features

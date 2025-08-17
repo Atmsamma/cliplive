@@ -641,22 +641,35 @@ class StreamProcessor:
     def _check_highlight_triggers(self, metrics: Dict[str, float], segment_path: str = None) -> Optional[str]:
         """Check if metrics exceed thresholds for highlight detection."""
 
-        # Try AI detection first if available
-        if self.ai_detector and segment_path:
-            try:
-                ai_result = self.ai_detector.analyze_segment(segment_path, metrics)
-                if ai_result.get('should_trigger', False):
-                    return ai_result.get('trigger_reason', 'AI Detection')
-            except Exception as e:
-                print(f"AI detection error: {e}")
-
-        # Fallback to rule-based detection
+        # Calculate rule-based features
         audio_level = metrics.get('audio_level', 0)
         motion_level = metrics.get('motion_level', 0)
         scene_change = metrics.get('scene_change', 0)
         audio_db_change = metrics.get('audio_db_change', 0)
 
-        # Audio threshold check - check both level and change
+        # Add rule-based features to metrics for AI consideration
+        enhanced_metrics = {
+            **metrics,
+            'audio_threshold_exceeded': 1.0 if audio_db_change >= self.audio_threshold else 0.0,
+            'motion_threshold_exceeded': 1.0 if motion_level >= self.motion_threshold else 0.0,
+            'scene_threshold_exceeded': 1.0 if scene_change >= self.scene_threshold else 0.0,
+            'combined_rule_score': (
+                (audio_db_change / self.audio_threshold) * 0.5 +
+                (motion_level / self.motion_threshold) * 0.3 +
+                (scene_change / self.scene_threshold) * 0.2
+            ) if self.audio_threshold > 0 else 0.0
+        }
+
+        # Try AI detection with enhanced features
+        if self.ai_detector and segment_path:
+            try:
+                ai_result = self.ai_detector.analyze_segment(segment_path, enhanced_metrics)
+                if ai_result.get('should_trigger', False):
+                    return ai_result.get('trigger_reason', 'AI Detection')
+            except Exception as e:
+                print(f"AI detection error: {e}")
+
+        # Pure rule-based fallback only if AI completely unavailable
         if audio_db_change >= self.audio_threshold:
             return f"Audio Spike ({audio_db_change:.1f}dB)"
 
