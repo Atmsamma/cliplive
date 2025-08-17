@@ -41,13 +41,7 @@ export default function ProcessingStatus() {
 
   return (
     <Card className="bg-slate-800 border-slate-600 mb-6">
-      <CardHeader>
-        <CardTitle className="flex items-center space-x-2 text-slate-50">
-          <TrendingUp className="text-emerald-400" size={20} />
-          <span>Processing Status</span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
+      <CardContent className="pt-6">
         <div className="flex flex-col h-full">
           {/* Status Header */}
           <div className="text-center mb-4">
