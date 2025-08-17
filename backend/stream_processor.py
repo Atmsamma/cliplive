@@ -430,10 +430,9 @@ class StreamProcessor:
                 print(f"🎬 Analyzing segment: {latest_segment['path']}")
                 metrics = self._analyze_segment(latest_segment['path'])
 
-                # Update processing stats - ensure frames are always counted
-                frames_in_segment = metrics.get('frames_analyzed', 60)  # 2-second segment at 30fps = 60 frames
-                self.frames_processed += frames_in_segment
-                print(f"📊 Frames processed: {self.frames_processed} (+{frames_in_segment})")
+                # Update processing stats - increment by 1 for smooth counting
+                self.frames_processed += 1
+                print(f"📊 Frames processed: {self.frames_processed}")
 
                 # Add metrics to baseline tracker
                 if self.use_adaptive_detection:

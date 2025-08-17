@@ -106,10 +106,20 @@ export default function ProcessingStatus() {
               }`} />
             )}
 
+            {/* Recording indicator dot - red camera dot */}
+            {status?.currentSession && (
+              <div className="absolute top-3 left-3 flex items-center space-x-1">
+                <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+                <div className="text-xs text-white bg-black bg-opacity-60 px-1 py-0.5 rounded">
+                  REC
+                </div>
+              </div>
+            )}
+
             {/* Frame counter overlay */}
             {status?.currentSession && (
               <div className="absolute bottom-3 left-3 bg-black bg-opacity-60 px-2 py-1 rounded text-xs text-white">
-                {status?.framesProcessed || 0} frames
+                {status?.framesProcessed || 0} frames processed
               </div>
             )}
           </div>
