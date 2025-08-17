@@ -285,6 +285,10 @@ class StreamProcessor:
         self.last_clip_time = 0
         self.clip_cooldown = self.clip_length  # Cooldown matches clip length to prevent overlap
 
+        # Initialize metrics queue for communication between threads
+        from queue import Queue
+        self.metrics_queue = Queue()
+
         # Initialize Ad Gatekeeper if available and enabled
         self.ad_gatekeeper = None
         self.use_ad_gatekeeper = config.get('useAdGatekeeper', True)
@@ -300,8 +304,8 @@ class StreamProcessor:
             print("🛡️ Ad Gatekeeper disabled by configuration")
 
         # Ensure clips and temp directories exist
-        clips_dir = os.path.join(os.getcwd(), 'clips')
-        os.makedirs(clips_dir, exist_ok=True)
+        self.clips_dir = os.path.join(os.getcwd(), 'clips')
+        os.makedirs(self.clips_dir, exist_ok=True)
 
         temp_dir = os.path.join(os.getcwd(), 'temp')
         os.makedirs(temp_dir, exist_ok=True)

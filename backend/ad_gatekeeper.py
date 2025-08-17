@@ -42,10 +42,10 @@ class AdGatekeeper:
         try:
             result = subprocess.run(
                 cmd, 
-                capture_output=True, 
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
                 text=True, 
-                timeout=30,
-                stderr=subprocess.DEVNULL
+                timeout=30
             )
 
             if result.returncode == 0 and result.stdout.strip():
