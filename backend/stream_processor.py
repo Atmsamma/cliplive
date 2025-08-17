@@ -175,64 +175,78 @@ class BaselineTracker:
         # Future enhancement: adjust thresholds based on clip quality feedback
         pass
 
-class StreamBuffer:
-    """Circular buffer to store recent stream segments for clipping."""
+class StreamBucket:
+    """Bucket-based continuous video capture for smooth clipping."""
 
-    def __init__(self, buffer_seconds: int = 30, segment_duration: int = 2):
+    def __init__(self, clip_duration: int = 30):
         """
-        Initialize stream buffer.
+        Initialize stream bucket for continuous recording.
 
         Args:
-            buffer_seconds: Total seconds to keep in buffer
-            segment_duration: Duration of each segment in seconds
+            clip_duration: Duration of clips to prepare in advance
         """
-        self.buffer_seconds = buffer_seconds
-        self.segment_duration = segment_duration
-        self.max_segments = buffer_seconds // segment_duration
-        self.segments = deque(maxlen=self.max_segments)
-        self.temp_dir = tempfile.mkdtemp(prefix="stream_buffer_")
+        self.clip_duration = clip_duration
+        self.temp_dir = tempfile.mkdtemp(prefix="stream_bucket_")
+        self.current_bucket_path = None
+        self.current_bucket_start_time = None
+        self.bucket_counter = 0
+        self.is_recording_bucket = False
 
-    def add_segment(self, segment_path: str, timestamp: float):
-        """Add a new segment to the buffer."""
-        segment_info = {
-            'path': segment_path,
-            'timestamp': timestamp,
-            'duration': self.segment_duration
+    def start_new_bucket(self) -> str:
+        """Start recording a new continuous video bucket."""
+        self.bucket_counter += 1
+        bucket_filename = f"bucket_{self.bucket_counter:06d}.mp4"
+        bucket_path = os.path.join(self.temp_dir, bucket_filename)
+        
+        self.current_bucket_path = bucket_path
+        self.current_bucket_start_time = time.time()
+        
+        print(f"🪣 Starting new bucket: {bucket_filename} (duration: {self.clip_duration}s)")
+        return bucket_path
+
+    def get_current_bucket_info(self) -> Optional[Dict]:
+        """Get information about the current recording bucket."""
+        if not self.current_bucket_path or not self.current_bucket_start_time:
+            return None
+            
+        return {
+            'path': self.current_bucket_path,
+            'start_time': self.current_bucket_start_time,
+            'duration': self.clip_duration
         }
-        self.segments.append(segment_info)
 
-        # Clean up old segments beyond max capacity
-        if len(self.segments) > self.max_segments:
-            old_segment = self.segments[0]
-            if os.path.exists(old_segment['path']):
-                os.remove(old_segment['path'])
+    def save_bucket_as_clip(self, clip_path: str, detection_time: float) -> bool:
+        """Save the current bucket as a highlight clip."""
+        if not self.current_bucket_path or not os.path.exists(self.current_bucket_path):
+            print("❌ No bucket available to save as clip")
+            return False
 
-    def get_clip_segments(self, detection_time: float, total_clip_duration: int) -> List[Dict]:
-        """
-        Get segments needed for clipping based on detection time.
-        Returns segments covering 20% before and 80% after detection.
-        """
-        before_duration = total_clip_duration * 0.2  # 20% before
-        after_duration = total_clip_duration * 0.8   # 80% after
+        try:
+            # Simply copy the bucket to the clip location - no re-encoding needed!
+            import shutil
+            shutil.copy2(self.current_bucket_path, clip_path)
+            
+            file_size = os.path.getsize(clip_path)
+            print(f"✅ Bucket saved as clip: {clip_path} ({file_size} bytes)")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error saving bucket as clip: {e}")
+            return False
 
-        start_time = detection_time - before_duration
-        end_time = detection_time + after_duration
-
-        relevant_segments = []
-        for segment in self.segments:
-            segment_end = segment['timestamp'] + segment['duration']
-
-            # Check if segment overlaps with our time range
-            if segment['timestamp'] <= end_time and segment_end >= start_time:
-                relevant_segments.append(segment)
-
-        return relevant_segments
+    def cleanup_old_buckets(self):
+        """Clean up old bucket files to save space."""
+        try:
+            # Keep only the current bucket, remove others
+            for filename in os.listdir(self.temp_dir):
+                file_path = os.path.join(self.temp_dir, filename)
+                if file_path != self.current_bucket_path and os.path.isfile(file_path):
+                    os.remove(file_path)
+        except Exception as e:
+            print(f"Warning: Error cleaning up old buckets: {e}")
 
     def cleanup(self):
-        """Clean up temporary files."""
-        for segment in self.segments:
-            if os.path.exists(segment['path']):
-                os.remove(segment['path'])
+        """Clean up all temporary files."""
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
@@ -335,8 +349,8 @@ class StreamProcessor:
         print(f"📊 Thresholds - Audio: {audio_threshold}, Motion: {motion_threshold}")
         print(f"⏱️ Clip length: {clip_length}s")
 
-        # Initialize stream buffer
-        self.stream_buffer = StreamBuffer(buffer_seconds=60, segment_duration=2)
+        # Initialize stream bucket for continuous recording
+        self.stream_bucket = StreamBucket(clip_duration=self.clip_length)
 
         # Start baseline calibration
         if self.use_adaptive_detection:
@@ -361,41 +375,43 @@ class StreamProcessor:
         print("Stopping stream processing...")
         self.is_running = False
 
-        if self.stream_buffer:
-            self.stream_buffer.cleanup()
-            self.stream_buffer = None
+        if self.stream_bucket:
+            self.stream_bucket.cleanup()
+            self.stream_bucket = None
 
         # Clean up AI detector resources
         if self.ai_detector:
             self.ai_detector.cleanup()
 
     def _stream_capture_loop(self):
-        """Main loop for capturing stream segments."""
-        segment_counter = 0
+        """Main loop for capturing continuous video buckets."""
+        bucket_counter = 0
 
         while self.is_running:
             try:
-                timestamp = time.time()
-                segment_filename = f"segment_{segment_counter:06d}.ts"
-                segment_path = os.path.join(self.stream_buffer.temp_dir, segment_filename)
-
-                print(f"🎥 Attempting to capture segment {segment_counter}: {segment_filename}")
-                # Capture REAL video segment with stream end detection
-                success = self._capture_real_segment(segment_path)
-                print(f"📊 Capture result for segment {segment_counter}: {'SUCCESS' if success else 'FAILED'}")
+                # Start a new bucket for continuous recording
+                bucket_path = self.stream_bucket.start_new_bucket()
+                
+                print(f"🪣 Recording bucket {bucket_counter}: {self.clip_length}s duration")
+                # Capture continuous video bucket
+                success = self._capture_continuous_bucket(bucket_path)
+                print(f"📊 Bucket result {bucket_counter}: {'SUCCESS' if success else 'FAILED'}")
 
                 if success:
                     # Reset failure counter on successful capture
                     self.consecutive_failures = 0
-                    self.last_successful_capture = timestamp
-                    self.stream_buffer.add_segment(segment_path, timestamp)
-                    segment_counter += 1
+                    self.last_successful_capture = time.time()
+                    bucket_counter += 1
+                    
                     # Extract current frame for live preview
-                    self._extract_current_frame(segment_path)
+                    self._extract_current_frame(bucket_path)
+                    
+                    # Clean up old buckets to save space
+                    self.stream_bucket.cleanup_old_buckets()
                 else:
                     # Increment failure counter
                     self.consecutive_failures += 1
-                    print(f"⚠️ Stream capture failed ({self.consecutive_failures}/{self.max_consecutive_failures})")
+                    print(f"⚠️ Bucket capture failed ({self.consecutive_failures}/{self.max_consecutive_failures})")
 
                     # Check if stream has ended
                     if self.consecutive_failures >= self.max_consecutive_failures:
@@ -408,28 +424,32 @@ class StreamProcessor:
                         time.sleep(10)  # Wait longer between attempts when stream has ended
                         continue
 
-                time.sleep(2)  # Wait for next segment
+                # No sleep - immediately start next bucket for continuous coverage
 
             except Exception as e:
-                print(f"Error in stream capture: {e}")
+                print(f"Error in bucket capture: {e}")
                 self.consecutive_failures += 1
                 time.sleep(1)
 
     def _stream_analysis_loop(self):
-        """Analyze stream segments for highlights."""
+        """Analyze stream buckets for highlights."""
         while self.is_running:
             try:
-                print(f"🔍 Analysis loop: Buffer has {len(self.stream_buffer.segments) if self.stream_buffer else 0} segments")
-
-                if not self.stream_buffer or len(self.stream_buffer.segments) < 3:
-                    print(f"⏳ Waiting for segments... (need 3, have {len(self.stream_buffer.segments) if self.stream_buffer else 0})")
+                bucket_info = self.stream_bucket.get_current_bucket_info()
+                
+                if not bucket_info:
+                    print(f"⏳ Waiting for bucket to start recording...")
                     time.sleep(1)
                     continue
 
-                # Analyze latest segment
-                latest_segment = self.stream_buffer.segments[-1]
-                print(f"🎬 Analyzing segment: {latest_segment['path']}")
-                metrics = self._analyze_segment(latest_segment['path'])
+                # Only analyze if bucket is actively being recorded
+                if not self.stream_bucket.is_recording_bucket:
+                    time.sleep(0.5)
+                    continue
+
+                # Sample analysis from the bucket (extract a small segment for analysis)
+                print(f"🎬 Analyzing current bucket: {bucket_info['path']}")
+                metrics = self._analyze_bucket_sample(bucket_info['path'])
 
                 # Update processing stats - increment by 1 for smooth counting
                 self.frames_processed += 1
@@ -444,7 +464,7 @@ class StreamProcessor:
                     )
 
                 # Check for highlight triggers
-                detection_time = latest_segment['timestamp']
+                detection_time = time.time()  # Current time for bucket-based detection
                 trigger_reason = None
 
                 if self.use_adaptive_detection and self.baseline_tracker.is_calibrated:
@@ -502,6 +522,52 @@ class StreamProcessor:
             except Exception as e:
                 print(f"Error in stream analysis: {e}")
                 time.sleep(1)
+
+    def _analyze_bucket_sample(self, bucket_path: str) -> Dict[str, float]:
+        """Analyze a small sample from the current recording bucket."""
+        try:
+            if not os.path.exists(bucket_path):
+                print(f"Bucket file not found: {bucket_path}")
+                return self._get_default_metrics()
+
+            # Get current file size to check if it's growing (actively recording)
+            file_size = os.path.getsize(bucket_path)
+
+            if file_size < 100000:  # Too small for real video
+                print(f"Bucket file still too small ({file_size} bytes) - still recording")
+                return self._get_default_metrics()
+
+            # Extract a 2-second sample from the end of the bucket for analysis
+            sample_path = os.path.join(self.stream_bucket.temp_dir, "analysis_sample.mp4")
+            
+            # Use FFmpeg to extract the last 2 seconds for analysis
+            cmd = [
+                'ffmpeg',
+                '-sseof', '-2',  # Start 2 seconds from end of file
+                '-i', bucket_path,
+                '-t', '2',       # Take 2 seconds
+                '-c', 'copy',    # Copy without re-encoding (fast)
+                '-y',            # Overwrite
+                sample_path
+            ]
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            
+            if result.returncode == 0 and os.path.exists(sample_path):
+                print(f"✅ Extracted analysis sample: {os.path.getsize(sample_path)} bytes")
+                # Analyze the sample
+                metrics = self._analyze_with_ffmpeg(sample_path)
+                # Clean up sample
+                if os.path.exists(sample_path):
+                    os.remove(sample_path)
+                return metrics
+            else:
+                print(f"Sample extraction failed: {result.stderr}")
+                return self._get_default_metrics()
+
+        except Exception as e:
+            print(f"Error analyzing bucket sample {bucket_path}: {e}")
+            return self._get_default_metrics()
 
     def _analyze_segment(self, segment_path: str) -> Dict[str, float]:
         """Analyze a segment for audio/motion/scene metrics using FFmpeg."""
@@ -692,13 +758,12 @@ class StreamProcessor:
         return None
 
     def _create_highlight_clip(self, detection_time: float, trigger_reason: str):
-        """Create a highlight clip using the 20%/80% strategy with FFmpeg."""
+        """Create a highlight clip by saving the current bucket."""
         try:
-            # Get relevant segments for clipping
-            clip_segments = self.stream_buffer.get_clip_segments(detection_time, self.clip_length)
-
-            if not clip_segments:
-                print("No segments available for clipping")
+            bucket_info = self.stream_bucket.get_current_bucket_info()
+            
+            if not bucket_info:
+                print("No bucket available for clipping")
                 return
 
             # Generate clip filename
@@ -706,54 +771,25 @@ class StreamProcessor:
             clip_filename = f"highlight_{timestamp.strftime('%Y%m%d_%H%M%S')}.mp4"
             clip_path = os.path.join(self.clips_dir, clip_filename)
 
-            # Capture thumbnail frame at detection moment BEFORE creating the clip
-            thumbnail_filename = f"{clip_filename.replace('.mp4', '.jpg')}"
-            self._capture_detection_frame(detection_time, clip_segments, thumbnail_filename)
+            print(f"🪣 Creating clip from bucket: {clip_filename} ({trigger_reason})")
+            print(f"   Bucket path: {bucket_info['path']}")
+            print(f"   Bucket duration: {self.clip_length}s (no stitching needed!)")
 
-            # Calculate precise timing for 20%/80% strategy
-            before_duration = self.clip_length * 0.2  # 20% before detection
-            after_duration = self.clip_length * 0.8   # 80% after detection
-
-            print(f"Creating {self.clip_length}s clip using 20%/80% strategy:")
-            print(f"  - {before_duration}s before detection moment")
-            print(f"  - {after_duration}s after detection moment")
-
-            # Find the segment containing the detection moment
-            detection_segment = None
-            segment_offset = 0
-
-            for segment in clip_segments:
-                segment_end = segment['timestamp'] + segment['duration']
-                if segment['timestamp'] <= detection_time <= segment_end:
-                    detection_segment = segment
-                    segment_offset = detection_time - segment['timestamp']
-                    break
-
-            if not detection_segment:
-                print("Could not find segment containing detection moment")
-                # Fallback to standard clipping
-                self._create_standard_clip(clip_segments, clip_path, clip_filename, trigger_reason, detection_time)
-                return
-
-            # Create the clip with precise timing using FFmpeg
-            success = self._create_ffmpeg_clip(
-                clip_segments,
-                detection_segment,
-                segment_offset,
-                before_duration,
-                after_duration,
-                clip_path,
-                trigger_reason
-            )
+            # Save the bucket as a clip - simple copy, no re-encoding!
+            success = self.stream_bucket.save_bucket_as_clip(clip_path, detection_time)
 
             if success:
+                # Capture thumbnail from the saved clip
+                thumbnail_filename = f"{clip_filename.replace('.mp4', '.jpg')}"
+                self._capture_clip_thumbnail(clip_path, thumbnail_filename)
+
                 # Notify the main server about the new clip
                 file_size = os.path.getsize(clip_path) if os.path.exists(clip_path) else 1024 * 1024 * 10
                 self._notify_clip_created(clip_filename, trigger_reason, detection_time, file_size)
                 self.clips_generated += 1
-                print(f"Created highlight clip: {clip_filename} ({trigger_reason})")
+                print(f"✅ Created smooth highlight clip: {clip_filename} ({trigger_reason})")
             else:
-                print(f"Failed to create highlight clip: {clip_filename}")
+                print(f"❌ Failed to create highlight clip: {clip_filename}")
 
         except Exception as e:
             print(f"Error creating highlight clip: {e}")
@@ -976,6 +1012,36 @@ class StreamProcessor:
 
         return additional_segments
 
+    def _capture_clip_thumbnail(self, clip_path: str, thumbnail_filename: str):
+        """Capture a thumbnail frame from the saved clip."""
+        try:
+            # Create thumbnail directory if it doesn't exist
+            thumbnails_dir = os.path.join(self.clips_dir, 'thumbnails')
+            os.makedirs(thumbnails_dir, exist_ok=True)
+
+            thumbnail_path = os.path.join(thumbnails_dir, thumbnail_filename)
+
+            # Use FFmpeg to extract a frame from the middle of the clip
+            cmd = [
+                'ffmpeg',
+                '-i', clip_path,
+                '-ss', str(self.clip_length // 2),  # Middle of the clip
+                '-vframes', '1',                    # Extract exactly 1 frame
+                '-y',                               # Overwrite output
+                thumbnail_path
+            ]
+
+            print(f"🖼️ Capturing thumbnail from clip middle")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+
+            if result.returncode == 0 and os.path.exists(thumbnail_path):
+                print(f"✅ Thumbnail captured successfully: {thumbnail_filename}")
+            else:
+                print(f"❌ Thumbnail capture failed: {result.stderr}")
+
+        except Exception as e:
+            print(f"Error capturing clip thumbnail: {e}")
+
     def _capture_detection_frame(self, detection_time: float, clip_segments: List[Dict], thumbnail_filename: str):
         """Capture a frame at the exact detection moment for thumbnail."""
         try:
@@ -1057,6 +1123,112 @@ class StreamProcessor:
         except Exception as e:
             print(f"❌ CRITICAL: Standard clip creation error: {e}")
             self.is_running = False
+            return False
+
+    def _capture_continuous_bucket(self, bucket_path: str) -> bool:
+        """Capture a continuous video bucket of the full clip duration."""
+        try:
+            # Check if streamlink is installed
+            streamlink_check = subprocess.run(['which', 'streamlink'], capture_output=True, text=True)
+            if streamlink_check.returncode != 0:
+                print("❌ CRITICAL: streamlink not found. Installing...")
+                install_result = subprocess.run(['pip', 'install', 'streamlink'], capture_output=True, text=True)
+                if install_result.returncode != 0:
+                    print(f"❌ CRITICAL: Failed to install streamlink: {install_result.stderr}")
+                    return False
+                print("✅ streamlink installed successfully")
+
+            # Extract channel name from URL for Ad Gatekeeper
+            channel_name = None
+            if 'twitch.tv/' in self.config['url']:
+                try:
+                    # Extract channel from URLs like https://www.twitch.tv/papaplatte
+                    channel_name = self.config['url'].split('twitch.tv/')[-1].split('/')[0].split('?')[0]
+                except:
+                    pass
+
+            stream_url = None
+
+            # Use Ad Gatekeeper if available and we have a channel name
+            if self.ad_gatekeeper and channel_name:
+                print(f"🛡️ Using Ad Gatekeeper for bucket: {channel_name}")
+                stream_url = self.ad_gatekeeper.get_clean_twitch_url(channel_name, quality='best')
+
+                if stream_url:
+                    print(f"✅ Got clean stream URL for bucket: {stream_url[:80]}...")
+                else:
+                    print("❌ CRITICAL: Ad Gatekeeper failed to get clean URL for bucket")
+                    return False
+            else:
+                # Fallback to direct streamlink (legacy behavior)
+                print(f"⚠️ Ad Gatekeeper not available, using direct streamlink for bucket")
+                url_cmd = [
+                    'streamlink',
+                    self.config['url'],
+                    'best',  # Use best quality for high-definition clips
+                    '--stream-url',
+                    '--retry-streams', '3',
+                    '--retry-max', '5'
+                ]
+
+                print(f"🔄 Getting stream URL for bucket: streamlink {self.config['url']} best --stream-url")
+                url_result = subprocess.run(url_cmd, capture_output=True, text=True, timeout=30)
+
+                if url_result.returncode != 0:
+                    print(f"❌ CRITICAL: streamlink failed for bucket with return code {url_result.returncode}")
+                    return False
+
+                stream_url = url_result.stdout.strip()
+                if not stream_url or not stream_url.startswith('http'):
+                    print(f"❌ CRITICAL: Invalid stream URL for bucket: '{stream_url}'")
+                    return False
+
+                print(f"✅ Got stream URL for bucket: {stream_url[:80]}...")
+
+            # Use FFmpeg to capture continuous video bucket for full clip duration
+            ffmpeg_cmd = [
+                'ffmpeg',
+                '-i', stream_url,
+                '-t', str(self.clip_length),  # Record for full clip duration
+                '-c:v', 'libx264',  # Re-encode video for compatibility
+                '-c:a', 'aac',      # Re-encode audio for compatibility
+                '-preset', 'fast',  # Balanced encoding speed/quality
+                '-crf', '18',       # High quality (lower CRF = better quality)
+                '-avoid_negative_ts', 'make_zero',
+                '-f', 'mp4',        # Force MP4 format
+                '-y',               # Overwrite output
+                bucket_path
+            ]
+
+            print(f"🪣 Recording {self.clip_length}s bucket...")
+            self.stream_bucket.is_recording_bucket = True
+            ffmpeg_result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=self.clip_length + 10)
+            self.stream_bucket.is_recording_bucket = False
+
+            if ffmpeg_result.returncode == 0 and os.path.exists(bucket_path):
+                file_size = os.path.getsize(bucket_path)
+                if file_size > 100000:  # Bucket should be much larger than segments
+                    print(f"✅ SUCCESS: Recorded {file_size} byte bucket ({self.clip_length}s)")
+                    return True
+                else:
+                    print(f"❌ CRITICAL: Bucket file too small ({file_size} bytes)")
+                    print(f"❌ FFmpeg stderr: {ffmpeg_result.stderr}")
+                    return False
+            else:
+                print(f"❌ CRITICAL: FFmpeg bucket capture failed")
+                print(f"❌ FFmpeg stdout: {ffmpeg_result.stdout}")
+                print(f"❌ FFmpeg stderr: {ffmpeg_result.stderr}")
+                return False
+
+        except subprocess.TimeoutExpired:
+            print("❌ CRITICAL: Bucket capture timed out")
+            self.stream_bucket.is_recording_bucket = False
+            return False
+        except Exception as e:
+            print(f"❌ CRITICAL: Bucket capture error: {e}")
+            self.stream_bucket.is_recording_bucket = False
+            import traceback
+            traceback.print_exc()
             return False
 
     def _capture_real_segment(self, segment_path: str) -> bool:
