@@ -126,7 +126,6 @@ export default function ClipList({ clips, showActions = false }: ClipListProps) 
               <div className="flex flex-col gap-1 text-xs text-slate-400 mb-2">
                 <div className="flex justify-between items-center">
                   <span className="truncate text-xs">{formatDate(clip.createdAt).split(',')[0]}</span>
-                  <span className="text-blue-400 text-xs px-1 py-0.5 bg-blue-400/10 rounded text-center">{clip.triggerReason}</span>
                 </div>
                 <div className="flex justify-between items-center text-xs">
                   <span>{clip.duration}s</span>
@@ -183,7 +182,6 @@ export default function ClipList({ clips, showActions = false }: ClipListProps) 
                   <span>{formatDate(previewingClip.createdAt)}</span>
                   <span>{previewingClip.duration}s</span>
                   <span>{formatSize(previewingClip.fileSize)}</span>
-                  <span className="text-blue-400">{previewingClip.triggerReason}</span>
                 </div>
               </div>
               <Button
