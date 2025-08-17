@@ -57,7 +57,7 @@ export default function ProcessingStatus() {
                 status?.currentSession ? 'text-red-400' : 'text-slate-400'
               }>
                 {status?.streamEnded ? 'ENDED' :
-                 status?.currentSession ? 'LIVE' : 'IDLE'}
+                 status?.currentSession ? 'Ready to Clip Live' : 'IDLE'}
               </span>
             </div>
             <div className="text-sm text-slate-400">

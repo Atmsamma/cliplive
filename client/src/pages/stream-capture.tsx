@@ -66,7 +66,7 @@ export default function StreamCapture() {
                 }`}
               />
               <span className="text-slate-300">
-                {status?.isProcessing ? "Processing" : "Idle"}
+                {status?.isProcessing ? "watching" : "Idle"}
               </span>
             </div>
 
