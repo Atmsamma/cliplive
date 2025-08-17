@@ -88,7 +88,7 @@ export default function StreamInputForm() {
   };
 
   return (
-    <Card className="bg-slate-800 border-slate-600 mb-6">
+    <Card className="bg-card border-border mb-6">
       <CardContent className="pt-6">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -97,18 +97,18 @@ export default function StreamInputForm() {
               name="url"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-slate-300">Stream URL</FormLabel>
+                  <FormLabel className="text-card-foreground">Stream URL</FormLabel>
                   <FormControl>
                     <div className="relative">
                       <Input
-                        placeholder="https://www.twitch.tv/username or https://youtube.com/watch?v=..."
-                        className="bg-slate-700 border-slate-600 text-slate-100 placeholder-slate-400 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="Paste any live stream URL (YouTube, Twitch, Kick, etc.)"
+                        className="bg-input border-border text-card-foreground placeholder-muted-foreground focus:ring-primary focus:border-primary"
                         {...field}
                         disabled={status?.isProcessing}
                       />
                     </div>
                   </FormControl>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-muted-foreground">
                     Supports Twitch, YouTube, Kick, and HLS streams - processed in real-time
                   </p>
                   <FormMessage />
@@ -121,27 +121,27 @@ export default function StreamInputForm() {
               name="clipLength"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-slate-300">Clip Length</FormLabel>
+                  <FormLabel className="text-card-foreground">Clip Duration</FormLabel>
                   <Select
                     value={field.value.toString()}
                     onValueChange={(value) => field.onChange(parseInt(value))}
                     disabled={status?.isProcessing}
                   >
                     <FormControl>
-                      <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-100">
+                      <SelectTrigger className="bg-input border-border text-card-foreground">
                         <SelectValue />
                       </SelectTrigger>
                     </FormControl>
-                    <SelectContent className="bg-slate-700 border-slate-600">
-                      <SelectItem value="10" className="text-slate-100">10 seconds</SelectItem>
-                      <SelectItem value="15" className="text-slate-100">15 seconds</SelectItem>
-                      <SelectItem value="20" className="text-slate-100">20 seconds</SelectItem>
-                      <SelectItem value="30" className="text-slate-100">30 seconds</SelectItem>
-                      <SelectItem value="45" className="text-slate-100">45 seconds</SelectItem>
-                      <SelectItem value="60" className="text-slate-100">60 seconds</SelectItem>
+                    <SelectContent className="bg-popover border-border">
+                      <SelectItem value="10" className="text-popover-foreground">10 seconds</SelectItem>
+                      <SelectItem value="15" className="text-popover-foreground">15 seconds</SelectItem>
+                      <SelectItem value="20" className="text-popover-foreground">20 seconds</SelectItem>
+                      <SelectItem value="30" className="text-popover-foreground">30 seconds</SelectItem>
+                      <SelectItem value="45" className="text-popover-foreground">45 seconds</SelectItem>
+                      <SelectItem value="60" className="text-popover-foreground">60 seconds</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-muted-foreground">
                     System watches the stream in real-time and automatically clips highlights as they happen
                   </p>
                 </FormItem>
@@ -153,20 +153,20 @@ export default function StreamInputForm() {
                 type="submit"
                 className={
                   status?.isProcessing
-                    ? "bg-red-500 hover:bg-red-600 text-white"
-                    : "bg-blue-500 hover:bg-blue-600 text-white"
+                    ? "bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                    : "bg-primary hover:bg-primary/90 text-primary-foreground"
                 }
                 disabled={startMutation.isPending || stopMutation.isPending}
               >
                 {status?.isProcessing ? (
                   <>
                     <Square size={16} className="mr-2" />
-                    Stop Clipping
+                    Stop Monitoring
                   </>
                 ) : (
                   <>
                     <Play size={16} className="mr-2" />
-                    Start Clipping
+                    Start Monitoring
                   </>
                 )}
               </Button>
