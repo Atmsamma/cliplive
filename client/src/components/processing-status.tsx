@@ -2,9 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TrendingUp } from "lucide-react";
 import { useSSE } from "@/hooks/use-sse";
+import type { ProcessingStatus } from "@shared/schema";
 
 export default function ProcessingStatus() {
-  const { data: status } = useQuery({
+  const { data: status } = useQuery<ProcessingStatus>({
     queryKey: ["/api/status"],
     refetchInterval: 1000,
   });
@@ -67,7 +68,7 @@ export default function ProcessingStatus() {
                 Stream no longer available
               </div>
             )}
-            {status?.consecutiveFailures > 0 && status?.consecutiveFailures < 5 && (
+            {status?.consecutiveFailures && status.consecutiveFailures > 0 && status.consecutiveFailures < 5 && (
               <div className="text-xs text-yellow-400 mt-1">
                 Connection issues ({status.consecutiveFailures}/5)
               </div>
@@ -94,8 +95,7 @@ export default function ProcessingStatus() {
                   <div className="text-sm text-slate-500 mt-2">Waiting for input</div>
                 </div>
               </div>
-            )}</div>
-        </div>
+            )}
 
             {/* Activity indicator overlay */}
             {status?.currentSession && (

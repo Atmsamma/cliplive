@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Response as ExpressResponse } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertStreamSessionSchema, insertClipSchema, type ProcessingStatus, type SSEEvent } from "@shared/schema";
@@ -18,7 +18,7 @@ let processingStatus: ProcessingStatus = {
 };
 
 // SSE clients
-const sseClients = new Set<Response>();
+const sseClients = new Set<ExpressResponse>();
 
 // Python stream processor
 let streamProcessor: ChildProcess | null = null;

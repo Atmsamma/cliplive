@@ -7,16 +7,17 @@ import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import type { ProcessingStatus as ProcessingStatusType, Clip } from "@shared/schema";
 
 export default function StreamCapture() {
   const { toast } = useToast();
 
-  const { data: status } = useQuery({
+  const { data: status } = useQuery<ProcessingStatusType>({
     queryKey: ["/api/status"],
     refetchInterval: 1000,
   });
 
-  const { data: clips } = useQuery({
+  const { data: clips } = useQuery<Clip[]>({
     queryKey: ["/api/clips"],
     refetchInterval: 5000,
   });
