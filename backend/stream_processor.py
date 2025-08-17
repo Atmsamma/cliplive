@@ -216,19 +216,56 @@ class StreamBucket:
         }
 
     def save_bucket_as_clip(self, clip_path: str, detection_time: float) -> bool:
-        """Save the current bucket as a highlight clip."""
+        """Save the current bucket as a highlight clip using FFmpeg to ensure valid output."""
         if not self.current_bucket_path or not os.path.exists(self.current_bucket_path):
             print("❌ No bucket available to save as clip")
             return False
 
         try:
-            # Simply copy the bucket to the clip location - no re-encoding needed!
-            import shutil
-            shutil.copy2(self.current_bucket_path, clip_path)
+            # Wait a moment to ensure the bucket file is completely written
+            import time
+            time.sleep(1)
             
-            file_size = os.path.getsize(clip_path)
-            print(f"✅ Bucket saved as clip: {clip_path} ({file_size} bytes)")
-            return True
+            # Verify the source bucket is valid before copying
+            probe_cmd = [
+                'ffprobe',
+                '-v', 'quiet',
+                '-select_streams', 'v:0',
+                '-show_entries', 'stream=duration',
+                '-of', 'csv=p=0',
+                self.current_bucket_path
+            ]
+            
+            probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=5)
+            
+            if probe_result.returncode != 0:
+                print(f"❌ Source bucket is invalid: {probe_result.stderr}")
+                return False
+            
+            # Use FFmpeg to ensure a valid MP4 output with proper headers
+            ffmpeg_cmd = [
+                'ffmpeg',
+                '-i', self.current_bucket_path,
+                '-c', 'copy',  # Copy streams without re-encoding
+                '-movflags', '+faststart',  # Ensure proper MP4 structure
+                '-y',  # Overwrite output
+                clip_path
+            ]
+            
+            print(f"🔧 Processing bucket into valid clip...")
+            ffmpeg_result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=30)
+            
+            if ffmpeg_result.returncode == 0 and os.path.exists(clip_path):
+                file_size = os.path.getsize(clip_path)
+                if file_size > 100000:  # Ensure reasonable file size
+                    print(f"✅ Valid clip created: {clip_path} ({file_size} bytes)")
+                    return True
+                else:
+                    print(f"❌ Output clip too small: {file_size} bytes")
+                    return False
+            else:
+                print(f"❌ FFmpeg clip processing failed: {ffmpeg_result.stderr}")
+                return False
             
         except Exception as e:
             print(f"❌ Error saving bucket as clip: {e}")
@@ -444,8 +481,11 @@ class StreamProcessor:
 
                 # Wait for bucket to finish recording before analysis
                 if self.stream_bucket.is_recording_bucket:
-                    time.sleep(0.5)
+                    time.sleep(1)
                     continue
+                
+                # Additional wait to ensure file is completely written
+                time.sleep(0.5)
 
                 # Analyze the completed bucket
                 metrics = self._analyze_bucket_sample(bucket_info['path'])
@@ -1203,9 +1243,9 @@ class StreamProcessor:
             ffmpeg_result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=self.clip_length + 15)
             self.stream_bucket.is_recording_bucket = False
             
-            # Give the file system a moment to finish writing
+            # Give the file system a moment to finish writing and ensure file integrity
             import time
-            time.sleep(0.5)
+            time.sleep(2)  # Increased wait time for better file completion
 
             if ffmpeg_result.returncode == 0 and os.path.exists(bucket_path):
                 file_size = os.path.getsize(bucket_path)
