@@ -1,0 +1,182 @@
+Add an HLS “Ad Gatekeeper” before the clipper
+Goal (plain)
+
+Only send clean Twitch HLS URLs (no ads) to the clipper.
+If a URL has ad markers, throw it away, get a new URL, check again.
+
+Inputs
+
+channel: Twitch channel name (e.g., papaplatte)
+
+(optional) quality: default best
+
+(optional) check_interval_sec: default 2
+
+What counts as “ad”
+
+In the .m3u8 playlist text, any of:
+
+twitch-stitched-ad
+
+twitch-ad-quartile
+
+EXT-X-DISCONTINUITY (treat as ad boundary—don’t clip across it)
+
+Behavior
+
+Ask Streamlink for the HLS URL:
+
+streamlink --stream-url https://www.twitch.tv/{channel} {quality}
+
+
+Download that .m3u8 text.
+
+If it contains any ad markers → discard and retry (sleep check_interval_sec).
+
+When clean → hand the URL to the current clipping pipeline.
+
+Re-check on every URL refresh/rotate (same steps).
+
+Deliverables
+
+A small module ad_gatekeeper.{ps1|sh|py} with a function:
+
+get_clean_twitch_url(channel, quality="best", check_interval_sec=2) -> str
+
+A wrapper CLI:
+
+gatekeep_and_clip --channel <name> [--quality best] [--out out.ts]
+
+Internally: get clean URL → start the existing clipper/ffmpeg.
+
+Unit-style tests for the string-match “ad detection” (given sample playlists).
+
+Acceptance tests
+
+If playlist has twitch-stitched-ad → function keeps retrying.
+
+If playlist is clean → function returns URL in <5s (assuming stream is live).
+
+Recording produced by the wrapper has no ad segments and no clip across DISCONTINUITY.
+
+Reference implementations
+PowerShell (Windows) – module
+function Get-CleanTwitchUrl {
+  param(
+    [Parameter(Mandatory=$true)][string]$Channel,
+    [string]$Quality = "best",
+    [int]$CheckIntervalSec = 2
+  )
+  $pattern = "twitch-stitched-ad|twitch-ad-quartile|EXT-X-DISCONTINUITY"
+  while ($true) {
+    $url = streamlink --stream-url "https://www.twitch.tv/$Channel" $Quality 2>$null
+    if (-not $url) { Start-Sleep -Seconds $CheckIntervalSec; continue }
+    $m3u8 = curl.exe -sL "$url"
+    if ($m3u8 | Select-String -Quiet -Pattern $pattern) {
+      Start-Sleep -Seconds $CheckIntervalSec; continue
+    }
+    return $url
+  }
+}
+
+param(
+  [string]$Channel,
+  [string]$Quality = "best",
+  [string]$Out = "out.ts"
+)
+
+if ($PSBoundParameters.ContainsKey('Channel')) {
+  $clean = Get-CleanTwitchUrl -Channel $Channel -Quality $Quality
+  # Pipe clean stream into your clipper (example uses ffmpeg passthrough)
+  ffmpeg -y -i "$clean" -c copy -f mpegts "$Out"
+}
+
+Bash (Linux/macOS) – script
+#!/usr/bin/env bash
+set -euo pipefail
+
+channel="${1:?channel required}"
+quality="${2:-best}"
+interval="${3:-2}"
+adre='twitch-stitched-ad|twitch-ad-quartile|EXT-X-DISCONTINUITY'
+
+get_clean_url() {
+  while :; do
+    url="$(streamlink --stream-url "https://www.twitch.tv/$channel" "$quality" 2>/dev/null || true)"
+    [ -z "${url:-}" ] && sleep "$interval" && continue
+    if curl -sL "$url" | grep -E "$adre" >/dev/null; then
+      sleep "$interval"
+      continue
+    fi
+    echo "$url"
+    return 0
+  done
+}
+
+clean="$(get_clean_url)"
+# Hand off to your existing clipper; example uses ffmpeg passthrough
+ffmpeg -y -i "$clean" -c copy -f mpegts - | ./your-clipper
+
+Python (cross-platform) – library + CLI
+import os, re, subprocess, sys, time, urllib.request
+
+AD_RE = re.compile(r"(twitch-stitched-ad|twitch-ad-quartile|EXT-X-DISCONTINUITY)", re.I)
+
+def streamlink_url(channel: str, quality: str = "best") -> str | None:
+    cmd = ["streamlink", "--stream-url", f"https://www.twitch.tv/{channel}", quality]
+    try:
+        out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True).strip()
+        return out if out else None
+    except subprocess.CalledProcessError:
+        return None
+
+def has_ads(m3u8_text: str) -> bool:
+    return bool(AD_RE.search(m3u8_text))
+
+def fetch(url: str) -> str:
+    with urllib.request.urlopen(url) as r:
+        return r.read().decode("utf-8", "ignore")
+
+def get_clean_twitch_url(channel: str, quality: str = "best", check_interval_sec: int = 2) -> str:
+    while True:
+        url = streamlink_url(channel, quality)
+        if not url:
+            time.sleep(check_interval_sec); continue
+        if has_ads(fetch(url)):
+            time.sleep(check_interval_sec); continue
+        return url
+
+def main():
+    if len(sys.argv) < 2:
+        print("usage: gatekeeper.py <channel> [quality] [out.ts]", file=sys.stderr); sys.exit(2)
+    channel = sys.argv[1]
+    quality = sys.argv[2] if len(sys.argv) > 2 else "best"
+    out = sys.argv[3] if len(sys.argv) > 3 else "out.ts"
+    clean = get_clean_twitch_url(channel, quality)
+    # Example: spawn ffmpeg; replace with your clipper runner
+    subprocess.check_call(["ffmpeg", "-y", "-i", clean, "-c", "copy", "-f", "mpegts", out])
+
+if __name__ == "__main__":
+    main()
+
+Integration notes
+
+Keep your existing clipper unchanged; just feed it the clean URL.
+
+Add a retry/backoff (2–5s) so you don’t hammer Twitch.
+
+On stream down or persistent ads > N tries, log and surface a “waiting for clean feed” status.
+
+If you later add OAuth headers, reuse the same flow—this gatekeeper still applies.
+
+Done means
+
+Wrapper returns/uses only URLs whose current playlist has no ad markers.
+
+Your clips never start/end inside an ad window or on a discontinuity.
+
+Logs clearly show: attempts, ad detected, retry, clean acquired, recording started.
+
+If you want this rewritten specifically for FFmpeg stdin piping or your clipper’s API, say which interface it expects (stdin/file/socket), and I’ll tailor it.
+
+ChatGPT can make mistakes. Check im
