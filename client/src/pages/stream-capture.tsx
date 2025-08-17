@@ -16,7 +16,7 @@ export default function StreamCapture() {
     refetchInterval: 1000,
   });
 
-  const { data: clips = [] } = useQuery({
+  const { data: clips } = useQuery({
     queryKey: ["/api/clips"],
     refetchInterval: 5000,
   });
@@ -39,7 +39,9 @@ export default function StreamCapture() {
     }
   };
 
-  const totalSize = clips.reduce((acc: number, clip: any) => acc + clip.fileSize, 0);
+  // Ensure clips is always an array
+  const clipsArray = Array.isArray(clips) ? clips : [];
+  const totalSize = clipsArray.reduce((sum: number, clip: any) => sum + clip.fileSize, 0);
   const formatSize = (bytes: number) => {
     const mb = bytes / (1024 * 1024);
     return `${mb.toFixed(1)} MB`;
@@ -71,7 +73,7 @@ export default function StreamCapture() {
             <Button
               variant="outline"
               onClick={handleDownloadAll}
-              disabled={clips.length === 0}
+              disabled={clipsArray.length === 0}
               className="bg-slate-700 hover:bg-slate-600 text-slate-300 border-slate-600"
             >
               <Download size={16} className="mr-2" />
@@ -96,13 +98,13 @@ export default function StreamCapture() {
               <span>Recent Clips</span>
             </h3>
             <div className="flex items-center space-x-2">
-              <span className="text-sm text-slate-400">Total: {clips.length} clips</span>
+              <span className="text-sm text-slate-400">Total: {clipsArray.length} clips</span>
               <div className="text-sm text-slate-400">•</div>
               <span className="text-sm text-slate-400">{formatSize(totalSize)}</span>
             </div>
           </div>
 
-          <ClipList clips={clips.slice(0, 5)} showActions />
+          <ClipList clips={clipsArray} showActions />
         </div>
       </main>
     </>
