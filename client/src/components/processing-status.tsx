@@ -74,44 +74,28 @@ export default function ProcessingStatus() {
             )}
           </div>
 
-          {/* Live Frame Preview - Full Size */}
+          {/* Static Stream Screenshot - Full Size */}
           <div className="relative flex-1 bg-slate-700 rounded-lg overflow-hidden border border-slate-600 min-h-48">
-            {status?.currentSession && status?.currentFrame ? (
+            {status?.currentSession ? (
               <img 
-                src={`/api/current-frame?t=${Date.now()}`}
-                alt="Current frame being processed"
+                src={`/api/current-frame?session=${status.currentSession.id}`}
+                alt="Stream screenshot"
                 className="w-full h-full object-cover"
                 style={{ display: 'block' }}
                 onError={(e) => {
-                  // Don't hide on error, just log it
-                  console.log('Frame load error, but keeping placeholder');
+                  console.log('Frame load error, showing fallback');
                 }}
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
-                <div className={`text-slate-400 text-center ${
-                  status?.currentSession ? 'animate-pulse' : ''
-                }`}>
-                  {status?.currentSession ? (
-                    <div>
-                      <div className="text-4xl mb-2">📹</div>
-                      <div className="text-lg">Processing...</div>
-                      <div className="text-sm text-slate-500 mt-2">
-                        {animationState === 'high' ? 'High Activity' :
-                         animationState === 'medium' ? 'Medium Activity' :
-                         animationState === 'low' ? 'Low Activity' : 'Monitoring'}
-                      </div>
-                    </div>
-                  ) : (
-                    <div>
-                      <div className="text-4xl mb-2">⏸️</div>
-                      <div className="text-lg">No Stream</div>
-                      <div className="text-sm text-slate-500 mt-2">Waiting for input</div>
-                    </div>
-                  )}
+                <div className="text-slate-400 text-center">
+                  <div className="text-4xl mb-2">⏸️</div>
+                  <div className="text-lg">No Stream</div>
+                  <div className="text-sm text-slate-500 mt-2">Waiting for input</div>
                 </div>
               </div>
-            )}
+            )}</div>
+        </div>
 
             {/* Activity indicator overlay */}
             {status?.currentSession && (

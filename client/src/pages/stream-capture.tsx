@@ -39,9 +39,9 @@ export default function StreamCapture() {
     }
   };
 
-  // Ensure clips is always an array
+  // Ensure clips is always an array and handle undefined case
   const clipsArray = Array.isArray(clips) ? clips : [];
-  const totalSize = clipsArray.reduce((sum: number, clip: any) => sum + clip.fileSize, 0);
+  const totalSize = clipsArray.length > 0 ? clipsArray.reduce((sum: number, clip: any) => sum + (clip.fileSize || 0), 0) : 0;
   const formatSize = (bytes: number) => {
     const mb = bytes / (1024 * 1024);
     return `${mb.toFixed(1)} MB`;

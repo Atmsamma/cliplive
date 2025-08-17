@@ -314,48 +314,36 @@ class StreamProcessor:
         print(f"AI Detection: {'Enabled' if self.ai_detector else 'Disabled'}")
         print(f"Ad Gatekeeper: {'Enabled' if self.ad_gatekeeper else 'Disabled'}")
 
-    def start_processing(self) -> bool:
-        """Start stream processing."""
+    def start_processing(self, url: str, audio_threshold: float, motion_threshold: float, clip_length: int, session_id: str = None):
+        """Start the stream processing with real FFmpeg integration."""
         if self.is_running:
-            print("Stream processor is already running")
+            print("⚠️ Stream processor is already running")
             return False
 
-        try:
-            self.is_running = True
-            self.start_time = time.time()
-            self.frames_processed = 0
-            self.clips_generated = 0
+        self.url = url
+        self.audio_threshold = audio_threshold
+        self.motion_threshold = motion_threshold
+        self.clip_length = clip_length
+        self.session_id = session_id or 'default'
+        self.is_running = True
+        self.consecutive_failures = 0
+        self.last_successful_capture = time.time()
 
-            # Initialize stream buffer - need at least 2x clip length for proper 20%/80% strategy
-            # This ensures we have enough content before and after detection moments
-            buffer_duration = max(60, self.clip_length * 2)  # At least 60s or 2x clip length
-            self.stream_buffer = StreamBuffer(
-                buffer_seconds=buffer_duration,
-                segment_duration=2
-            )
-            print(f"Stream buffer configured: {buffer_duration}s capacity ({buffer_duration // 2} segments max)")
-            print(f"Buffer size supports full {self.clip_length}s clips with 20%/80% strategy")
+        print(f"🚀 Starting stream processor for: {url}")
+        print(f"📊 Thresholds - Audio: {audio_threshold}, Motion: {motion_threshold}")
+        print(f"⏱️ Clip length: {clip_length}s")
 
-            # Start processing threads
-            self.capture_thread = threading.Thread(target=self._stream_capture_loop, daemon=True)
-            self.analysis_thread = threading.Thread(target=self._stream_analysis_loop, daemon=True)
-            self.metrics_thread = threading.Thread(target=self._metrics_update_loop, daemon=True)
+        # Capture initial session screenshot
+        self._capture_session_screenshot()
 
-            self.capture_thread.start()
-            self.analysis_thread.start()
-            self.metrics_thread.start()
+        # Start capture and analysis threads
+        self.capture_thread = threading.Thread(target=self._capture_segments, daemon=True)
+        self.analysis_thread = threading.Thread(target=self._analysis_loop, daemon=True)
 
-            # Start adaptive baseline calibration
-            if self.use_adaptive_detection:
-                self.baseline_tracker.start_calibration()
+        self.capture_thread.start()
+        self.analysis_thread.start()
 
-            print(f"Started stream processing for URL: {self.config['url']}")
-            return True
-
-        except Exception as e:
-            print(f"Failed to start stream processing: {e}")
-            self.is_running = False
-            return False
+        return True
 
     def stop_processing(self):
         """Stop stream processing."""
@@ -1271,24 +1259,64 @@ class StreamProcessor:
 
             time.sleep(1)
 
-    def _extract_current_frame(self, segment_path):
-        """Extract current frame for live preview."""
+    def _extract_current_frame(self, segment_path: str):
+        """Extract a frame from the current segment for live preview."""
         try:
-            if not os.path.exists(segment_path):
-                return
+            frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", "current_frame.jpg")
 
+            # Use ffmpeg to extract a frame from the segment
             cmd = [
-                'ffmpeg', '-y', '-i', segment_path,
-                '-vf', 'scale=320:180',  # Small size for web display
-                '-frames:v', '1',
-                '-f', 'image2',
-                self.current_frame_path
+                "ffmpeg", "-y",
+                "-i", segment_path,
+                "-vf", "select=eq(n\\,0)",
+                "-q:v", "2",
+                "-frames:v", "1",
+                frame_path
             ]
 
             subprocess.run(cmd, capture_output=True, timeout=5)
         except Exception as e:
             # Silent fail - frame extraction is not critical
             pass
+
+    def _capture_session_screenshot(self):
+        """Capture a static screenshot when session starts."""
+        try:
+            # Use ad gatekeeper to get clean URL
+            if 'twitch.tv' in self.url:
+                import re
+                channel_match = re.search(r'twitch\.tv/([^/?]+)', self.url)
+                if channel_match:
+                    channel = channel_match.group(1)
+                    from ad_gatekeeper import AdGatekeeper
+                    gatekeeper = AdGatekeeper()
+                    clean_url = gatekeeper.get_clean_hls_url(channel)
+                    if clean_url:
+                        self.url = clean_url
+
+            session_id = getattr(self, 'session_id', 'default')
+            frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", f"session_{session_id}_frame.jpg")
+
+            # Capture a single frame for session screenshot
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", self.url,
+                "-t", "1",
+                "-vf", "select=eq(n\\,0)",
+                "-q:v", "2",
+                "-frames:v", "1",
+                frame_path
+            ]
+
+            result = subprocess.run(cmd, capture_output=True, timeout=10)
+
+            if result.returncode == 0:
+                print(f"📸 Session screenshot captured: {frame_path}")
+            else:
+                print(f"❌ Failed to capture session screenshot: {result.stderr.decode()}")
+
+        except Exception as e:
+            print(f"❌ Error capturing session screenshot: {e}")
 
 
 def main():
@@ -1303,7 +1331,13 @@ def main():
 
         print(f"Starting stream processor for: {config['url']}")
 
-        if processor.start_processing():
+        if processor.start_processing(
+            config['url'],
+            config.get('audioThreshold', 6),
+            config.get('motionThreshold', 30),
+            config.get('clipLength', 30),
+            config.get('sessionId') # Pass session_id if provided
+        ):
             try:
                 while processor.is_running:
                     time.sleep(1)

@@ -153,22 +153,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Get processing status
   app.get("/api/status", (req, res) => {
-    // Check if current frame exists and is recent
-    const framePath = path.join(process.cwd(), 'temp', 'current_frame.jpg');
-    let currentFrame = false;
+    res.json(processingStatus);
+  });
 
-    try {
-      const stats = fs.statSync(framePath);
-      const frameAge = Date.now() - stats.mtime.getTime();
-      currentFrame = frameAge < 5000; // Frame is less than 5 seconds old
-    } catch (error) {
-      currentFrame = false;
+  // Get current frame (static session screenshot)
+  app.get('/api/current-frame', (req, res) => {
+    const sessionId = req.query.session;
+    
+    if (sessionId) {
+      // Serve static session screenshot
+      const sessionFramePath = path.join(process.cwd(), 'temp', `session_${sessionId}_frame.jpg`);
+      
+      if (fs.existsSync(sessionFramePath)) {
+        res.sendFile(sessionFramePath);
+        return;
+      }
     }
-
-    res.json({
-      ...processingStatus,
-      currentFrame
-    });
+    
+    // Fallback to current frame if no session-specific frame
+    const framePath = path.join(process.cwd(), 'temp', 'current_frame.jpg');
+    
+    if (fs.existsSync(framePath)) {
+      res.sendFile(framePath);
+    } else {
+      res.status(404).json({ error: 'No frame available' });
+    }
   });
 
   // Start stream capture
@@ -195,6 +204,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         audioThreshold: session.audioThreshold,
         motionThreshold: session.motionThreshold,
         clipLength: session.clipLength,
+        sessionId: session.id,
       };
 
       const started = startStreamProcessor(processorConfig);
