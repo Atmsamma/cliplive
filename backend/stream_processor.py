@@ -442,13 +442,12 @@ class StreamProcessor:
                     time.sleep(1)
                     continue
 
-                # Only analyze if bucket is actively being recorded
-                if not self.stream_bucket.is_recording_bucket:
+                # Wait for bucket to finish recording before analysis
+                if self.stream_bucket.is_recording_bucket:
                     time.sleep(0.5)
                     continue
 
-                # Sample analysis from the bucket (extract a small segment for analysis)
-                print(f"🎬 Analyzing current bucket: {bucket_info['path']}")
+                # Analyze the completed bucket
                 metrics = self._analyze_bucket_sample(bucket_info['path'])
 
                 # Update processing stats - increment by 1 for smooth counting
@@ -477,7 +476,7 @@ class StreamProcessor:
 
                 # Always check fixed thresholds as fallback
                 if not trigger_reason:
-                    trigger_reason = self._check_highlight_triggers(metrics, latest_segment['path'])
+                    trigger_reason = self._check_highlight_triggers(metrics, bucket_info['path'])
 
                 # Debug output for detection attempts
                 if self.frames_processed % 300 == 0:  # Every 5 minutes
@@ -527,46 +526,44 @@ class StreamProcessor:
         """Analyze a small sample from the current recording bucket."""
         try:
             if not os.path.exists(bucket_path):
-                print(f"Bucket file not found: {bucket_path}")
                 return self._get_default_metrics()
 
             # Get current file size to check if it's growing (actively recording)
             file_size = os.path.getsize(bucket_path)
 
-            if file_size < 100000:  # Too small for real video
-                print(f"Bucket file still too small ({file_size} bytes) - still recording")
+            if file_size < 500000:  # Need at least 500KB for stable analysis
                 return self._get_default_metrics()
 
-            # Extract a 2-second sample from the end of the bucket for analysis
-            sample_path = os.path.join(self.stream_bucket.temp_dir, "analysis_sample.mp4")
+            # Check if bucket is still being written to by comparing size over time
+            import time
+            initial_size = file_size
+            time.sleep(0.1)  # Wait 100ms
+            current_size = os.path.getsize(bucket_path)
             
-            # Use FFmpeg to extract the last 2 seconds for analysis
-            cmd = [
-                'ffmpeg',
-                '-sseof', '-2',  # Start 2 seconds from end of file
-                '-i', bucket_path,
-                '-t', '2',       # Take 2 seconds
-                '-c', 'copy',    # Copy without re-encoding (fast)
-                '-y',            # Overwrite
-                sample_path
+            if current_size != initial_size:
+                # File is still growing, skip analysis for now
+                return self._get_default_metrics()
+
+            # Try to probe the file first to ensure it's valid
+            probe_cmd = [
+                'ffprobe',
+                '-v', 'quiet',
+                '-select_streams', 'v:0',
+                '-show_entries', 'stream=width,height,duration',
+                '-of', 'csv=p=0',
+                bucket_path
             ]
 
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=3)
             
-            if result.returncode == 0 and os.path.exists(sample_path):
-                print(f"✅ Extracted analysis sample: {os.path.getsize(sample_path)} bytes")
-                # Analyze the sample
-                metrics = self._analyze_with_ffmpeg(sample_path)
-                # Clean up sample
-                if os.path.exists(sample_path):
-                    os.remove(sample_path)
-                return metrics
-            else:
-                print(f"Sample extraction failed: {result.stderr}")
+            if probe_result.returncode != 0:
+                # File not ready for analysis yet
                 return self._get_default_metrics()
 
+            # File appears valid, analyze directly without extraction
+            return self._analyze_with_ffmpeg(bucket_path)
+
         except Exception as e:
-            print(f"Error analyzing bucket sample {bucket_path}: {e}")
             return self._get_default_metrics()
 
     def _analyze_segment(self, segment_path: str) -> Dict[str, float]:
@@ -1195,6 +1192,7 @@ class StreamProcessor:
                 '-preset', 'fast',  # Balanced encoding speed/quality
                 '-crf', '18',       # High quality (lower CRF = better quality)
                 '-avoid_negative_ts', 'make_zero',
+                '-movflags', '+faststart',  # Optimize for streaming/web playback
                 '-f', 'mp4',        # Force MP4 format
                 '-y',               # Overwrite output
                 bucket_path
@@ -1202,8 +1200,12 @@ class StreamProcessor:
 
             print(f"🪣 Recording {self.clip_length}s bucket...")
             self.stream_bucket.is_recording_bucket = True
-            ffmpeg_result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=self.clip_length + 10)
+            ffmpeg_result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=self.clip_length + 15)
             self.stream_bucket.is_recording_bucket = False
+            
+            # Give the file system a moment to finish writing
+            import time
+            time.sleep(0.5)
 
             if ffmpeg_result.returncode == 0 and os.path.exists(bucket_path):
                 file_size = os.path.getsize(bucket_path)
