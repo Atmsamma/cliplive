@@ -89,13 +89,7 @@ export default function StreamInputForm() {
 
   return (
     <Card className="bg-slate-800 border-slate-600 mb-6">
-      <CardHeader>
-        <CardTitle className="flex items-center space-x-2 text-slate-50">
-          <Link className="text-blue-400" size={20} />
-          <span>Clip Configuration</span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
+      <CardContent className="pt-6">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <FormField
