@@ -3,7 +3,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TrendingUp } from "lucide-react";
 import { useSSE } from "@/hooks/use-sse";
 import type { ProcessingStatus } from "@shared/schema";
-import React, { useState, useEffect } from 'react'; // Added React import for useState and useEffect
 
 export default function ProcessingStatus() {
   const { data: status } = useQuery<ProcessingStatus>({
@@ -13,21 +12,6 @@ export default function ProcessingStatus() {
 
   // Listen for SSE updates
   useSSE("/api/events");
-
-  // State for the stream frame URL and error handling
-  const [frameUrl, setFrameUrl] = useState<string | null>(null);
-  const [frameError, setFrameError] = useState<boolean>(false);
-
-  // Update frame URL when status changes or is processing
-  useEffect(() => {
-    if (status?.currentSession && status?.isProcessing) {
-      setFrameUrl(`/api/current-frame?session=${status.currentSession.id}&t=${Date.now()}`);
-      setFrameError(false); // Reset error on new frame
-    } else {
-      setFrameUrl(null); // Clear frame URL when not processing
-    }
-  }, [status?.currentSession, status?.isProcessing]);
-
 
   // Determine animation state based on stream data
   const getAnimationState = () => {
@@ -78,38 +62,34 @@ export default function ProcessingStatus() {
                 Stream no longer available
               </div>
             )}
-
+            {status?.consecutiveFailures && status.consecutiveFailures > 0 && status.consecutiveFailures < 5 && (
+              <div className="text-xs text-yellow-400 mt-1">
+                Connection issues ({status.consecutiveFailures}/5)
+              </div>
+            )}
           </div>
 
           {/* Static Stream Screenshot - Full Size */}
           <div className="relative flex-1 bg-slate-700 rounded-lg overflow-hidden border border-slate-600 min-h-48">
-            {status?.currentSession && status?.isProcessing ? (
+            {status?.currentSession ? (
               <img 
-                src={`/api/current-frame?session=${status.currentSession.id}&t=${Date.now()}`}
+                src={`/api/current-frame?session=${status.currentSession.id}`}
                 alt="Stream screenshot"
                 className="w-full h-full object-cover"
                 style={{ display: 'block' }}
                 onError={(e) => {
-                  // If frame fails to load, show no stream fallback
-                  const target = e.target as HTMLImageElement;
-                  target.style.display = 'none';
-                  const fallback = target.nextElementSibling as HTMLDivElement;
-                  if (fallback) fallback.style.display = 'flex';
+                  console.log('Frame load error, showing fallback');
                 }}
               />
-            ) : null}
-
-            {/* Fallback shown when no active session or frame load fails */}
-            <div 
-              className="w-full h-full flex items-center justify-center"
-              style={{ display: status?.currentSession && status?.isProcessing ? 'none' : 'flex' }}
-            >
-              <div className="text-center">
-                <div className="text-4xl mb-2">⏸️</div>
-                <div className="text-lg">No Stream</div>
-                <div className="text-sm text-slate-500 mt-2">Enter a URL and click Start Clipping</div>
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <div className="text-center">
+                  <div className="text-4xl mb-2">⏸️</div>
+                  <div className="text-lg">No Stream</div>
+                  <div className="text-sm text-slate-500 mt-2">Enter a URL and click Start Clipping</div>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Activity indicator overlay */}
             {status?.currentSession && (

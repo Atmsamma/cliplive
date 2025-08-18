@@ -278,23 +278,14 @@ class StreamBucket:
             for filename in os.listdir(self.temp_dir):
                 file_path = os.path.join(self.temp_dir, filename)
                 if file_path != self.current_bucket_path and os.path.isfile(file_path):
-                    try:
-                        os.remove(file_path)
-                        print(f"✅ Cleaned up old bucket: {filename}")
-                    except Exception as file_error:
-                        print(f"⚠️ Could not remove old bucket {filename}: {file_error}")
+                    os.remove(file_path)
         except Exception as e:
             print(f"Warning: Error cleaning up old buckets: {e}")
 
     def cleanup(self):
         """Clean up all temporary files."""
-        try:
-            if os.path.exists(self.temp_dir):
-                print(f"🧹 Cleaning up bucket temp directory: {self.temp_dir}")
-                shutil.rmtree(self.temp_dir)
-                print("✅ Bucket temp directory cleaned up successfully")
-        except Exception as e:
-            print(f"⚠️ Error cleaning up bucket temp directory: {e}")
+        if os.path.exists(self.temp_dir):
+            shutil.rmtree(self.temp_dir)
 
 class StreamProcessor:
     """Main stream processor with highlight detection and clipping."""
@@ -417,73 +408,17 @@ class StreamProcessor:
         return True
 
     def stop_processing(self):
-        """Stop stream processing and reset all session state."""
-        print("🛑 Stopping stream processing and resetting session...")
+        """Stop stream processing."""
+        print("Stopping stream processing...")
         self.is_running = False
 
-        # Reset all session state
-        self.frames_processed = 0
-        self.clips_generated = 0
-        self.start_time = None
-        self.consecutive_failures = 0
-        self.stream_ended = False
-        self.last_successful_capture = None
-        self.last_clip_time = 0
-
-        # Clean up stream bucket
         if self.stream_bucket:
             self.stream_bucket.cleanup()
             self.stream_bucket = None
 
-        # Reset baseline tracker
-        if hasattr(self, 'baseline_tracker'):
-            self.baseline_tracker = BaselineTracker(calibration_seconds=60)
-
         # Clean up AI detector resources
         if self.ai_detector:
             self.ai_detector.cleanup()
-
-        # Clear metrics queue
-        while not self.metrics_queue.empty():
-            try:
-                self.metrics_queue.get_nowait()
-            except:
-                break
-
-        # Clean up all temp files and frame files
-        try:
-            print("🧹 Cleaning up all temp files...")
-            
-            # Clean up current frame
-            if hasattr(self, 'current_frame_path') and os.path.exists(self.current_frame_path):
-                os.remove(self.current_frame_path)
-                print("✅ Current frame cleaned up")
-            
-            # Clean up session frame
-            if hasattr(self, 'session_id'):
-                session_frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", f"session_{self.session_id}_frame.jpg")
-                if os.path.exists(session_frame_path):
-                    os.remove(session_frame_path)
-                    print(f"✅ Session frame cleaned up: session_{self.session_id}_frame.jpg")
-            
-            # Clean up any remaining temp files in temp directory
-            temp_dir = os.path.join(os.getcwd(), 'temp')
-            if os.path.exists(temp_dir):
-                for filename in os.listdir(temp_dir):
-                    file_path = os.path.join(temp_dir, filename)
-                    if os.path.isfile(file_path):
-                        try:
-                            os.remove(file_path)
-                            print(f"✅ Cleaned up temp file: {filename}")
-                        except Exception as file_error:
-                            print(f"⚠️ Could not clean up temp file {filename}: {file_error}")
-            
-            print("✅ All temp files cleaned up")
-            
-        except Exception as cleanup_error:
-            print(f"⚠️ Error during temp file cleanup: {cleanup_error}")
-
-        print("✅ Session state completely reset")
 
     def _stream_capture_loop(self):
         """Main loop for capturing continuous video buckets."""
@@ -505,15 +440,11 @@ class StreamProcessor:
                     self.last_successful_capture = time.time()
                     bucket_counter += 1
                     
-                    # Extract current frame for live preview - do this immediately
+                    # Extract current frame for live preview
                     self._extract_current_frame(bucket_path)
                     
                     # Clean up old buckets to save space
                     self.stream_bucket.cleanup_old_buckets()
-                else:
-                    # Even on failure, try to extract frame from any existing bucket
-                    if os.path.exists(bucket_path):
-                        self._extract_current_frame(bucket_path)
                 else:
                     # Increment failure counter
                     self.consecutive_failures += 1
@@ -635,7 +566,7 @@ class StreamProcessor:
     def _analyze_bucket_sample(self, bucket_path: str) -> Dict[str, float]:
         """Analyze a small sample from the current recording bucket."""
         try:
-            if not bucket_path or not os.path.exists(bucket_path):
+            if not os.path.exists(bucket_path):
                 return self._get_default_metrics()
 
             # Get current file size to check if it's growing (actively recording)
@@ -644,15 +575,11 @@ class StreamProcessor:
             if file_size < 100000:  # Reduced threshold for faster analysis
                 return self._get_default_metrics()
 
-            # Verify file is not being written to (wait for completion)
-            if self.stream_bucket and self.stream_bucket.is_recording_bucket:
-                return self._get_default_metrics()
-
+            # Skip file growth check to avoid delays
             # Generate realistic metrics based on simple analysis
             return self._generate_realistic_metrics()
 
         except Exception as e:
-            print(f"Bucket analysis error: {e}")
             return self._get_default_metrics()
 
     def _generate_realistic_metrics(self) -> Dict[str, float]:
@@ -828,18 +755,18 @@ class StreamProcessor:
         scene_change = metrics.get('scene_change', 0)
         audio_db_change = metrics.get('audio_db_change', 0)
 
-        # Create compatible feature set for AI detector (exactly 6 features)
+        # Create compatible feature set for AI detector (6 features expected)
         enhanced_metrics = {
             'audio_level': audio_level,
             'motion_level': motion_level,
             'scene_change': scene_change,
             'audio_db_change': audio_db_change,
-            'frames_analyzed': min(120, metrics.get('frames_analyzed', 60)),  # Cap at 120
-            'combined_score': min(1.0, (
+            'frames_analyzed': metrics.get('frames_analyzed', 60),
+            'combined_score': (
                 (audio_level / 100) * 0.4 +
                 (motion_level / 100) * 0.4 +
                 (scene_change * 5) * 0.2
-            ))  # Cap at 1.0
+            )
         }
 
         # Try AI detection with enhanced features
@@ -1576,40 +1503,24 @@ class StreamProcessor:
 
             time.sleep(1)
 
-    def _extract_current_frame(self, bucket_path: str):
-        """Extract a frame from the current bucket for live preview."""
+    def _extract_current_frame(self, segment_path: str):
+        """Extract a frame from the current segment for live preview."""
         try:
-            # Only extract frame if bucket exists and has content
-            if not bucket_path or not os.path.exists(bucket_path):
-                return
-                
-            file_size = os.path.getsize(bucket_path)
-            if file_size < 100000:  # Wait for bucket to have some content
-                return
-            
-            # Extract frame for current_frame.jpg (general preview)
-            current_frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", "current_frame.jpg")
-            
-            # Also extract session-specific frame
-            session_frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", f"session_{self.session_id}_frame.jpg")
+            frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", "current_frame.jpg")
 
-            # Use ffmpeg to extract a recent frame from the bucket
-            for frame_path in [current_frame_path, session_frame_path]:
-                cmd = [
-                    "ffmpeg", "-y",
-                    "-i", bucket_path,
-                    "-ss", "1",  # Skip first second to get a stable frame
-                    "-vframes", "1",
-                    "-q:v", "2",
-                    frame_path
-                ]
+            # Use ffmpeg to extract a frame from the segment
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", segment_path,
+                "-vf", "select=eq(n\\,0)",
+                "-q:v", "2",
+                "-frames:v", "1",
+                frame_path
+            ]
 
-                result = subprocess.run(cmd, capture_output=True, timeout=10)
-                if result.returncode == 0:
-                    print(f"✅ Frame extracted: {os.path.basename(frame_path)}")
-                    
+            subprocess.run(cmd, capture_output=True, timeout=5)
         except Exception as e:
-            print(f"⚠️ Frame extraction error: {e}")
+            # Silent fail - frame extraction is not critical
             pass
 
     def _capture_session_screenshot(self):
