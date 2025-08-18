@@ -264,9 +264,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error('Error cleaning up thumbnails:', cleanupError);
       }
 
-      // Update processing status
-      processingStatus.isProcessing = false;
-      processingStatus.currentSession = undefined;
+      // Reset processing status completely
+      processingStatus = {
+        isProcessing: false,
+        framesProcessed: 0,
+        streamUptime: "00:00:00",
+        audioLevel: 0,
+        motionLevel: 0,
+        sceneChange: 0,
+        currentSession: undefined,
+        streamEnded: false,
+        consecutiveFailures: 0,
+        lastSuccessfulCapture: undefined,
+      };
       sessionStartTime = null;
 
       broadcastSSE({

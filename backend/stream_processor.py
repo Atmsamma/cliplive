@@ -408,17 +408,40 @@ class StreamProcessor:
         return True
 
     def stop_processing(self):
-        """Stop stream processing."""
-        print("Stopping stream processing...")
+        """Stop stream processing and reset all session state."""
+        print("🛑 Stopping stream processing and resetting session...")
         self.is_running = False
 
+        # Reset all session state
+        self.frames_processed = 0
+        self.clips_generated = 0
+        self.start_time = None
+        self.consecutive_failures = 0
+        self.stream_ended = False
+        self.last_successful_capture = None
+        self.last_clip_time = 0
+
+        # Clean up stream bucket
         if self.stream_bucket:
             self.stream_bucket.cleanup()
             self.stream_bucket = None
 
+        # Reset baseline tracker
+        if hasattr(self, 'baseline_tracker'):
+            self.baseline_tracker = BaselineTracker(calibration_seconds=60)
+
         # Clean up AI detector resources
         if self.ai_detector:
             self.ai_detector.cleanup()
+
+        # Clear metrics queue
+        while not self.metrics_queue.empty():
+            try:
+                self.metrics_queue.get_nowait()
+            except:
+                break
+
+        print("✅ Session state completely reset")
 
     def _stream_capture_loop(self):
         """Main loop for capturing continuous video buckets."""
@@ -566,7 +589,7 @@ class StreamProcessor:
     def _analyze_bucket_sample(self, bucket_path: str) -> Dict[str, float]:
         """Analyze a small sample from the current recording bucket."""
         try:
-            if not os.path.exists(bucket_path):
+            if not bucket_path or not os.path.exists(bucket_path):
                 return self._get_default_metrics()
 
             # Get current file size to check if it's growing (actively recording)
@@ -575,11 +598,15 @@ class StreamProcessor:
             if file_size < 100000:  # Reduced threshold for faster analysis
                 return self._get_default_metrics()
 
-            # Skip file growth check to avoid delays
+            # Verify file is not being written to (wait for completion)
+            if self.stream_bucket and self.stream_bucket.is_recording_bucket:
+                return self._get_default_metrics()
+
             # Generate realistic metrics based on simple analysis
             return self._generate_realistic_metrics()
 
         except Exception as e:
+            print(f"Bucket analysis error: {e}")
             return self._get_default_metrics()
 
     def _generate_realistic_metrics(self) -> Dict[str, float]:
@@ -755,18 +782,18 @@ class StreamProcessor:
         scene_change = metrics.get('scene_change', 0)
         audio_db_change = metrics.get('audio_db_change', 0)
 
-        # Create compatible feature set for AI detector (6 features expected)
+        # Create compatible feature set for AI detector (exactly 6 features)
         enhanced_metrics = {
             'audio_level': audio_level,
             'motion_level': motion_level,
             'scene_change': scene_change,
             'audio_db_change': audio_db_change,
-            'frames_analyzed': metrics.get('frames_analyzed', 60),
-            'combined_score': (
+            'frames_analyzed': min(120, metrics.get('frames_analyzed', 60)),  # Cap at 120
+            'combined_score': min(1.0, (
                 (audio_level / 100) * 0.4 +
                 (motion_level / 100) * 0.4 +
                 (scene_change * 5) * 0.2
-            )
+            ))  # Cap at 1.0
         }
 
         # Try AI detection with enhanced features
