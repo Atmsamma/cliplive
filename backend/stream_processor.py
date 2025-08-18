@@ -1560,38 +1560,80 @@ class StreamProcessor:
     def _capture_session_screenshot(self):
         """Capture a static screenshot when session starts."""
         try:
-            # Use ad gatekeeper to get clean URL
-            if 'twitch.tv' in self.url:
-                import re
-                channel_match = re.search(r'twitch\.tv/([^/?]+)', self.url)
-                if channel_match:
-                    channel = channel_match.group(1)
-                    if self.ad_gatekeeper:
-                        clean_url = self.ad_gatekeeper.get_clean_twitch_url(channel)
-                        if clean_url:
-                            self.url = clean_url
-
             session_id = getattr(self, 'session_id', 'default')
             frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", f"session_{session_id}_frame.jpg")
+            
+            print(f"📸 Capturing session screenshot for session {session_id}")
 
-            # Capture a single frame for session screenshot
+            # Get stream URL using the same method as continuous capture
+            stream_url = None
+            
+            # Extract channel name for Ad Gatekeeper
+            channel_name = None
+            if 'twitch.tv/' in self.url:
+                try:
+                    channel_name = self.url.split('twitch.tv/')[-1].split('/')[0].split('?')[0]
+                except:
+                    pass
+
+            # Use Ad Gatekeeper if available
+            if self.ad_gatekeeper and channel_name:
+                print(f"🛡️ Using Ad Gatekeeper for session screenshot: {channel_name}")
+                stream_url = self.ad_gatekeeper.get_clean_twitch_url(channel_name, quality='best')
+                
+                if stream_url:
+                    print(f"✅ Got clean stream URL for screenshot: {stream_url[:80]}...")
+                else:
+                    print("❌ Ad Gatekeeper failed to get clean URL for screenshot")
+                    return
+            else:
+                # Fallback to streamlink
+                print(f"⚠️ Using streamlink for session screenshot")
+                url_cmd = [
+                    'streamlink',
+                    self.url,
+                    'best',
+                    '--stream-url',
+                    '--retry-streams', '2',
+                    '--retry-max', '3'
+                ]
+
+                url_result = subprocess.run(url_cmd, capture_output=True, text=True, timeout=20)
+                
+                if url_result.returncode != 0:
+                    print(f"❌ Streamlink failed for screenshot: {url_result.stderr}")
+                    return
+
+                stream_url = url_result.stdout.strip()
+                if not stream_url or not stream_url.startswith('http'):
+                    print(f"❌ Invalid stream URL for screenshot: '{stream_url}'")
+                    return
+
+                print(f"✅ Got stream URL for screenshot: {stream_url[:80]}...")
+
+            # Capture a single frame using the stream URL
             cmd = [
                 "ffmpeg", "-y",
-                "-i", self.url,
-                "-t", "1",
-                "-vf", "select=eq(n\\,0)",
+                "-i", stream_url,
+                "-t", "3",  # Try for 3 seconds to get a good frame
+                "-vf", "select=eq(n\\,30)",  # Select frame 30 (1 second in)
                 "-q:v", "2",
                 "-frames:v", "1",
                 frame_path
             ]
 
-            result = subprocess.run(cmd, capture_output=True, timeout=10)
+            print(f"📸 Running screenshot capture...")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
 
-            if result.returncode == 0:
-                print(f"📸 Session screenshot captured: {frame_path}")
+            if result.returncode == 0 and os.path.exists(frame_path):
+                file_size = os.path.getsize(frame_path)
+                print(f"✅ Session screenshot captured: {frame_path} ({file_size} bytes)")
             else:
-                print(f"❌ Failed to capture session screenshot: {result.stderr.decode()}")
+                print(f"❌ Failed to capture session screenshot")
+                print(f"   stderr: {result.stderr}")
 
+        except subprocess.TimeoutExpired:
+            print(f"❌ Session screenshot capture timed out")
         except Exception as e:
             print(f"❌ Error capturing session screenshot: {e}")
 

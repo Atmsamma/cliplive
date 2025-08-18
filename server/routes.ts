@@ -192,6 +192,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         stopStreamProcessor();
       }
 
+      // Clean up ALL temp frame files before starting new session
+      try {
+        const tempDir = path.join(process.cwd(), 'temp');
+        if (fs.existsSync(tempDir)) {
+          const allFrames = fs.readdirSync(tempDir).filter(file => file.endsWith('.jpg'));
+          console.log(`Cleaning up ${allFrames.length} old frame files before new session...`);
+
+          allFrames.forEach(frame => {
+            const framePath = path.join(tempDir, frame);
+            fs.unlinkSync(framePath);
+          });
+
+          console.log('✅ All old frames cleaned up before new session');
+        }
+      } catch (cleanupError) {
+        console.error('Error cleaning up old frames:', cleanupError);
+      }
+
       // Create new session
       const session = await storage.createStreamSession({
         ...validatedData,
