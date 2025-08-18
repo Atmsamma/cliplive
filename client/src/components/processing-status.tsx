@@ -69,37 +69,15 @@ export default function ProcessingStatus() {
           <div className="relative flex-1 bg-slate-700 rounded-lg overflow-hidden border border-slate-600 min-h-48">
             {status?.currentSession ? (
               <img 
-                src={`/api/current-frame?session=${status.currentSession.id}&t=${Date.now()}`}
+                src={`/api/current-frame?session=${status.currentSession.id}`}
                 alt="Stream screenshot"
                 className="w-full h-full object-cover"
                 style={{ display: 'block' }}
                 onError={(e) => {
                   console.log('Frame load error, showing fallback');
-                  // Hide the broken image and show fallback
-                  const target = e.target as HTMLImageElement;
-                  target.style.display = 'none';
-                  // Show fallback content
-                  const fallback = target.nextElementSibling as HTMLElement;
-                  if (fallback) fallback.style.display = 'flex';
                 }}
               />
-            ) : null}
-            
-            {/* Fallback content for when image fails to load */}
-            {status?.currentSession && (
-              <div 
-                className="w-full h-full flex items-center justify-center absolute inset-0 bg-slate-700"
-                style={{ display: 'none' }}
-              >
-                <div className="text-center">
-                  <div className="text-4xl mb-2">📺</div>
-                  <div className="text-lg">Stream Preview</div>
-                  <div className="text-sm text-slate-500 mt-2">Screenshot from live stream</div>
-                </div>
-              </div>
-            )}
-            
-            {!status?.currentSession && (
+            ) : (
               <div className="w-full h-full flex items-center justify-center">
                 <div className="text-center">
                   <div className="text-4xl mb-2">⏸️</div>

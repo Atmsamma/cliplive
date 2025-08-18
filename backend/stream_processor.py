@@ -393,6 +393,9 @@ class StreamProcessor:
         if self.use_adaptive_detection:
             self.baseline_tracker.start_calibration()
 
+        # Capture initial session screenshot
+        self._capture_session_screenshot()
+
         # Start capture, analysis, and metrics update threads
         self.capture_thread = threading.Thread(target=self._stream_capture_loop, daemon=True)
         self.analysis_thread = threading.Thread(target=self._stream_analysis_loop, daemon=True)
@@ -401,10 +404,6 @@ class StreamProcessor:
         self.capture_thread.start()
         self.analysis_thread.start()
         self.metrics_thread.start()
-
-        # Capture initial session screenshot in background (don't block startup)
-        screenshot_thread = threading.Thread(target=self._capture_session_screenshot, daemon=True)
-        screenshot_thread.start()
 
         return True
 
@@ -1525,46 +1524,37 @@ class StreamProcessor:
 
             time.sleep(1)
 
-    def _extract_current_frame(self, bucket_path: str):
-        """Extract a frame from the current bucket for live preview."""
+    def _extract_current_frame(self, segment_path: str):
+        """Extract a frame from the current segment for live preview."""
         try:
-            # Check if the bucket file exists and is not empty
-            if not os.path.exists(bucket_path):
+            # Check if the segment file exists and is not empty
+            if not os.path.exists(segment_path):
                 return
             
-            file_size = os.path.getsize(bucket_path)
-            if file_size < 100000:  # Skip very small files (buckets should be larger)
+            file_size = os.path.getsize(segment_path)
+            if file_size < 10000:  # Skip very small files
                 return
 
-            # Extract frame paths
-            session_id = getattr(self, 'session_id', 'default')
-            current_frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", "current_frame.jpg")
-            session_frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", f"session_{session_id}_frame.jpg")
+            frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", "current_frame.jpg")
 
-            # Use ffmpeg to extract a frame from the middle of the bucket
+            # Use ffmpeg to extract a frame from the segment
             cmd = [
                 "ffmpeg", "-y",
-                "-i", bucket_path,
-                "-ss", "2",  # Skip first 2 seconds to get a stable frame
+                "-i", segment_path,
                 "-vf", "select=eq(n\\,0)",
                 "-q:v", "2",
                 "-frames:v", "1",
-                current_frame_path
+                frame_path
             ]
 
-            result = subprocess.run(cmd, capture_output=True, timeout=10)
+            result = subprocess.run(cmd, capture_output=True, timeout=5)
             
-            if result.returncode == 0 and os.path.exists(current_frame_path):
-                # Also copy to session-specific frame
-                import shutil
-                shutil.copy2(current_frame_path, session_frame_path)
-                print(f"✅ Frame extracted successfully from bucket")
-            elif self.is_running:
-                print(f"⚠️ Frame extraction failed: {result.stderr.decode()}")
+            # Only log errors if not during cleanup
+            if result.returncode != 0 and self.is_running:
+                print(f"Frame extraction failed (non-critical): {result.stderr.decode()}")
                 
         except Exception as e:
-            if self.is_running:
-                print(f"⚠️ Error extracting frame: {e}")
+            # Silent fail - frame extraction is not critical
             pass
 
     def _capture_session_screenshot(self):
@@ -1621,19 +1611,19 @@ class StreamProcessor:
 
                 print(f"✅ Got stream URL for screenshot: {stream_url[:80]}...")
 
-            # Capture a single frame using the stream URL - get first available frame quickly
+            # Capture a single frame using the stream URL
             cmd = [
                 "ffmpeg", "-y",
                 "-i", stream_url,
-                "-t", "1",  # Just capture for 1 second to get first frame fast
-                "-vf", "select=eq(n\\,1)",  # Select the second frame (more stable than first)
+                "-t", "3",  # Try for 3 seconds to get a good frame
+                "-vf", "select=eq(n\\,30)",  # Select frame 30 (1 second in)
                 "-q:v", "2",
                 "-frames:v", "1",
                 frame_path
             ]
 
-            print(f"📸 Running fast screenshot capture...")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            print(f"📸 Running screenshot capture...")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
 
             if result.returncode == 0 and os.path.exists(frame_path):
                 file_size = os.path.getsize(frame_path)

@@ -160,27 +160,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/current-frame', (req, res) => {
     const sessionId = req.query.session;
     
-    // Set proper headers for image response
-    res.set({
-      'Content-Type': 'image/jpeg',
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0'
-    });
-    
     if (sessionId) {
       // Serve static session screenshot
       const sessionFramePath = path.join(process.cwd(), 'temp', `session_${sessionId}_frame.jpg`);
       
       if (fs.existsSync(sessionFramePath)) {
-        try {
-          const stats = fs.statSync(sessionFramePath);
-          if (stats.size > 1000) { // Ensure file is not empty/corrupted
-            return res.sendFile(sessionFramePath);
-          }
-        } catch (error) {
-          console.log('Error reading session frame:', error);
-        }
+        res.sendFile(sessionFramePath);
+        return;
       }
     }
     
@@ -188,17 +174,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const framePath = path.join(process.cwd(), 'temp', 'current_frame.jpg');
     
     if (fs.existsSync(framePath)) {
-      try {
-        const stats = fs.statSync(framePath);
-        if (stats.size > 1000) { // Ensure file is not empty/corrupted
-          return res.sendFile(framePath);
-        }
-      } catch (error) {
-        console.log('Error reading current frame:', error);
-      }
+      res.sendFile(framePath);
+    } else {
+      res.status(404).json({ error: 'No frame available' });
     }
-    
-    res.status(404).json({ error: 'No frame available' });
   });
 
   // Start stream capture
