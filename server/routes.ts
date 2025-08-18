@@ -160,8 +160,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/current-frame', (req, res) => {
     const sessionId = req.query.session;
     
-    if (sessionId) {
-      // Serve static session screenshot
+    // Only serve frames if there's an active session
+    if (sessionId && processingStatus.isProcessing && processingStatus.currentSession?.id.toString() === sessionId.toString()) {
+      // Serve static session screenshot only for active sessions
       const sessionFramePath = path.join(process.cwd(), 'temp', `session_${sessionId}_frame.jpg`);
       
       if (fs.existsSync(sessionFramePath)) {
@@ -170,14 +171,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     }
     
-    // Fallback to current frame if no session-specific frame
-    const framePath = path.join(process.cwd(), 'temp', 'current_frame.jpg');
-    
-    if (fs.existsSync(framePath)) {
-      res.sendFile(framePath);
-    } else {
-      res.status(404).json({ error: 'No frame available' });
-    }
+    // If no active session, return 404
+    res.status(404).json({ error: 'No frame available' });
   });
 
   // Start stream capture
@@ -246,8 +241,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Stop Python stream processor
       stopStreamProcessor();
 
-      // Clean up thumbnails from this session
+      // Clean up session frames and thumbnails
       try {
+        // Clean up session frame
+        const sessionFramePath = path.join(process.cwd(), 'temp', `session_${activeSession.id}_frame.jpg`);
+        if (fs.existsSync(sessionFramePath)) {
+          fs.unlinkSync(sessionFramePath);
+          console.log(`✅ Session frame cleaned up: session_${activeSession.id}_frame.jpg`);
+        }
+
+        // Clean up current frame
+        const currentFramePath = path.join(process.cwd(), 'temp', 'current_frame.jpg');
+        if (fs.existsSync(currentFramePath)) {
+          fs.unlinkSync(currentFramePath);
+          console.log('✅ Current frame cleaned up');
+        }
+
+        // Clean up thumbnails
         const thumbnailsDir = path.join(process.cwd(), 'clips', 'thumbnails');
         if (fs.existsSync(thumbnailsDir)) {
           const thumbnails = fs.readdirSync(thumbnailsDir).filter(file => file.endsWith('.jpg'));
@@ -261,12 +271,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.log('✅ Thumbnails cleaned up successfully');
         }
       } catch (cleanupError) {
-        console.error('Error cleaning up thumbnails:', cleanupError);
+        console.error('Error cleaning up frames and thumbnails:', cleanupError);
       }
 
-      // Update processing status
-      processingStatus.isProcessing = false;
-      processingStatus.currentSession = undefined;
+      // Reset processing status completely
+      processingStatus = {
+        isProcessing: false,
+        framesProcessed: 0,
+        streamUptime: "00:00:00",
+        audioLevel: 0,
+        motionLevel: 0,
+        sceneChange: 0,
+        currentSession: undefined,
+        streamEnded: false,
+        consecutiveFailures: 0,
+        lastSuccessfulCapture: undefined,
+      };
       sessionStartTime = null;
 
       broadcastSSE({
