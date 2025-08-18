@@ -102,7 +102,7 @@ export default function ProcessingStatus() {
                   <div className="text-sm text-slate-500 mt-2">Enter a URL and click Start Clipping</div>
                 </div>
               </div>
-            )}</div_str>
+            )}</div>
 
             {/* Activity indicator overlay */}
             {status?.currentSession && (
