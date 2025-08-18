@@ -69,20 +69,12 @@ export default function ProcessingStatus() {
           <div className="relative flex-1 bg-slate-700 rounded-lg overflow-hidden border border-slate-600 min-h-48">
             {status?.currentSession ? (
               <img 
-                src={`/api/current-frame?session=${status.currentSession.id}&t=${Date.now()}`}
+                src={`/api/current-frame?session=${status.currentSession.id}`}
                 alt="Stream screenshot"
                 className="w-full h-full object-cover"
                 style={{ display: 'block' }}
                 onError={(e) => {
-                  console.log('Frame load error, retrying in 2 seconds...');
-                  // Retry loading after 2 seconds
-                  setTimeout(() => {
-                    const img = e.target as HTMLImageElement;
-                    img.src = `/api/current-frame?session=${status.currentSession?.id}&t=${Date.now()}`;
-                  }, 2000);
-                }}
-                onLoad={() => {
-                  console.log('Frame loaded successfully');
+                  console.log('Frame load error, showing fallback');
                 }}
               />
             ) : (

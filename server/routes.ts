@@ -160,46 +160,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/current-frame', (req, res) => {
     const sessionId = req.query.session;
     
-    // Try session-specific frame first
     if (sessionId) {
+      // Serve static session screenshot
       const sessionFramePath = path.join(process.cwd(), 'temp', `session_${sessionId}_frame.jpg`);
       
       if (fs.existsSync(sessionFramePath)) {
-        // Check if frame is recent (within last 60 seconds for session screenshots)
-        try {
-          const stats = fs.statSync(sessionFramePath);
-          const now = Date.now();
-          const frameAge = now - stats.mtime.getTime();
-          
-          if (frameAge < 60000) { // 60 seconds for session screenshots
-            res.sendFile(sessionFramePath);
-            return;
-          }
-        } catch (error) {
-          console.log('Error checking session frame stats:', error);
-        }
+        res.sendFile(sessionFramePath);
+        return;
       }
     }
     
-    // Fallback to current frame
+    // Fallback to current frame if no session-specific frame
     const framePath = path.join(process.cwd(), 'temp', 'current_frame.jpg');
     
     if (fs.existsSync(framePath)) {
-      try {
-        const stats = fs.statSync(framePath);
-        const now = Date.now();
-        const frameAge = now - stats.mtime.getTime();
-        
-        if (frameAge < 60000) { // 60 seconds
-          res.sendFile(framePath);
-          return;
-        }
-      } catch (error) {
-        console.log('Error checking current frame stats:', error);
-      }
+      res.sendFile(framePath);
+    } else {
+      res.status(404).json({ error: 'No frame available' });
     }
-    
-    res.status(404).json({ error: 'No recent frame available' });
   });
 
   // Start stream capture
