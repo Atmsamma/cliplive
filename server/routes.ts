@@ -187,6 +187,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
         stopStreamProcessor();
       }
 
+      // Clean up temp files before starting new session
+      try {
+        console.log('🧹 Pre-start cleanup: Clearing temp files...');
+        
+        // Clean up entire temp directory
+        const tempDir = path.join(process.cwd(), 'temp');
+        if (fs.existsSync(tempDir)) {
+          const tempFiles = fs.readdirSync(tempDir);
+          tempFiles.forEach(file => {
+            const filePath = path.join(tempDir, file);
+            try {
+              if (fs.statSync(filePath).isFile()) {
+                fs.unlinkSync(filePath);
+                console.log(`✅ Pre-start cleanup: Deleted ${file}`);
+              }
+            } catch (fileError) {
+              console.warn(`⚠️ Could not delete temp file ${file}:`, fileError.message);
+            }
+          });
+        }
+
+        // Clean up any orphaned bucket temp directories
+        const tmpDirs = fs.readdirSync('/tmp').filter(dir => dir.startsWith('stream_bucket_'));
+        tmpDirs.forEach(dir => {
+          try {
+            const dirPath = path.join('/tmp', dir);
+            if (fs.existsSync(dirPath)) {
+              fs.rmSync(dirPath, { recursive: true, force: true });
+              console.log(`✅ Pre-start cleanup: Deleted bucket directory ${dir}`);
+            }
+          } catch (dirError) {
+            console.warn(`⚠️ Could not delete bucket directory ${dir}:`, dirError.message);
+          }
+        });
+
+        console.log('✅ Pre-start cleanup completed');
+        
+      } catch (cleanupError) {
+        console.error('Error during pre-start cleanup:', cleanupError);
+      }
+
       // Create new session
       const session = await storage.createStreamSession({
         ...validatedData,
@@ -241,37 +282,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Stop Python stream processor
       stopStreamProcessor();
 
-      // Clean up session frames and thumbnails
+      // Comprehensive temp file cleanup
       try {
-        // Clean up session frame
-        const sessionFramePath = path.join(process.cwd(), 'temp', `session_${activeSession.id}_frame.jpg`);
-        if (fs.existsSync(sessionFramePath)) {
-          fs.unlinkSync(sessionFramePath);
-          console.log(`✅ Session frame cleaned up: session_${activeSession.id}_frame.jpg`);
+        console.log('🧹 Starting comprehensive temp file cleanup...');
+        
+        // Clean up entire temp directory
+        const tempDir = path.join(process.cwd(), 'temp');
+        if (fs.existsSync(tempDir)) {
+          const tempFiles = fs.readdirSync(tempDir);
+          console.log(`Found ${tempFiles.length} temp files to clean up`);
+          
+          tempFiles.forEach(file => {
+            const filePath = path.join(tempDir, file);
+            try {
+              if (fs.statSync(filePath).isFile()) {
+                fs.unlinkSync(filePath);
+                console.log(`✅ Deleted temp file: ${file}`);
+              }
+            } catch (fileError) {
+              console.warn(`⚠️ Could not delete temp file ${file}:`, fileError.message);
+            }
+          });
         }
 
-        // Clean up current frame
-        const currentFramePath = path.join(process.cwd(), 'temp', 'current_frame.jpg');
-        if (fs.existsSync(currentFramePath)) {
-          fs.unlinkSync(currentFramePath);
-          console.log('✅ Current frame cleaned up');
-        }
-
-        // Clean up thumbnails
+        // Clean up thumbnails directory
         const thumbnailsDir = path.join(process.cwd(), 'clips', 'thumbnails');
         if (fs.existsSync(thumbnailsDir)) {
           const thumbnails = fs.readdirSync(thumbnailsDir).filter(file => file.endsWith('.jpg'));
           console.log(`Cleaning up ${thumbnails.length} thumbnail files...`);
 
           thumbnails.forEach(thumbnail => {
-            const thumbnailPath = path.join(thumbnailsDir, thumbnail);
-            fs.unlinkSync(thumbnailPath);
+            try {
+              const thumbnailPath = path.join(thumbnailsDir, thumbnail);
+              fs.unlinkSync(thumbnailPath);
+              console.log(`✅ Deleted thumbnail: ${thumbnail}`);
+            } catch (thumbError) {
+              console.warn(`⚠️ Could not delete thumbnail ${thumbnail}:`, thumbError.message);
+            }
           });
 
           console.log('✅ Thumbnails cleaned up successfully');
         }
+
+        // Clean up any orphaned bucket temp directories
+        const tmpDirs = fs.readdirSync('/tmp').filter(dir => dir.startsWith('stream_bucket_'));
+        console.log(`Found ${tmpDirs.length} orphaned bucket directories to clean up`);
+        
+        tmpDirs.forEach(dir => {
+          try {
+            const dirPath = path.join('/tmp', dir);
+            if (fs.existsSync(dirPath)) {
+              fs.rmSync(dirPath, { recursive: true, force: true });
+              console.log(`✅ Deleted bucket directory: ${dir}`);
+            }
+          } catch (dirError) {
+            console.warn(`⚠️ Could not delete bucket directory ${dir}:`, dirError.message);
+          }
+        });
+
+        console.log('✅ Comprehensive cleanup completed');
+        
       } catch (cleanupError) {
-        console.error('Error cleaning up frames and thumbnails:', cleanupError);
+        console.error('Error during comprehensive cleanup:', cleanupError);
       }
 
       // Reset processing status completely

@@ -278,14 +278,23 @@ class StreamBucket:
             for filename in os.listdir(self.temp_dir):
                 file_path = os.path.join(self.temp_dir, filename)
                 if file_path != self.current_bucket_path and os.path.isfile(file_path):
-                    os.remove(file_path)
+                    try:
+                        os.remove(file_path)
+                        print(f"✅ Cleaned up old bucket: {filename}")
+                    except Exception as file_error:
+                        print(f"⚠️ Could not remove old bucket {filename}: {file_error}")
         except Exception as e:
             print(f"Warning: Error cleaning up old buckets: {e}")
 
     def cleanup(self):
         """Clean up all temporary files."""
-        if os.path.exists(self.temp_dir):
-            shutil.rmtree(self.temp_dir)
+        try:
+            if os.path.exists(self.temp_dir):
+                print(f"🧹 Cleaning up bucket temp directory: {self.temp_dir}")
+                shutil.rmtree(self.temp_dir)
+                print("✅ Bucket temp directory cleaned up successfully")
+        except Exception as e:
+            print(f"⚠️ Error cleaning up bucket temp directory: {e}")
 
 class StreamProcessor:
     """Main stream processor with highlight detection and clipping."""
@@ -440,6 +449,39 @@ class StreamProcessor:
                 self.metrics_queue.get_nowait()
             except:
                 break
+
+        # Clean up all temp files and frame files
+        try:
+            print("🧹 Cleaning up all temp files...")
+            
+            # Clean up current frame
+            if hasattr(self, 'current_frame_path') and os.path.exists(self.current_frame_path):
+                os.remove(self.current_frame_path)
+                print("✅ Current frame cleaned up")
+            
+            # Clean up session frame
+            if hasattr(self, 'session_id'):
+                session_frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", f"session_{self.session_id}_frame.jpg")
+                if os.path.exists(session_frame_path):
+                    os.remove(session_frame_path)
+                    print(f"✅ Session frame cleaned up: session_{self.session_id}_frame.jpg")
+            
+            # Clean up any remaining temp files in temp directory
+            temp_dir = os.path.join(os.getcwd(), 'temp')
+            if os.path.exists(temp_dir):
+                for filename in os.listdir(temp_dir):
+                    file_path = os.path.join(temp_dir, filename)
+                    if os.path.isfile(file_path):
+                        try:
+                            os.remove(file_path)
+                            print(f"✅ Cleaned up temp file: {filename}")
+                        except Exception as file_error:
+                            print(f"⚠️ Could not clean up temp file {filename}: {file_error}")
+            
+            print("✅ All temp files cleaned up")
+            
+        except Exception as cleanup_error:
+            print(f"⚠️ Error during temp file cleanup: {cleanup_error}")
 
         print("✅ Session state completely reset")
 
