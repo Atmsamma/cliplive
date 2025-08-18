@@ -68,15 +68,32 @@ export default function ProcessingStatus() {
           {/* Static Stream Screenshot - Full Size */}
           <div className="relative flex-1 bg-slate-700 rounded-lg overflow-hidden border border-slate-600 min-h-48">
             {status?.currentSession ? (
-              <img 
-                src={`/api/current-frame?session=${status.currentSession.id}`}
-                alt="Stream screenshot"
-                className="w-full h-full object-cover"
-                style={{ display: 'block' }}
-                onError={(e) => {
-                  console.log('Frame load error, showing fallback');
-                }}
-              />
+              <>
+                <img 
+                  src={`/api/current-frame?session=${status.currentSession.id}&t=${Date.now()}`}
+                  alt="Stream screenshot"
+                  className="w-full h-full object-cover"
+                  onLoad={() => {
+                    console.log('Frame loaded successfully');
+                  }}
+                  onError={(e) => {
+                    console.log('Frame load error, showing fallback');
+                    const img = e.currentTarget as HTMLImageElement;
+                    img.style.display = 'none';
+                  }}
+                />
+                <div 
+                  className="absolute inset-0 w-full h-full flex items-center justify-center bg-slate-700"
+                  style={{ display: 'none' }}
+                  id="fallback-placeholder"
+                >
+                  <div className="text-center">
+                    <div className="text-4xl mb-2">📸</div>
+                    <div className="text-lg">Capturing Frame...</div>
+                    <div className="text-sm text-slate-500 mt-2">Stream screenshot will appear here</div>
+                  </div>
+                </div>
+              </>
             ) : (
               <div className="w-full h-full flex items-center justify-center">
                 <div className="text-center">
@@ -85,7 +102,7 @@ export default function ProcessingStatus() {
                   <div className="text-sm text-slate-500 mt-2">Enter a URL and click Start Clipping</div>
                 </div>
               </div>
-            )}
+            )}</div_str>
 
             {/* Activity indicator overlay */}
             {status?.currentSession && (
