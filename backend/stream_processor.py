@@ -411,7 +411,7 @@ class StreamProcessor:
         print("🛑 Stopping stream processing and resetting session...")
         self.is_running = False
 
-        # Reset all session state
+        # Reset all session state completely
         self.frames_processed = 0
         self.clips_generated = 0
         self.start_time = None
@@ -420,12 +420,17 @@ class StreamProcessor:
         self.last_successful_capture = None
         self.last_clip_time = 0
 
+        # Clear URL and session information
+        self.url = None
+        self.session_id = None
+        self.config = {}
+
         # Clean up stream bucket
         if self.stream_bucket:
             self.stream_bucket.cleanup()
             self.stream_bucket = None
 
-        # Reset baseline tracker
+        # Reset baseline tracker completely
         if hasattr(self, 'baseline_tracker'):
             self.baseline_tracker = BaselineTracker(calibration_seconds=60)
 
@@ -440,7 +445,12 @@ class StreamProcessor:
             except:
                 break
 
-        print("✅ Session state completely reset")
+        # Reset capture and analysis threads
+        self.capture_thread = None
+        self.analysis_thread = None
+        self.metrics_thread = None
+
+        print("✅ Session state completely reset - all previous URL/session data cleared")
 
     def _stream_capture_loop(self):
         """Main loop for capturing continuous video buckets."""
@@ -588,7 +598,12 @@ class StreamProcessor:
     def _analyze_bucket_sample(self, bucket_path: str) -> Dict[str, float]:
         """Analyze a small sample from the current recording bucket."""
         try:
+            # Check if processing has been stopped
+            if not self.is_running:
+                return self._get_default_metrics()
+
             if not bucket_path or not os.path.exists(bucket_path):
+                print(f"Bucket file not found: {bucket_path}")
                 return self._get_default_metrics()
 
             # Get current file size to check if it's growing (actively recording)
@@ -605,7 +620,7 @@ class StreamProcessor:
             return self._generate_realistic_metrics()
 
         except Exception as e:
-            print(f"Bucket analysis error: {e}")
+            print(f"Bucket analysis error (session may have ended): {e}")
             return self._get_default_metrics()
 
     def _generate_realistic_metrics(self) -> Dict[str, float]:

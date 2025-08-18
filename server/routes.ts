@@ -274,7 +274,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error('Error cleaning up frames and thumbnails:', cleanupError);
       }
 
-      // Reset processing status completely
+      // Reset processing status completely - clear all session memory
       processingStatus = {
         isProcessing: false,
         framesProcessed: 0,
@@ -288,6 +288,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         lastSuccessfulCapture: undefined,
       };
       sessionStartTime = null;
+
+      // Force garbage collection of any cached data
+      if (global.gc) {
+        global.gc();
+      }
 
       broadcastSSE({
         type: 'session-stopped',
