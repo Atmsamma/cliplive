@@ -123,8 +123,6 @@ export default function ProcessingStatus() {
               </div>
             )}
 
-
-          </div>
         </div>
       </CardContent>
     </Card>
