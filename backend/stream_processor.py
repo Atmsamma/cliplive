@@ -197,10 +197,10 @@ class StreamBucket:
         self.bucket_counter += 1
         bucket_filename = f"bucket_{self.bucket_counter:06d}.mp4"
         bucket_path = os.path.join(self.temp_dir, bucket_filename)
-        
+
         self.current_bucket_path = bucket_path
         self.current_bucket_start_time = time.time()
-        
+
         print(f"🪣 Starting new bucket: {bucket_filename} (duration: {self.clip_duration}s)")
         return bucket_path
 
@@ -208,7 +208,7 @@ class StreamBucket:
         """Get information about the current recording bucket."""
         if not self.current_bucket_path or not self.current_bucket_start_time:
             return None
-            
+
         return {
             'path': self.current_bucket_path,
             'start_time': self.current_bucket_start_time,
@@ -225,7 +225,7 @@ class StreamBucket:
             # Wait a moment to ensure the bucket file is completely written
             import time
             time.sleep(1)
-            
+
             # Verify the source bucket is valid before copying
             probe_cmd = [
                 'ffprobe',
@@ -235,13 +235,13 @@ class StreamBucket:
                 '-of', 'csv=p=0',
                 self.current_bucket_path
             ]
-            
+
             probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=5)
-            
+
             if probe_result.returncode != 0:
                 print(f"❌ Source bucket is invalid: {probe_result.stderr}")
                 return False
-            
+
             # Use FFmpeg to ensure a valid MP4 output with proper headers
             ffmpeg_cmd = [
                 'ffmpeg',
@@ -251,10 +251,10 @@ class StreamBucket:
                 '-y',  # Overwrite output
                 clip_path
             ]
-            
+
             print(f"🔧 Processing bucket into valid clip...")
             ffmpeg_result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=30)
-            
+
             if ffmpeg_result.returncode == 0 and os.path.exists(clip_path):
                 file_size = os.path.getsize(clip_path)
                 if file_size > 100000:  # Ensure reasonable file size
@@ -266,7 +266,7 @@ class StreamBucket:
             else:
                 print(f"❌ FFmpeg clip processing failed: {ffmpeg_result.stderr}")
                 return False
-            
+
         except Exception as e:
             print(f"❌ Error saving bucket as clip: {e}")
             return False
@@ -338,7 +338,6 @@ class StreamProcessor:
         self.clip_cooldown = self.clip_length  # Cooldown matches clip length to prevent overlap
 
         # Initialize metrics queue for communication between threads
-        from queue import Queue
         self.metrics_queue = Queue()
 
         # Initialize Ad Gatekeeper if available and enabled
@@ -451,7 +450,7 @@ class StreamProcessor:
             try:
                 # Start a new bucket for continuous recording
                 bucket_path = self.stream_bucket.start_new_bucket()
-                
+
                 print(f"🪣 Recording bucket {bucket_counter}: {self.clip_length}s duration")
                 # Capture continuous video bucket
                 success = self._capture_continuous_bucket(bucket_path)
@@ -462,10 +461,10 @@ class StreamProcessor:
                     self.consecutive_failures = 0
                     self.last_successful_capture = time.time()
                     bucket_counter += 1
-                    
+
                     # Extract current frame for live preview
                     self._extract_current_frame(bucket_path)
-                    
+
                     # Clean up old buckets to save space
                     self.stream_bucket.cleanup_old_buckets()
                 else:
@@ -497,7 +496,7 @@ class StreamProcessor:
         while self.is_running:
             try:
                 bucket_info = self.stream_bucket.get_current_bucket_info()
-                
+
                 if not bucket_info:
                     print(f"⏳ Waiting for bucket to start recording...")
                     time.sleep(1)
@@ -507,7 +506,7 @@ class StreamProcessor:
                 if self.stream_bucket.is_recording_bucket:
                     time.sleep(2)
                     continue
-                
+
                 # Additional wait to ensure file is completely written
                 time.sleep(1)
 
@@ -613,22 +612,22 @@ class StreamProcessor:
         """Generate realistic metrics without complex FFmpeg analysis."""
         import random
         import time
-        
+
         # Generate realistic baseline metrics with some variation
         base_audio = 45 + random.uniform(-10, 15)  # 35-60 range
         base_motion = 25 + random.uniform(-15, 20)  # 10-45 range
         base_scene = 0.1 + random.uniform(0, 0.2)   # 0.1-0.3 range
-        
+
         # Occasionally generate spikes for highlight detection
         if random.random() < 0.05:  # 5% chance of audio spike
             base_audio += random.uniform(20, 40)
-            
+
         if random.random() < 0.08:  # 8% chance of motion spike
             base_motion += random.uniform(15, 35)
-            
+
         if random.random() < 0.03:  # 3% chance of scene change
             base_scene += random.uniform(0.2, 0.5)
-        
+
         return {
             'frames_analyzed': 60,
             'audio_level': min(100, max(0, base_audio)),
@@ -830,7 +829,7 @@ class StreamProcessor:
         """Create a highlight clip by saving the current bucket."""
         try:
             bucket_info = self.stream_bucket.get_current_bucket_info()
-            
+
             if not bucket_info:
                 print("No bucket available for clipping")
                 return
@@ -1209,10 +1208,11 @@ class StreamProcessor:
 
             # Extract channel name from URL for Ad Gatekeeper
             channel_name = None
-            if 'twitch.tv/' in self.config['url']:
+            if 'twitch.tv/' in self.url:
                 try:
                     # Extract channel from URLs like https://www.twitch.tv/papaplatte
-                    channel_name = self.config['url'].split('twitch.tv/')[-1].split('/')[0].split('?')[0]
+                    channel_name = self.url.split('twitch.tv/')[-1].split('/')[0].split('?')[0]
+                    print(f"🔍 Extracted channel name: {channel_name}")
                 except:
                     pass
 
@@ -1274,7 +1274,7 @@ class StreamProcessor:
             self.stream_bucket.is_recording_bucket = True
             ffmpeg_result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=self.clip_length + 15)
             self.stream_bucket.is_recording_bucket = False
-            
+
             # Give the file system a moment to finish writing and ensure file integrity
             import time
             time.sleep(3)  # Increased wait time for better file completion
@@ -1320,10 +1320,10 @@ class StreamProcessor:
 
             # Extract channel name from URL for Ad Gatekeeper
             channel_name = None
-            if 'twitch.tv/' in self.config['url']:
+            if 'twitch.tv/' in self.url:
                 try:
                     # Extract channel from URLs like https://www.twitch.tv/papaplatte
-                    channel_name = self.config['url'].split('twitch.tv/')[-1].split('/')[0].split('?')[0]
+                    channel_name = self.url.split('twitch.tv/')[-1].split('/')[0].split('?')[0]
                 except:
                     pass
 
