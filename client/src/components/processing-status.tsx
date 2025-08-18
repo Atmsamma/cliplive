@@ -67,25 +67,33 @@ export default function ProcessingStatus() {
 
           {/* Static Stream Screenshot - Full Size */}
           <div className="relative flex-1 bg-slate-700 rounded-lg overflow-hidden border border-slate-600 min-h-48">
-            {status?.currentSession ? (
+            {status?.currentSession && status?.isProcessing ? (
               <img 
-                src={`/api/current-frame?session=${status.currentSession.id}`}
+                src={`/api/current-frame?session=${status.currentSession.id}&t=${Date.now()}`}
                 alt="Stream screenshot"
                 className="w-full h-full object-cover"
                 style={{ display: 'block' }}
                 onError={(e) => {
-                  console.log('Frame load error, showing fallback');
+                  // If frame fails to load, show no stream fallback
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                  const fallback = target.nextElementSibling as HTMLDivElement;
+                  if (fallback) fallback.style.display = 'flex';
                 }}
               />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <div className="text-center">
-                  <div className="text-4xl mb-2">⏸️</div>
-                  <div className="text-lg">No Stream</div>
-                  <div className="text-sm text-slate-500 mt-2">Enter a URL and click Start Clipping</div>
-                </div>
+            ) : null}
+            
+            {/* Fallback shown when no active session or frame load fails */}
+            <div 
+              className="w-full h-full flex items-center justify-center"
+              style={{ display: status?.currentSession && status?.isProcessing ? 'none' : 'flex' }}
+            >
+              <div className="text-center">
+                <div className="text-4xl mb-2">⏸️</div>
+                <div className="text-lg">No Stream</div>
+                <div className="text-sm text-slate-500 mt-2">Enter a URL and click Start Clipping</div>
               </div>
-            )}
+            </div>
 
             {/* Activity indicator overlay */}
             {status?.currentSession && (
