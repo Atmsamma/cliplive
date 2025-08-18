@@ -93,8 +93,8 @@ export default function ProcessingStatus() {
               >
                 <div className="text-center">
                   <div className="text-4xl mb-2">📺</div>
-                  <div className="text-lg">Loading Stream...</div>
-                  <div className="text-sm text-slate-500 mt-2">Capturing frame from live stream</div>
+                  <div className="text-lg">Stream Preview</div>
+                  <div className="text-sm text-slate-500 mt-2">Screenshot from live stream</div>
                 </div>
               </div>
             )}

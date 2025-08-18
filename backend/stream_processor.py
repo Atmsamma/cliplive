@@ -393,9 +393,6 @@ class StreamProcessor:
         if self.use_adaptive_detection:
             self.baseline_tracker.start_calibration()
 
-        # Capture initial session screenshot
-        self._capture_session_screenshot()
-
         # Start capture, analysis, and metrics update threads
         self.capture_thread = threading.Thread(target=self._stream_capture_loop, daemon=True)
         self.analysis_thread = threading.Thread(target=self._stream_analysis_loop, daemon=True)
@@ -404,6 +401,10 @@ class StreamProcessor:
         self.capture_thread.start()
         self.analysis_thread.start()
         self.metrics_thread.start()
+
+        # Capture initial session screenshot in background (don't block startup)
+        screenshot_thread = threading.Thread(target=self._capture_session_screenshot, daemon=True)
+        screenshot_thread.start()
 
         return True
 
@@ -1620,19 +1621,19 @@ class StreamProcessor:
 
                 print(f"✅ Got stream URL for screenshot: {stream_url[:80]}...")
 
-            # Capture a single frame using the stream URL
+            # Capture a single frame using the stream URL - get first available frame quickly
             cmd = [
                 "ffmpeg", "-y",
                 "-i", stream_url,
-                "-t", "3",  # Try for 3 seconds to get a good frame
-                "-vf", "select=eq(n\\,30)",  # Select frame 30 (1 second in)
+                "-t", "1",  # Just capture for 1 second to get first frame fast
+                "-vf", "select=eq(n\\,1)",  # Select the second frame (more stable than first)
                 "-q:v", "2",
                 "-frames:v", "1",
                 frame_path
             ]
 
-            print(f"📸 Running screenshot capture...")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+            print(f"📸 Running fast screenshot capture...")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
 
             if result.returncode == 0 and os.path.exists(frame_path):
                 file_size = os.path.getsize(frame_path)
