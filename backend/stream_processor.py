@@ -412,30 +412,9 @@ class StreamProcessor:
         print("Stopping stream processing...")
         self.is_running = False
 
-        # Clean up stream bucket and temp files
         if self.stream_bucket:
             self.stream_bucket.cleanup()
             self.stream_bucket = None
-
-        # Clean up current frame files
-        try:
-            temp_dir = os.path.join(os.getcwd(), 'temp')
-            session_id = getattr(self, 'session_id', 'default')
-            
-            # Remove session-specific frame
-            session_frame = os.path.join(temp_dir, f"session_{session_id}_frame.jpg")
-            if os.path.exists(session_frame):
-                os.remove(session_frame)
-                print(f"✅ Cleaned up session frame: {session_frame}")
-            
-            # Remove current frame
-            current_frame = os.path.join(temp_dir, "current_frame.jpg")
-            if os.path.exists(current_frame):
-                os.remove(current_frame)
-                print(f"✅ Cleaned up current frame: {current_frame}")
-                
-        except Exception as e:
-            print(f"⚠️ Error cleaning up frames: {e}")
 
         # Clean up AI detector resources
         if self.ai_detector:
@@ -1527,14 +1506,6 @@ class StreamProcessor:
     def _extract_current_frame(self, segment_path: str):
         """Extract a frame from the current segment for live preview."""
         try:
-            # Check if the segment file exists and is not empty
-            if not os.path.exists(segment_path):
-                return
-            
-            file_size = os.path.getsize(segment_path)
-            if file_size < 10000:  # Skip very small files
-                return
-
             frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", "current_frame.jpg")
 
             # Use ffmpeg to extract a frame from the segment
@@ -1547,12 +1518,7 @@ class StreamProcessor:
                 frame_path
             ]
 
-            result = subprocess.run(cmd, capture_output=True, timeout=5)
-            
-            # Only log errors if not during cleanup
-            if result.returncode != 0 and self.is_running:
-                print(f"Frame extraction failed (non-critical): {result.stderr.decode()}")
-                
+            subprocess.run(cmd, capture_output=True, timeout=5)
         except Exception as e:
             # Silent fail - frame extraction is not critical
             pass
@@ -1560,80 +1526,38 @@ class StreamProcessor:
     def _capture_session_screenshot(self):
         """Capture a static screenshot when session starts."""
         try:
+            # Use ad gatekeeper to get clean URL
+            if 'twitch.tv' in self.url:
+                import re
+                channel_match = re.search(r'twitch\.tv/([^/?]+)', self.url)
+                if channel_match:
+                    channel = channel_match.group(1)
+                    if self.ad_gatekeeper:
+                        clean_url = self.ad_gatekeeper.get_clean_twitch_url(channel)
+                        if clean_url:
+                            self.url = clean_url
+
             session_id = getattr(self, 'session_id', 'default')
             frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", f"session_{session_id}_frame.jpg")
-            
-            print(f"📸 Capturing session screenshot for session {session_id}")
 
-            # Get stream URL using the same method as continuous capture
-            stream_url = None
-            
-            # Extract channel name for Ad Gatekeeper
-            channel_name = None
-            if 'twitch.tv/' in self.url:
-                try:
-                    channel_name = self.url.split('twitch.tv/')[-1].split('/')[0].split('?')[0]
-                except:
-                    pass
-
-            # Use Ad Gatekeeper if available
-            if self.ad_gatekeeper and channel_name:
-                print(f"🛡️ Using Ad Gatekeeper for session screenshot: {channel_name}")
-                stream_url = self.ad_gatekeeper.get_clean_twitch_url(channel_name, quality='best')
-                
-                if stream_url:
-                    print(f"✅ Got clean stream URL for screenshot: {stream_url[:80]}...")
-                else:
-                    print("❌ Ad Gatekeeper failed to get clean URL for screenshot")
-                    return
-            else:
-                # Fallback to streamlink
-                print(f"⚠️ Using streamlink for session screenshot")
-                url_cmd = [
-                    'streamlink',
-                    self.url,
-                    'best',
-                    '--stream-url',
-                    '--retry-streams', '2',
-                    '--retry-max', '3'
-                ]
-
-                url_result = subprocess.run(url_cmd, capture_output=True, text=True, timeout=20)
-                
-                if url_result.returncode != 0:
-                    print(f"❌ Streamlink failed for screenshot: {url_result.stderr}")
-                    return
-
-                stream_url = url_result.stdout.strip()
-                if not stream_url or not stream_url.startswith('http'):
-                    print(f"❌ Invalid stream URL for screenshot: '{stream_url}'")
-                    return
-
-                print(f"✅ Got stream URL for screenshot: {stream_url[:80]}...")
-
-            # Capture a single frame using the stream URL
+            # Capture a single frame for session screenshot
             cmd = [
                 "ffmpeg", "-y",
-                "-i", stream_url,
-                "-t", "3",  # Try for 3 seconds to get a good frame
-                "-vf", "select=eq(n\\,30)",  # Select frame 30 (1 second in)
+                "-i", self.url,
+                "-t", "1",
+                "-vf", "select=eq(n\\,0)",
                 "-q:v", "2",
                 "-frames:v", "1",
                 frame_path
             ]
 
-            print(f"📸 Running screenshot capture...")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+            result = subprocess.run(cmd, capture_output=True, timeout=10)
 
-            if result.returncode == 0 and os.path.exists(frame_path):
-                file_size = os.path.getsize(frame_path)
-                print(f"✅ Session screenshot captured: {frame_path} ({file_size} bytes)")
+            if result.returncode == 0:
+                print(f"📸 Session screenshot captured: {frame_path}")
             else:
-                print(f"❌ Failed to capture session screenshot")
-                print(f"   stderr: {result.stderr}")
+                print(f"❌ Failed to capture session screenshot: {result.stderr.decode()}")
 
-        except subprocess.TimeoutExpired:
-            print(f"❌ Session screenshot capture timed out")
         except Exception as e:
             print(f"❌ Error capturing session screenshot: {e}")
 
