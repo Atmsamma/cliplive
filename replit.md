@@ -8,7 +8,14 @@ Clip Live is an automatic livestream highlight capture tool that detects excitin
 
 Preferred communication style: Simple, everyday language.
 
-## Recent Changes (July 14, 2025)
+## Recent Changes (August 18, 2025)
+
+✓ **APPLICATION STARTUP ISSUES RESOLVED**: Fixed JSX syntax errors in processing-status.tsx and TypeScript compilation issues
+✓ **SESSION FRAME CLEANUP IMPROVED**: Enhanced session cleanup to properly remove old frame files when sessions start/stop
+✓ **DUPLICATE API ENDPOINT FIXED**: Consolidated current-frame endpoints to prevent conflicts and improve frame serving logic
+✓ **TYPESCRIPT TYPE SAFETY ENHANCED**: Added proper typing for ProcessingStatus and Clip interfaces throughout the application
+
+## Previous Changes (July 14, 2025)
 
 ✓ **AI-POWERED HIGHLIGHT DETECTION IMPLEMENTED**: Successfully added machine learning-based highlight detection system using scikit-learn, NLTK, and VADER sentiment analysis
 ✓ **Speech-to-Text Integration**: Added simulated speech recognition pipeline for semantic analysis of stream content
