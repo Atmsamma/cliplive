@@ -414,8 +414,26 @@ class StreamProcessor:
         if self.use_adaptive_detection:
             self.baseline_tracker.start_calibration()
 
-        # Capture initial session screenshot
+        # Clean up any existing temp files first
+        try:
+            temp_dir = os.path.join(os.getcwd(), 'temp')
+            if os.path.exists(temp_dir):
+                import glob
+                old_frames = glob.glob(os.path.join(temp_dir, '*.jpg'))
+                for frame in old_frames:
+                    try:
+                        os.remove(frame)
+                        print(f"🧹 Removed old frame: {os.path.basename(frame)}")
+                    except:
+                        pass
+        except Exception as e:
+            print(f"⚠️ Error cleaning old frames: {e}")
+
+        # Capture fresh session screenshot immediately
         self._capture_session_screenshot()
+        
+        # Wait a moment to ensure screenshot is ready
+        time.sleep(2)
 
         # Start capture, analysis, and metrics update threads
         self.capture_thread = threading.Thread(target=self._stream_capture_loop, daemon=True)
@@ -1583,40 +1601,74 @@ class StreamProcessor:
     def _capture_session_screenshot(self):
         """Capture a static screenshot when session starts."""
         try:
-            # Use ad gatekeeper to get clean URL
+            print(f"📸 Capturing session screenshot for: {self.url}")
+            
+            # First try to get stream URL using streamlink
+            capture_url = self.url
+            
+            # For Twitch URLs, try to get HLS stream URL
             if 'twitch.tv' in self.url:
-                import re
-                channel_match = re.search(r'twitch\.tv/([^/?]+)', self.url)
-                if channel_match:
-                    channel = channel_match.group(1)
-                    if self.ad_gatekeeper:
-                        clean_url = self.ad_gatekeeper.get_clean_twitch_url(channel)
-                        if clean_url:
-                            self.url = clean_url
+                try:
+                    # Extract channel name
+                    channel_match = re.search(r'twitch\.tv/([^/?]+)', self.url)
+                    if channel_match:
+                        channel = channel_match.group(1)
+                        print(f"📸 Getting stream URL for channel: {channel}")
+                        
+                        # Try Ad Gatekeeper first
+                        if self.ad_gatekeeper:
+                            clean_url = self.ad_gatekeeper.get_clean_twitch_url(channel, quality='720p')
+                            if clean_url:
+                                capture_url = clean_url
+                                print(f"📸 Using Ad Gatekeeper URL for screenshot")
+                        
+                        # Fallback to streamlink if Ad Gatekeeper fails
+                        if capture_url == self.url:
+                            streamlink_cmd = ['streamlink', self.url, '720p', '--stream-url']
+                            result = subprocess.run(streamlink_cmd, capture_output=True, text=True, timeout=15)
+                            if result.returncode == 0 and result.stdout.strip():
+                                capture_url = result.stdout.strip()
+                                print(f"📸 Using streamlink URL for screenshot")
+                except Exception as e:
+                    print(f"⚠️ Could not get stream URL, using original: {e}")
 
             session_id = getattr(self, 'session_id', 'default')
-            frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", f"session_{session_id}_frame.jpg")
+            temp_dir = os.path.join(os.getcwd(), "temp")
+            os.makedirs(temp_dir, exist_ok=True)
+            
+            frame_path = os.path.join(temp_dir, f"session_{session_id}_frame.jpg")
+            
+            # Also capture to current_frame.jpg for immediate display
+            current_frame_path = os.path.join(temp_dir, "current_frame.jpg")
 
-            # Capture a single frame for session screenshot
+            # Capture screenshot using FFmpeg
             cmd = [
                 "ffmpeg", "-y",
-                "-i", self.url,
-                "-t", "1",
-                "-vf", "select=eq(n\\,0)",
+                "-i", capture_url,
+                "-t", "3",  # Capture for 3 seconds to ensure we get a good frame
+                "-vf", "select=eq(n\\,60)",  # Select frame 60 (2 seconds in)
                 "-q:v", "2",
                 "-frames:v", "1",
                 frame_path
             ]
 
-            result = subprocess.run(cmd, capture_output=True, timeout=10)
+            print(f"📸 Running FFmpeg screenshot command...")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
 
-            if result.returncode == 0:
-                print(f"📸 Session screenshot captured: {frame_path}")
+            if result.returncode == 0 and os.path.exists(frame_path):
+                # Copy to current_frame.jpg for immediate UI display
+                import shutil
+                shutil.copy2(frame_path, current_frame_path)
+                print(f"✅ Session screenshot captured successfully: {frame_path}")
+                print(f"✅ Current frame updated: {current_frame_path}")
             else:
-                print(f"❌ Failed to capture session screenshot: {result.stderr.decode()}")
+                print(f"❌ Failed to capture session screenshot")
+                print(f"❌ FFmpeg stderr: {result.stderr}")
 
         except Exception as e:
             print(f"❌ Error capturing session screenshot: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 def main():

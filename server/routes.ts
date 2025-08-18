@@ -192,6 +192,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         stopStreamProcessor();
       }
 
+      // Clean up temp directory and old session artifacts before starting new session
+      try {
+        console.log('🧹 Cleaning temp directory before starting new session...');
+        
+        const tempDir = path.join(process.cwd(), 'temp');
+        if (fs.existsSync(tempDir)) {
+          const tempFiles = fs.readdirSync(tempDir);
+          tempFiles.forEach(file => {
+            const filePath = path.join(tempDir, file);
+            try {
+              fs.unlinkSync(filePath);
+              console.log(`✅ Deleted temp file: ${file}`);
+            } catch (err) {
+              console.warn(`Could not delete temp file ${file}:`, err.message);
+            }
+          });
+        } else {
+          // Create temp directory if it doesn't exist
+          fs.mkdirSync(tempDir, { recursive: true });
+        }
+        
+        console.log('✅ Temp directory cleaned for new session');
+      } catch (cleanupError) {
+        console.error('Error cleaning temp directory:', cleanupError);
+      }
+
       // Create new session
       const session = await storage.createStreamSession({
         ...validatedData,
