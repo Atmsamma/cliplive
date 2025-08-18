@@ -64,15 +64,9 @@ export default function StreamInputForm() {
       return response.json();
     },
     onSuccess: () => {
-      // Clear the form when stopping to forget previous URL
-      form.reset({
-        url: "",
-        clipLength: 20,
-      });
-      
       toast({
         title: "Stream Capture Stopped",
-        description: "Processing has been stopped - ready for new session",
+        description: "Processing has been stopped",
       });
       queryClient.invalidateQueries({ queryKey: ["/api/status"] });
     },

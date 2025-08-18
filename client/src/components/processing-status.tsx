@@ -67,41 +67,17 @@ export default function ProcessingStatus() {
 
           {/* Static Stream Screenshot - Full Size */}
           <div className="relative flex-1 bg-slate-700 rounded-lg overflow-hidden border border-slate-600 min-h-48">
-            {status?.currentSession && status?.isProcessing ? (
-              <>
-                <img 
-                  src={`/api/current-frame?session=${status.currentSession.id}&t=${Date.now()}`}
-                  alt="Stream screenshot"
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    // If session-specific frame fails, try generic current frame
-                    const target = e.target as HTMLImageElement;
-                    const fallbackSrc = `/api/current-frame?t=${Date.now()}`;
-                    if (target.src !== fallbackSrc) {
-                      target.src = fallbackSrc;
-                    } else {
-                      // Both failed, hide image and show fallback
-                      target.style.display = 'none';
-                      const fallback = target.parentElement?.querySelector('.fallback-content') as HTMLDivElement;
-                      if (fallback) fallback.style.display = 'flex';
-                    }
-                  }}
-                />
-                
-                {/* Fallback content for when frame loading fails */}
-                <div 
-                  className="fallback-content absolute inset-0 w-full h-full flex items-center justify-center bg-slate-700"
-                  style={{ display: 'none' }}
-                >
-                  <div className="text-center">
-                    <div className="text-4xl mb-2">📡</div>
-                    <div className="text-lg">Connecting to Stream</div>
-                    <div className="text-sm text-slate-500 mt-2">Processing first frame...</div>
-                  </div>
-                </div>
-              </>
+            {status?.currentSession ? (
+              <img 
+                src={`/api/current-frame?session=${status.currentSession.id}`}
+                alt="Stream screenshot"
+                className="w-full h-full object-cover"
+                style={{ display: 'block' }}
+                onError={(e) => {
+                  console.log('Frame load error, showing fallback');
+                }}
+              />
             ) : (
-              /* No active session fallback */
               <div className="w-full h-full flex items-center justify-center">
                 <div className="text-center">
                   <div className="text-4xl mb-2">⏸️</div>
@@ -109,7 +85,7 @@ export default function ProcessingStatus() {
                   <div className="text-sm text-slate-500 mt-2">Enter a URL and click Start Clipping</div>
                 </div>
               </div>
-            )}</div>
+            )}
 
             {/* Activity indicator overlay */}
             {status?.currentSession && (
@@ -130,8 +106,10 @@ export default function ProcessingStatus() {
               </div>
             )}
 
+
           </div>
-        </CardContent>
+        </div>
+      </CardContent>
     </Card>
   );
 }

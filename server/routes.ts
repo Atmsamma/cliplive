@@ -160,8 +160,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/current-frame', (req, res) => {
     const sessionId = req.query.session;
     
-    // If there's a specific session requested and it's active
-    if (sessionId && processingStatus.isProcessing && processingStatus.currentSession?.id.toString() === sessionId.toString()) {
+    if (sessionId) {
+      // Serve static session screenshot
       const sessionFramePath = path.join(process.cwd(), 'temp', `session_${sessionId}_frame.jpg`);
       
       if (fs.existsSync(sessionFramePath)) {
@@ -170,31 +170,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     }
     
-    // Fallback to general current frame if processing and no session-specific frame
-    if (processingStatus.isProcessing) {
-      const framePath = path.join(process.cwd(), 'temp', 'current_frame.jpg');
-      
-      if (fs.existsSync(framePath)) {
-        // Check if frame is recent (within last 10 seconds)
-        try {
-          const stats = fs.statSync(framePath);
-          const now = Date.now();
-          const frameAge = now - stats.mtime.getTime();
-          
-          if (frameAge < 10000) { // 10 seconds - more generous for active streams
-            res.sendFile(framePath);
-            return;
-          }
-        } catch (error) {
-          // File exists but can't read stats, try to serve anyway
-          res.sendFile(framePath);
-          return;
-        }
-      }
-    }
+    // Fallback to current frame if no session-specific frame
+    const framePath = path.join(process.cwd(), 'temp', 'current_frame.jpg');
     
-    // No frame available
-    res.status(404).json({ error: 'No frame available' });
+    if (fs.existsSync(framePath)) {
+      res.sendFile(framePath);
+    } else {
+      res.status(404).json({ error: 'No frame available' });
+    }
   });
 
   // Start stream capture
@@ -202,26 +185,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validatedData = insertStreamSessionSchema.parse(req.body);
 
-      // Stop any active sessions and cleanup old frames
+      // Stop any active sessions
       const activeSession = await storage.getActiveSession();
       if (activeSession) {
         await storage.updateSessionStatus(activeSession.id, false);
         stopStreamProcessor();
-        
-        // Clean up any existing frame files
-        try {
-          const tempDir = path.join(process.cwd(), 'temp');
-          if (fs.existsSync(tempDir)) {
-            const frameFiles = fs.readdirSync(tempDir).filter(file => file.endsWith('.jpg'));
-            frameFiles.forEach(file => {
-              const filePath = path.join(tempDir, file);
-              fs.unlinkSync(filePath);
-            });
-            console.log(`✅ Cleaned up ${frameFiles.length} old frame files`);
-          }
-        } catch (cleanupError) {
-          console.error('Error cleaning up old frame files:', cleanupError);
-        }
       }
 
       // Create new session
@@ -278,23 +246,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Stop Python stream processor
       stopStreamProcessor();
 
-      // Clean up session frames and thumbnails
+      // Clean up thumbnails from this session
       try {
-        // Clean up session frame
-        const sessionFramePath = path.join(process.cwd(), 'temp', `session_${activeSession.id}_frame.jpg`);
-        if (fs.existsSync(sessionFramePath)) {
-          fs.unlinkSync(sessionFramePath);
-          console.log(`✅ Session frame cleaned up: session_${activeSession.id}_frame.jpg`);
-        }
-
-        // Clean up current frame
-        const currentFramePath = path.join(process.cwd(), 'temp', 'current_frame.jpg');
-        if (fs.existsSync(currentFramePath)) {
-          fs.unlinkSync(currentFramePath);
-          console.log('✅ Current frame cleaned up');
-        }
-
-        // Clean up thumbnails
         const thumbnailsDir = path.join(process.cwd(), 'clips', 'thumbnails');
         if (fs.existsSync(thumbnailsDir)) {
           const thumbnails = fs.readdirSync(thumbnailsDir).filter(file => file.endsWith('.jpg'));
@@ -308,28 +261,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.log('✅ Thumbnails cleaned up successfully');
         }
       } catch (cleanupError) {
-        console.error('Error cleaning up frames and thumbnails:', cleanupError);
+        console.error('Error cleaning up thumbnails:', cleanupError);
       }
 
-      // Reset processing status completely - clear all session memory
-      processingStatus = {
-        isProcessing: false,
-        framesProcessed: 0,
-        streamUptime: "00:00:00",
-        audioLevel: 0,
-        motionLevel: 0,
-        sceneChange: 0,
-        currentSession: undefined,
-        streamEnded: false,
-        consecutiveFailures: 0,
-        lastSuccessfulCapture: undefined,
-      };
+      // Update processing status
+      processingStatus.isProcessing = false;
+      processingStatus.currentSession = undefined;
       sessionStartTime = null;
-
-      // Force garbage collection of any cached data
-      if (global.gc) {
-        global.gc();
-      }
 
       broadcastSSE({
         type: 'session-stopped',
@@ -353,7 +291,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get current frame being processed
+  app.get("/api/current-frame", (req, res) => {
+    const framePath = path.join(process.cwd(), 'temp', 'current_frame.jpg');
 
+    // Check if frame exists and is recent (within last 5 seconds)
+    try {
+      const stats = fs.statSync(framePath);
+      const now = Date.now();
+      const frameAge = now - stats.mtime.getTime();
+
+      if (frameAge < 5000) { // 5 seconds
+        res.sendFile(framePath);
+      } else {
+        res.status(404).json({ error: 'No recent frame available' });
+      }
+    } catch (error) {
+      res.status(404).json({ error: 'No frame available' });
+    }
+  });
 
   // Get single clip
   app.get('/api/clips/:id', async (req, res) => {

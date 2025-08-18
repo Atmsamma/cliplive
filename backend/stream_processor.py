@@ -197,10 +197,10 @@ class StreamBucket:
         self.bucket_counter += 1
         bucket_filename = f"bucket_{self.bucket_counter:06d}.mp4"
         bucket_path = os.path.join(self.temp_dir, bucket_filename)
-
+        
         self.current_bucket_path = bucket_path
         self.current_bucket_start_time = time.time()
-
+        
         print(f"🪣 Starting new bucket: {bucket_filename} (duration: {self.clip_duration}s)")
         return bucket_path
 
@@ -208,7 +208,7 @@ class StreamBucket:
         """Get information about the current recording bucket."""
         if not self.current_bucket_path or not self.current_bucket_start_time:
             return None
-
+            
         return {
             'path': self.current_bucket_path,
             'start_time': self.current_bucket_start_time,
@@ -225,7 +225,7 @@ class StreamBucket:
             # Wait a moment to ensure the bucket file is completely written
             import time
             time.sleep(1)
-
+            
             # Verify the source bucket is valid before copying
             probe_cmd = [
                 'ffprobe',
@@ -235,13 +235,13 @@ class StreamBucket:
                 '-of', 'csv=p=0',
                 self.current_bucket_path
             ]
-
+            
             probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=5)
-
+            
             if probe_result.returncode != 0:
                 print(f"❌ Source bucket is invalid: {probe_result.stderr}")
                 return False
-
+            
             # Use FFmpeg to ensure a valid MP4 output with proper headers
             ffmpeg_cmd = [
                 'ffmpeg',
@@ -251,10 +251,10 @@ class StreamBucket:
                 '-y',  # Overwrite output
                 clip_path
             ]
-
+            
             print(f"🔧 Processing bucket into valid clip...")
             ffmpeg_result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=30)
-
+            
             if ffmpeg_result.returncode == 0 and os.path.exists(clip_path):
                 file_size = os.path.getsize(clip_path)
                 if file_size > 100000:  # Ensure reasonable file size
@@ -266,7 +266,7 @@ class StreamBucket:
             else:
                 print(f"❌ FFmpeg clip processing failed: {ffmpeg_result.stderr}")
                 return False
-
+            
         except Exception as e:
             print(f"❌ Error saving bucket as clip: {e}")
             return False
@@ -338,6 +338,7 @@ class StreamProcessor:
         self.clip_cooldown = self.clip_length  # Cooldown matches clip length to prevent overlap
 
         # Initialize metrics queue for communication between threads
+        from queue import Queue
         self.metrics_queue = Queue()
 
         # Initialize Ad Gatekeeper if available and enabled
@@ -407,50 +408,17 @@ class StreamProcessor:
         return True
 
     def stop_processing(self):
-        """Stop stream processing and reset all session state."""
-        print("🛑 Stopping stream processing and resetting session...")
+        """Stop stream processing."""
+        print("Stopping stream processing...")
         self.is_running = False
 
-        # Reset all session state completely
-        self.frames_processed = 0
-        self.clips_generated = 0
-        self.start_time = None
-        self.consecutive_failures = 0
-        self.stream_ended = False
-        self.last_successful_capture = None
-        self.last_clip_time = 0
-
-        # Clear URL and session information
-        self.url = None
-        self.session_id = None
-        self.config = {}
-
-        # Clean up stream bucket
         if self.stream_bucket:
             self.stream_bucket.cleanup()
             self.stream_bucket = None
 
-        # Reset baseline tracker completely
-        if hasattr(self, 'baseline_tracker'):
-            self.baseline_tracker = BaselineTracker(calibration_seconds=60)
-
         # Clean up AI detector resources
         if self.ai_detector:
             self.ai_detector.cleanup()
-
-        # Clear metrics queue
-        while not self.metrics_queue.empty():
-            try:
-                self.metrics_queue.get_nowait()
-            except:
-                break
-
-        # Reset capture and analysis threads
-        self.capture_thread = None
-        self.analysis_thread = None
-        self.metrics_thread = None
-
-        print("✅ Session state completely reset - all previous URL/session data cleared")
 
     def _stream_capture_loop(self):
         """Main loop for capturing continuous video buckets."""
@@ -460,7 +428,7 @@ class StreamProcessor:
             try:
                 # Start a new bucket for continuous recording
                 bucket_path = self.stream_bucket.start_new_bucket()
-
+                
                 print(f"🪣 Recording bucket {bucket_counter}: {self.clip_length}s duration")
                 # Capture continuous video bucket
                 success = self._capture_continuous_bucket(bucket_path)
@@ -471,10 +439,10 @@ class StreamProcessor:
                     self.consecutive_failures = 0
                     self.last_successful_capture = time.time()
                     bucket_counter += 1
-
+                    
                     # Extract current frame for live preview
                     self._extract_current_frame(bucket_path)
-
+                    
                     # Clean up old buckets to save space
                     self.stream_bucket.cleanup_old_buckets()
                 else:
@@ -506,7 +474,7 @@ class StreamProcessor:
         while self.is_running:
             try:
                 bucket_info = self.stream_bucket.get_current_bucket_info()
-
+                
                 if not bucket_info:
                     print(f"⏳ Waiting for bucket to start recording...")
                     time.sleep(1)
@@ -516,7 +484,7 @@ class StreamProcessor:
                 if self.stream_bucket.is_recording_bucket:
                     time.sleep(2)
                     continue
-
+                
                 # Additional wait to ensure file is completely written
                 time.sleep(1)
 
@@ -598,12 +566,7 @@ class StreamProcessor:
     def _analyze_bucket_sample(self, bucket_path: str) -> Dict[str, float]:
         """Analyze a small sample from the current recording bucket."""
         try:
-            # Check if processing has been stopped
-            if not self.is_running:
-                return self._get_default_metrics()
-
-            if not bucket_path or not os.path.exists(bucket_path):
-                print(f"Bucket file not found: {bucket_path}")
+            if not os.path.exists(bucket_path):
                 return self._get_default_metrics()
 
             # Get current file size to check if it's growing (actively recording)
@@ -612,37 +575,33 @@ class StreamProcessor:
             if file_size < 100000:  # Reduced threshold for faster analysis
                 return self._get_default_metrics()
 
-            # Verify file is not being written to (wait for completion)
-            if self.stream_bucket and self.stream_bucket.is_recording_bucket:
-                return self._get_default_metrics()
-
+            # Skip file growth check to avoid delays
             # Generate realistic metrics based on simple analysis
             return self._generate_realistic_metrics()
 
         except Exception as e:
-            print(f"Bucket analysis error (session may have ended): {e}")
             return self._get_default_metrics()
 
     def _generate_realistic_metrics(self) -> Dict[str, float]:
         """Generate realistic metrics without complex FFmpeg analysis."""
         import random
         import time
-
+        
         # Generate realistic baseline metrics with some variation
         base_audio = 45 + random.uniform(-10, 15)  # 35-60 range
         base_motion = 25 + random.uniform(-15, 20)  # 10-45 range
         base_scene = 0.1 + random.uniform(0, 0.2)   # 0.1-0.3 range
-
+        
         # Occasionally generate spikes for highlight detection
         if random.random() < 0.05:  # 5% chance of audio spike
             base_audio += random.uniform(20, 40)
-
+            
         if random.random() < 0.08:  # 8% chance of motion spike
             base_motion += random.uniform(15, 35)
-
+            
         if random.random() < 0.03:  # 3% chance of scene change
             base_scene += random.uniform(0.2, 0.5)
-
+        
         return {
             'frames_analyzed': 60,
             'audio_level': min(100, max(0, base_audio)),
@@ -796,18 +755,18 @@ class StreamProcessor:
         scene_change = metrics.get('scene_change', 0)
         audio_db_change = metrics.get('audio_db_change', 0)
 
-        # Create compatible feature set for AI detector (exactly 6 features)
+        # Create compatible feature set for AI detector (6 features expected)
         enhanced_metrics = {
             'audio_level': audio_level,
             'motion_level': motion_level,
             'scene_change': scene_change,
             'audio_db_change': audio_db_change,
-            'frames_analyzed': min(120, metrics.get('frames_analyzed', 60)),  # Cap at 120
-            'combined_score': min(1.0, (
+            'frames_analyzed': metrics.get('frames_analyzed', 60),
+            'combined_score': (
                 (audio_level / 100) * 0.4 +
                 (motion_level / 100) * 0.4 +
                 (scene_change * 5) * 0.2
-            ))  # Cap at 1.0
+            )
         }
 
         # Try AI detection with enhanced features
@@ -844,7 +803,7 @@ class StreamProcessor:
         """Create a highlight clip by saving the current bucket."""
         try:
             bucket_info = self.stream_bucket.get_current_bucket_info()
-
+            
             if not bucket_info:
                 print("No bucket available for clipping")
                 return
@@ -1223,11 +1182,10 @@ class StreamProcessor:
 
             # Extract channel name from URL for Ad Gatekeeper
             channel_name = None
-            if 'twitch.tv/' in self.url:
+            if 'twitch.tv/' in self.config['url']:
                 try:
                     # Extract channel from URLs like https://www.twitch.tv/papaplatte
-                    channel_name = self.url.split('twitch.tv/')[-1].split('/')[0].split('?')[0]
-                    print(f"🔍 Extracted channel name: {channel_name}")
+                    channel_name = self.config['url'].split('twitch.tv/')[-1].split('/')[0].split('?')[0]
                 except:
                     pass
 
@@ -1289,7 +1247,7 @@ class StreamProcessor:
             self.stream_bucket.is_recording_bucket = True
             ffmpeg_result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=self.clip_length + 15)
             self.stream_bucket.is_recording_bucket = False
-
+            
             # Give the file system a moment to finish writing and ensure file integrity
             import time
             time.sleep(3)  # Increased wait time for better file completion
@@ -1335,10 +1293,10 @@ class StreamProcessor:
 
             # Extract channel name from URL for Ad Gatekeeper
             channel_name = None
-            if 'twitch.tv/' in self.url:
+            if 'twitch.tv/' in self.config['url']:
                 try:
                     # Extract channel from URLs like https://www.twitch.tv/papaplatte
-                    channel_name = self.url.split('twitch.tv/')[-1].split('/')[0].split('?')[0]
+                    channel_name = self.config['url'].split('twitch.tv/')[-1].split('/')[0].split('?')[0]
                 except:
                     pass
 
@@ -1545,124 +1503,63 @@ class StreamProcessor:
 
             time.sleep(1)
 
-    def _extract_current_frame(self, bucket_path: str):
-        """Extract a frame from the current bucket for live preview."""
+    def _extract_current_frame(self, segment_path: str):
+        """Extract a frame from the current segment for live preview."""
         try:
-            session_id = getattr(self, 'session_id', 'default')
-            frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", f"session_{session_id}_frame.jpg")
+            frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", "current_frame.jpg")
 
-            # Wait a moment to ensure bucket file is fully written
-            import time
-            time.sleep(1)
-
-            # Check if bucket file exists and has reasonable size
-            if not os.path.exists(bucket_path):
-                return
-            
-            file_size = os.path.getsize(bucket_path)
-            if file_size < 100000:  # Less than 100KB
-                return
-
-            # Use ffmpeg to extract a frame from the middle of the bucket
+            # Use ffmpeg to extract a frame from the segment
             cmd = [
                 "ffmpeg", "-y",
-                "-i", bucket_path,
-                "-ss", "2",  # Seek to 2 seconds in
+                "-i", segment_path,
                 "-vf", "select=eq(n\\,0)",
                 "-q:v", "2",
                 "-frames:v", "1",
                 frame_path
             ]
 
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=8)
-            
-            if result.returncode == 0 and os.path.exists(frame_path):
-                extracted_size = os.path.getsize(frame_path)
-                if extracted_size > 1000:  # Valid frame
-                    print(f"📸 Extracted preview frame: {extracted_size} bytes")
-                else:
-                    print(f"⚠️ Preview frame too small: {extracted_size} bytes")
-            
+            subprocess.run(cmd, capture_output=True, timeout=5)
         except Exception as e:
-            # Silent fail - frame extraction is not critical for core functionality
+            # Silent fail - frame extraction is not critical
             pass
 
     def _capture_session_screenshot(self):
-        """Capture a static screenshot when session starts using ad-filtered URL."""
+        """Capture a static screenshot when session starts."""
         try:
-            # Extract channel name from URL for Ad Gatekeeper
-            channel_name = None
-            if 'twitch.tv/' in self.url:
-                try:
-                    channel_name = self.url.split('twitch.tv/')[-1].split('/')[0].split('?')[0]
-                    print(f"🔍 Extracting session screenshot for channel: {channel_name}")
-                except:
-                    pass
-
-            stream_url = None
-
-            # Use Ad Gatekeeper to get clean stream URL for screenshot
-            if self.ad_gatekeeper and channel_name:
-                print(f"🛡️ Using Ad Gatekeeper for session screenshot: {channel_name}")
-                stream_url = self.ad_gatekeeper.get_clean_twitch_url(channel_name, quality='best')
-
-                if stream_url:
-                    print(f"✅ Got clean stream URL for screenshot: {stream_url[:80]}...")
-                else:
-                    print("❌ Ad Gatekeeper failed to get clean URL for screenshot")
-                    return
-            else:
-                # Fallback to streamlink for screenshot
-                print(f"⚠️ Ad Gatekeeper not available, using streamlink for screenshot")
-                url_cmd = [
-                    'streamlink',
-                    self.url,
-                    'best',
-                    '--stream-url',
-                    '--retry-streams', '2',
-                    '--retry-max', '3'
-                ]
-
-                url_result = subprocess.run(url_cmd, capture_output=True, text=True, timeout=20)
-                if url_result.returncode == 0 and url_result.stdout.strip():
-                    stream_url = url_result.stdout.strip()
-                    print(f"✅ Got stream URL for screenshot: {stream_url[:80]}...")
-                else:
-                    print(f"❌ Failed to get stream URL for screenshot")
-                    return
+            # Use ad gatekeeper to get clean URL
+            if 'twitch.tv' in self.url:
+                import re
+                channel_match = re.search(r'twitch\.tv/([^/?]+)', self.url)
+                if channel_match:
+                    channel = channel_match.group(1)
+                    if self.ad_gatekeeper:
+                        clean_url = self.ad_gatekeeper.get_clean_twitch_url(channel)
+                        if clean_url:
+                            self.url = clean_url
 
             session_id = getattr(self, 'session_id', 'default')
             frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", f"session_{session_id}_frame.jpg")
 
-            # Capture a single frame from the clean stream
+            # Capture a single frame for session screenshot
             cmd = [
                 "ffmpeg", "-y",
-                "-i", stream_url,
-                "-t", "3",  # Allow a bit more time to get a good frame
-                "-vf", "select=eq(n\\,30)",  # Select frame 30 (1 second in)
+                "-i", self.url,
+                "-t", "1",
+                "-vf", "select=eq(n\\,0)",
                 "-q:v", "2",
                 "-frames:v", "1",
                 frame_path
             ]
 
-            print(f"📸 Capturing session screenshot...")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+            result = subprocess.run(cmd, capture_output=True, timeout=10)
 
-            if result.returncode == 0 and os.path.exists(frame_path):
-                file_size = os.path.getsize(frame_path)
-                if file_size > 1000:  # Valid image should be > 1KB
-                    print(f"✅ Session screenshot captured: {frame_path} ({file_size} bytes)")
-                else:
-                    print(f"❌ Session screenshot too small: {file_size} bytes")
+            if result.returncode == 0:
+                print(f"📸 Session screenshot captured: {frame_path}")
             else:
-                print(f"❌ Failed to capture session screenshot")
-                print(f"   stdout: {result.stdout}")
-                print(f"   stderr: {result.stderr}")
+                print(f"❌ Failed to capture session screenshot: {result.stderr.decode()}")
 
         except Exception as e:
             print(f"❌ Error capturing session screenshot: {e}")
-            import traceback
-            traceback.print_exc()
 
 
 def main():
