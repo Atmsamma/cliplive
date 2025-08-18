@@ -412,9 +412,30 @@ class StreamProcessor:
         print("Stopping stream processing...")
         self.is_running = False
 
+        # Clean up stream bucket and temp files
         if self.stream_bucket:
             self.stream_bucket.cleanup()
             self.stream_bucket = None
+
+        # Clean up current frame files
+        try:
+            temp_dir = os.path.join(os.getcwd(), 'temp')
+            session_id = getattr(self, 'session_id', 'default')
+            
+            # Remove session-specific frame
+            session_frame = os.path.join(temp_dir, f"session_{session_id}_frame.jpg")
+            if os.path.exists(session_frame):
+                os.remove(session_frame)
+                print(f"✅ Cleaned up session frame: {session_frame}")
+            
+            # Remove current frame
+            current_frame = os.path.join(temp_dir, "current_frame.jpg")
+            if os.path.exists(current_frame):
+                os.remove(current_frame)
+                print(f"✅ Cleaned up current frame: {current_frame}")
+                
+        except Exception as e:
+            print(f"⚠️ Error cleaning up frames: {e}")
 
         # Clean up AI detector resources
         if self.ai_detector:
@@ -1506,6 +1527,14 @@ class StreamProcessor:
     def _extract_current_frame(self, segment_path: str):
         """Extract a frame from the current segment for live preview."""
         try:
+            # Check if the segment file exists and is not empty
+            if not os.path.exists(segment_path):
+                return
+            
+            file_size = os.path.getsize(segment_path)
+            if file_size < 10000:  # Skip very small files
+                return
+
             frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", "current_frame.jpg")
 
             # Use ffmpeg to extract a frame from the segment
@@ -1518,7 +1547,12 @@ class StreamProcessor:
                 frame_path
             ]
 
-            subprocess.run(cmd, capture_output=True, timeout=5)
+            result = subprocess.run(cmd, capture_output=True, timeout=5)
+            
+            # Only log errors if not during cleanup
+            if result.returncode != 0 and self.is_running:
+                print(f"Frame extraction failed (non-critical): {result.stderr.decode()}")
+                
         except Exception as e:
             # Silent fail - frame extraction is not critical
             pass

@@ -246,8 +246,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Stop Python stream processor
       stopStreamProcessor();
 
-      // Clean up thumbnails from this session
+      // Clean up thumbnails and frames from this session
       try {
+        // Clean up thumbnails
         const thumbnailsDir = path.join(process.cwd(), 'clips', 'thumbnails');
         if (fs.existsSync(thumbnailsDir)) {
           const thumbnails = fs.readdirSync(thumbnailsDir).filter(file => file.endsWith('.jpg'));
@@ -260,8 +261,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           console.log('✅ Thumbnails cleaned up successfully');
         }
+
+        // Clean up session frames
+        const tempDir = path.join(process.cwd(), 'temp');
+        if (fs.existsSync(tempDir)) {
+          const frames = fs.readdirSync(tempDir).filter(file => 
+            file.endsWith('.jpg') && (file.startsWith('session_') || file === 'current_frame.jpg')
+          );
+          console.log(`Cleaning up ${frames.length} frame files...`);
+
+          frames.forEach(frame => {
+            const framePath = path.join(tempDir, frame);
+            fs.unlinkSync(framePath);
+          });
+
+          console.log('✅ Frame files cleaned up successfully');
+        }
       } catch (cleanupError) {
-        console.error('Error cleaning up thumbnails:', cleanupError);
+        console.error('Error cleaning up files:', cleanupError);
       }
 
       // Update processing status
