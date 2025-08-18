@@ -505,11 +505,15 @@ class StreamProcessor:
                     self.last_successful_capture = time.time()
                     bucket_counter += 1
                     
-                    # Extract current frame for live preview
+                    # Extract current frame for live preview - do this immediately
                     self._extract_current_frame(bucket_path)
                     
                     # Clean up old buckets to save space
                     self.stream_bucket.cleanup_old_buckets()
+                else:
+                    # Even on failure, try to extract frame from any existing bucket
+                    if os.path.exists(bucket_path):
+                        self._extract_current_frame(bucket_path)
                 else:
                     # Increment failure counter
                     self.consecutive_failures += 1
@@ -1572,24 +1576,40 @@ class StreamProcessor:
 
             time.sleep(1)
 
-    def _extract_current_frame(self, segment_path: str):
-        """Extract a frame from the current segment for live preview."""
+    def _extract_current_frame(self, bucket_path: str):
+        """Extract a frame from the current bucket for live preview."""
         try:
-            frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", "current_frame.jpg")
+            # Only extract frame if bucket exists and has content
+            if not bucket_path or not os.path.exists(bucket_path):
+                return
+                
+            file_size = os.path.getsize(bucket_path)
+            if file_size < 100000:  # Wait for bucket to have some content
+                return
+            
+            # Extract frame for current_frame.jpg (general preview)
+            current_frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", "current_frame.jpg")
+            
+            # Also extract session-specific frame
+            session_frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", f"session_{self.session_id}_frame.jpg")
 
-            # Use ffmpeg to extract a frame from the segment
-            cmd = [
-                "ffmpeg", "-y",
-                "-i", segment_path,
-                "-vf", "select=eq(n\\,0)",
-                "-q:v", "2",
-                "-frames:v", "1",
-                frame_path
-            ]
+            # Use ffmpeg to extract a recent frame from the bucket
+            for frame_path in [current_frame_path, session_frame_path]:
+                cmd = [
+                    "ffmpeg", "-y",
+                    "-i", bucket_path,
+                    "-ss", "1",  # Skip first second to get a stable frame
+                    "-vframes", "1",
+                    "-q:v", "2",
+                    frame_path
+                ]
 
-            subprocess.run(cmd, capture_output=True, timeout=5)
+                result = subprocess.run(cmd, capture_output=True, timeout=10)
+                if result.returncode == 0:
+                    print(f"✅ Frame extracted: {os.path.basename(frame_path)}")
+                    
         except Exception as e:
-            # Silent fail - frame extraction is not critical
+            print(f"⚠️ Frame extraction error: {e}")
             pass
 
     def _capture_session_screenshot(self):

@@ -156,22 +156,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(processingStatus);
   });
 
-  // Get current frame (static session screenshot)
+  // Get current frame (live stream preview)
   app.get('/api/current-frame', (req, res) => {
     const sessionId = req.query.session;
     
-    // Only serve frames if there's an active session
+    // Try session-specific frame first if session ID provided
     if (sessionId && processingStatus.isProcessing && processingStatus.currentSession?.id.toString() === sessionId.toString()) {
-      // Serve static session screenshot only for active sessions
       const sessionFramePath = path.join(process.cwd(), 'temp', `session_${sessionId}_frame.jpg`);
       
       if (fs.existsSync(sessionFramePath)) {
-        res.sendFile(sessionFramePath);
-        return;
+        // Check if frame is recent (within last 10 seconds)
+        try {
+          const stats = fs.statSync(sessionFramePath);
+          const now = Date.now();
+          const frameAge = now - stats.mtime.getTime();
+          
+          if (frameAge < 10000) { // 10 seconds
+            res.sendFile(sessionFramePath);
+            return;
+          }
+        } catch (error) {
+          // Continue to try general current frame
+        }
       }
     }
     
-    // If no active session, return 404
+    // Fall back to general current frame
+    const currentFramePath = path.join(process.cwd(), 'temp', 'current_frame.jpg');
+    
+    try {
+      if (fs.existsSync(currentFramePath)) {
+        const stats = fs.statSync(currentFramePath);
+        const now = Date.now();
+        const frameAge = now - stats.mtime.getTime();
+        
+        if (frameAge < 10000) { // 10 seconds
+          res.sendFile(currentFramePath);
+          return;
+        }
+      }
+    } catch (error) {
+      // Continue to 404
+    }
+    
+    // If no recent frame available, return 404
     res.status(404).json({ error: 'No frame available' });
   });
 
@@ -383,25 +411,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get current frame being processed
-  app.get("/api/current-frame", (req, res) => {
-    const framePath = path.join(process.cwd(), 'temp', 'current_frame.jpg');
-
-    // Check if frame exists and is recent (within last 5 seconds)
-    try {
-      const stats = fs.statSync(framePath);
-      const now = Date.now();
-      const frameAge = now - stats.mtime.getTime();
-
-      if (frameAge < 5000) { // 5 seconds
-        res.sendFile(framePath);
-      } else {
-        res.status(404).json({ error: 'No recent frame available' });
-      }
-    } catch (error) {
-      res.status(404).json({ error: 'No frame available' });
-    }
-  });
+  
 
   // Get single clip
   app.get('/api/clips/:id', async (req, res) => {
