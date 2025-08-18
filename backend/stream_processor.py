@@ -1545,63 +1545,124 @@ class StreamProcessor:
 
             time.sleep(1)
 
-    def _extract_current_frame(self, segment_path: str):
-        """Extract a frame from the current segment for live preview."""
+    def _extract_current_frame(self, bucket_path: str):
+        """Extract a frame from the current bucket for live preview."""
         try:
-            frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", "current_frame.jpg")
+            session_id = getattr(self, 'session_id', 'default')
+            frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", f"session_{session_id}_frame.jpg")
 
-            # Use ffmpeg to extract a frame from the segment
+            # Wait a moment to ensure bucket file is fully written
+            import time
+            time.sleep(1)
+
+            # Check if bucket file exists and has reasonable size
+            if not os.path.exists(bucket_path):
+                return
+            
+            file_size = os.path.getsize(bucket_path)
+            if file_size < 100000:  # Less than 100KB
+                return
+
+            # Use ffmpeg to extract a frame from the middle of the bucket
             cmd = [
                 "ffmpeg", "-y",
-                "-i", segment_path,
+                "-i", bucket_path,
+                "-ss", "2",  # Seek to 2 seconds in
                 "-vf", "select=eq(n\\,0)",
                 "-q:v", "2",
                 "-frames:v", "1",
                 frame_path
             ]
 
-            subprocess.run(cmd, capture_output=True, timeout=5)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=8)
+            
+            if result.returncode == 0 and os.path.exists(frame_path):
+                extracted_size = os.path.getsize(frame_path)
+                if extracted_size > 1000:  # Valid frame
+                    print(f"📸 Extracted preview frame: {extracted_size} bytes")
+                else:
+                    print(f"⚠️ Preview frame too small: {extracted_size} bytes")
+            
         except Exception as e:
-            # Silent fail - frame extraction is not critical
+            # Silent fail - frame extraction is not critical for core functionality
             pass
 
     def _capture_session_screenshot(self):
-        """Capture a static screenshot when session starts."""
+        """Capture a static screenshot when session starts using ad-filtered URL."""
         try:
-            # Use ad gatekeeper to get clean URL
-            if 'twitch.tv' in self.url:
-                import re
-                channel_match = re.search(r'twitch\.tv/([^/?]+)', self.url)
-                if channel_match:
-                    channel = channel_match.group(1)
-                    if self.ad_gatekeeper:
-                        clean_url = self.ad_gatekeeper.get_clean_twitch_url(channel)
-                        if clean_url:
-                            self.url = clean_url
+            # Extract channel name from URL for Ad Gatekeeper
+            channel_name = None
+            if 'twitch.tv/' in self.url:
+                try:
+                    channel_name = self.url.split('twitch.tv/')[-1].split('/')[0].split('?')[0]
+                    print(f"🔍 Extracting session screenshot for channel: {channel_name}")
+                except:
+                    pass
+
+            stream_url = None
+
+            # Use Ad Gatekeeper to get clean stream URL for screenshot
+            if self.ad_gatekeeper and channel_name:
+                print(f"🛡️ Using Ad Gatekeeper for session screenshot: {channel_name}")
+                stream_url = self.ad_gatekeeper.get_clean_twitch_url(channel_name, quality='best')
+
+                if stream_url:
+                    print(f"✅ Got clean stream URL for screenshot: {stream_url[:80]}...")
+                else:
+                    print("❌ Ad Gatekeeper failed to get clean URL for screenshot")
+                    return
+            else:
+                # Fallback to streamlink for screenshot
+                print(f"⚠️ Ad Gatekeeper not available, using streamlink for screenshot")
+                url_cmd = [
+                    'streamlink',
+                    self.url,
+                    'best',
+                    '--stream-url',
+                    '--retry-streams', '2',
+                    '--retry-max', '3'
+                ]
+
+                url_result = subprocess.run(url_cmd, capture_output=True, text=True, timeout=20)
+                if url_result.returncode == 0 and url_result.stdout.strip():
+                    stream_url = url_result.stdout.strip()
+                    print(f"✅ Got stream URL for screenshot: {stream_url[:80]}...")
+                else:
+                    print(f"❌ Failed to get stream URL for screenshot")
+                    return
 
             session_id = getattr(self, 'session_id', 'default')
             frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", f"session_{session_id}_frame.jpg")
 
-            # Capture a single frame for session screenshot
+            # Capture a single frame from the clean stream
             cmd = [
                 "ffmpeg", "-y",
-                "-i", self.url,
-                "-t", "1",
-                "-vf", "select=eq(n\\,0)",
+                "-i", stream_url,
+                "-t", "3",  # Allow a bit more time to get a good frame
+                "-vf", "select=eq(n\\,30)",  # Select frame 30 (1 second in)
                 "-q:v", "2",
                 "-frames:v", "1",
                 frame_path
             ]
 
-            result = subprocess.run(cmd, capture_output=True, timeout=10)
+            print(f"📸 Capturing session screenshot...")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
 
-            if result.returncode == 0:
-                print(f"📸 Session screenshot captured: {frame_path}")
+            if result.returncode == 0 and os.path.exists(frame_path):
+                file_size = os.path.getsize(frame_path)
+                if file_size > 1000:  # Valid image should be > 1KB
+                    print(f"✅ Session screenshot captured: {frame_path} ({file_size} bytes)")
+                else:
+                    print(f"❌ Session screenshot too small: {file_size} bytes")
             else:
-                print(f"❌ Failed to capture session screenshot: {result.stderr.decode()}")
+                print(f"❌ Failed to capture session screenshot")
+                print(f"   stdout: {result.stdout}")
+                print(f"   stderr: {result.stderr}")
 
         except Exception as e:
             print(f"❌ Error capturing session screenshot: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 def main():
