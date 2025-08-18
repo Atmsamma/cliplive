@@ -62,43 +62,19 @@ export default function ProcessingStatus() {
                 Stream no longer available
               </div>
             )}
-
+            
           </div>
 
           {/* Static Stream Screenshot - Full Size */}
           <div className="relative flex-1 bg-slate-700 rounded-lg overflow-hidden border border-slate-600 min-h-48">
             {status?.currentSession ? (
-              <img
-                src={`/api/current-frame?t=${Date.now()}&sessionId=${status?.currentSession.id || ''}`}
+              <img 
+                src={`/api/current-frame?session=${status.currentSession.id}`}
                 alt="Stream screenshot"
                 className="w-full h-full object-cover"
                 style={{ display: 'block' }}
                 onError={(e) => {
                   console.log('Frame load error, showing fallback');
-                  const target = e.currentTarget as HTMLImageElement;
-                  target.style.display = 'none';
-
-                  // Show fallback div
-                  const parent = target.parentElement;
-                  if (parent) {
-                    const fallback = parent.querySelector('.frame-fallback') as HTMLElement;
-                    if (fallback) {
-                      fallback.style.display = 'flex';
-                    }
-                  }
-                }}
-                onLoad={() => {
-                  // Hide fallback when image loads successfully
-                  const img = document.querySelector('.processing-frame') as HTMLImageElement;
-                  if (img) {
-                    const parent = img.parentElement;
-                    if (parent) {
-                      const fallback = parent.querySelector('.frame-fallback') as HTMLElement;
-                      if (fallback) {
-                        fallback.style.display = 'none';
-                      }
-                    }
-                  }
                 }}
               />
             ) : (
