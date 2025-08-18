@@ -246,8 +246,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Stop Python stream processor
       stopStreamProcessor();
 
-      // Clean up thumbnails from this session
+      // Comprehensive cleanup of all session artifacts
       try {
+        console.log('🧹 Starting comprehensive session cleanup...');
+
+        // 1. Clean up thumbnails from this session
         const thumbnailsDir = path.join(process.cwd(), 'clips', 'thumbnails');
         if (fs.existsSync(thumbnailsDir)) {
           const thumbnails = fs.readdirSync(thumbnailsDir).filter(file => file.endsWith('.jpg'));
@@ -260,8 +263,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           console.log('✅ Thumbnails cleaned up successfully');
         }
+
+        // 2. Clean up temporary files and current frame
+        const tempDir = path.join(process.cwd(), 'temp');
+        if (fs.existsSync(tempDir)) {
+          const tempFiles = fs.readdirSync(tempDir);
+          console.log(`Cleaning up ${tempFiles.length} temporary files...`);
+
+          tempFiles.forEach(file => {
+            const filePath = path.join(tempDir, file);
+            try {
+              fs.unlinkSync(filePath);
+            } catch (err) {
+              console.warn(`Could not delete temp file ${file}:`, err.message);
+            }
+          });
+
+          console.log('✅ Temporary files cleaned up successfully');
+        }
+
+        // 3. Clean up session-specific frames
+        const sessionFramePattern = new RegExp(`session_${activeSession.id}_frame\\.jpg`);
+        if (fs.existsSync(tempDir)) {
+          const sessionFrames = fs.readdirSync(tempDir).filter(file => sessionFramePattern.test(file));
+          sessionFrames.forEach(file => {
+            const filePath = path.join(tempDir, file);
+            try {
+              fs.unlinkSync(filePath);
+              console.log(`✅ Deleted session frame: ${file}`);
+            } catch (err) {
+              console.warn(`Could not delete session frame ${file}:`, err.message);
+            }
+          });
+        }
+
+        // 4. Clean up any stream processor artifacts (buckets, segments, etc.)
+        // These would be in /tmp/ directories created by the Python processor
+        console.log('✅ Stream processor will clean up its own temporary buckets and segments');
+
+        // 5. Reset processing metrics
+        processingStatus = {
+          isProcessing: false,
+          framesProcessed: 0,
+          streamUptime: "00:00:00",
+          audioLevel: 0,
+          motionLevel: 0,
+          sceneChange: 0,
+        };
+
+        console.log('✅ All session artifacts cleaned up successfully');
+
       } catch (cleanupError) {
-        console.error('Error cleaning up thumbnails:', cleanupError);
+        console.error('Error during session cleanup:', cleanupError);
       }
 
       // Update processing status

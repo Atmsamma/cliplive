@@ -283,9 +283,30 @@ class StreamBucket:
             print(f"Warning: Error cleaning up old buckets: {e}")
 
     def cleanup(self):
-        """Clean up all temporary files."""
-        if os.path.exists(self.temp_dir):
-            shutil.rmtree(self.temp_dir)
+        """Clean up all temporary files and bucket artifacts."""
+        try:
+            print(f"🧹 Cleaning up StreamBucket directory: {self.temp_dir}")
+            
+            if os.path.exists(self.temp_dir):
+                # List files before cleanup for debugging
+                files = os.listdir(self.temp_dir)
+                if files:
+                    print(f"🧹 Removing {len(files)} bucket files: {files}")
+                
+                # Remove the entire temporary directory
+                shutil.rmtree(self.temp_dir)
+                print(f"✅ StreamBucket cleanup completed")
+            else:
+                print(f"📁 StreamBucket temp directory already clean")
+                
+        except Exception as e:
+            print(f"⚠️ Error during StreamBucket cleanup: {e}")
+        
+        # Reset internal state
+        self.current_bucket_path = None
+        self.current_bucket_start_time = None
+        self.bucket_counter = 0
+        self.is_recording_bucket = False
 
 class StreamProcessor:
     """Main stream processor with highlight detection and clipping."""
@@ -409,16 +430,52 @@ class StreamProcessor:
 
     def stop_processing(self):
         """Stop stream processing."""
-        print("Stopping stream processing...")
+        print("🧹 Stopping stream processing and cleaning up artifacts...")
         self.is_running = False
 
+        # Clean up stream bucket and all temporary files
         if self.stream_bucket:
+            print("🧹 Cleaning up stream buckets...")
             self.stream_bucket.cleanup()
             self.stream_bucket = None
 
+        # Clean up temporary directories and files
+        try:
+            import glob
+            import shutil
+            
+            # Clean up any temporary stream bucket directories
+            temp_dirs = glob.glob('/tmp/stream_bucket_*')
+            for temp_dir in temp_dirs:
+                if os.path.exists(temp_dir):
+                    print(f"🧹 Removing temporary bucket directory: {temp_dir}")
+                    shutil.rmtree(temp_dir)
+            
+            # Clean up any leftover segment files
+            temp_segments = glob.glob('/tmp/*segment*.ts') + glob.glob('/tmp/*segment*.mp4')
+            for segment in temp_segments:
+                if os.path.exists(segment):
+                    print(f"🧹 Removing temporary segment: {segment}")
+                    os.remove(segment)
+            
+            # Clean up any concat files
+            concat_files = glob.glob('/tmp/concat_*.txt') + glob.glob('/tmp/realtime_*.txt')
+            for concat_file in concat_files:
+                if os.path.exists(concat_file):
+                    print(f"🧹 Removing concat file: {concat_file}")
+                    os.remove(concat_file)
+            
+            print("✅ Python processor artifacts cleaned up successfully")
+            
+        except Exception as cleanup_error:
+            print(f"⚠️ Error during Python processor cleanup: {cleanup_error}")
+
         # Clean up AI detector resources
         if self.ai_detector:
+            print("🧹 Cleaning up AI detector resources...")
             self.ai_detector.cleanup()
+
+        print("✅ Stream processing stopped and all artifacts cleaned up")
 
     def _stream_capture_loop(self):
         """Main loop for capturing continuous video buckets."""
