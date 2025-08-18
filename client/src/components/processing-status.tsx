@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TrendingUp } from "lucide-react";
 import { useSSE } from "@/hooks/use-sse";
 import type { ProcessingStatus } from "@shared/schema";
+import React, { useState, useEffect } from 'react'; // Added React import for useState and useEffect
 
 export default function ProcessingStatus() {
   const { data: status } = useQuery<ProcessingStatus>({
@@ -12,6 +13,21 @@ export default function ProcessingStatus() {
 
   // Listen for SSE updates
   useSSE("/api/events");
+
+  // State for the stream frame URL and error handling
+  const [frameUrl, setFrameUrl] = useState<string | null>(null);
+  const [frameError, setFrameError] = useState<boolean>(false);
+
+  // Update frame URL when status changes or is processing
+  useEffect(() => {
+    if (status?.currentSession && status?.isProcessing) {
+      setFrameUrl(`/api/current-frame?session=${status.currentSession.id}&t=${Date.now()}`);
+      setFrameError(false); // Reset error on new frame
+    } else {
+      setFrameUrl(null); // Clear frame URL when not processing
+    }
+  }, [status?.currentSession, status?.isProcessing]);
+
 
   // Determine animation state based on stream data
   const getAnimationState = () => {
@@ -62,7 +78,7 @@ export default function ProcessingStatus() {
                 Stream no longer available
               </div>
             )}
-            
+
           </div>
 
           {/* Static Stream Screenshot - Full Size */}
@@ -82,7 +98,7 @@ export default function ProcessingStatus() {
                 }}
               />
             ) : null}
-            
+
             {/* Fallback shown when no active session or frame load fails */}
             <div 
               className="w-full h-full flex items-center justify-center"
