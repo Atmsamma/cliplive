@@ -159,20 +159,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get current frame (static session screenshot)
   app.get('/api/current-frame', (req, res) => {
     const sessionId = req.query.session;
-    
+
     if (sessionId) {
       // Serve static session screenshot
       const sessionFramePath = path.join(process.cwd(), 'temp', `session_${sessionId}_frame.jpg`);
-      
+
       if (fs.existsSync(sessionFramePath)) {
         res.sendFile(sessionFramePath);
         return;
       }
     }
-    
+
     // Fallback to current frame if no session-specific frame
     const framePath = path.join(process.cwd(), 'temp', 'current_frame.jpg');
-    
+
     if (fs.existsSync(framePath)) {
       res.sendFile(framePath);
     } else {
@@ -328,21 +328,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Get current frame being processed
   app.get("/api/current-frame", (req, res) => {
-    const framePath = path.join(process.cwd(), 'temp', 'current_frame.jpg');
+    const tempDir = path.join(process.cwd(), "temp");
+    const currentFramePath = path.join(tempDir, "current_frame.jpg");
 
-    // Check if frame exists and is recent (within last 5 seconds)
-    try {
-      const stats = fs.statSync(framePath);
-      const now = Date.now();
-      const frameAge = now - stats.mtime.getTime();
+    // Also check for session-specific frames
+    const sessionId = req.query.session;
+    const sessionFramePath = sessionId ? path.join(tempDir, `session_${sessionId}_frame.jpg`) : null;
 
-      if (frameAge < 5000) { // 5 seconds
-        res.sendFile(framePath);
-      } else {
-        res.status(404).json({ error: 'No recent frame available' });
-      }
-    } catch (error) {
-      res.status(404).json({ error: 'No frame available' });
+    // Try session-specific frame first, then fallback to current_frame.jpg
+    const framePath = (sessionFramePath && fs.existsSync(sessionFramePath)) ? sessionFramePath : currentFramePath;
+
+    if (fs.existsSync(framePath)) {
+      // Set proper headers for image serving
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      res.sendFile(path.resolve(framePath));
+    } else {
+      res.status(404).json({ error: "No frame available" });
     }
   });
 

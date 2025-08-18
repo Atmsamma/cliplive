@@ -197,10 +197,10 @@ class StreamBucket:
         self.bucket_counter += 1
         bucket_filename = f"bucket_{self.bucket_counter:06d}.mp4"
         bucket_path = os.path.join(self.temp_dir, bucket_filename)
-        
+
         self.current_bucket_path = bucket_path
         self.current_bucket_start_time = time.time()
-        
+
         print(f"🪣 Starting new bucket: {bucket_filename} (duration: {self.clip_duration}s)")
         return bucket_path
 
@@ -208,7 +208,7 @@ class StreamBucket:
         """Get information about the current recording bucket."""
         if not self.current_bucket_path or not self.current_bucket_start_time:
             return None
-            
+
         return {
             'path': self.current_bucket_path,
             'start_time': self.current_bucket_start_time,
@@ -225,7 +225,7 @@ class StreamBucket:
             # Wait a moment to ensure the bucket file is completely written
             import time
             time.sleep(1)
-            
+
             # Verify the source bucket is valid before copying
             probe_cmd = [
                 'ffprobe',
@@ -235,13 +235,13 @@ class StreamBucket:
                 '-of', 'csv=p=0',
                 self.current_bucket_path
             ]
-            
+
             probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=5)
-            
+
             if probe_result.returncode != 0:
                 print(f"❌ Source bucket is invalid: {probe_result.stderr}")
                 return False
-            
+
             # Use FFmpeg to ensure a valid MP4 output with proper headers
             ffmpeg_cmd = [
                 'ffmpeg',
@@ -251,10 +251,10 @@ class StreamBucket:
                 '-y',  # Overwrite output
                 clip_path
             ]
-            
+
             print(f"🔧 Processing bucket into valid clip...")
             ffmpeg_result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=30)
-            
+
             if ffmpeg_result.returncode == 0 and os.path.exists(clip_path):
                 file_size = os.path.getsize(clip_path)
                 if file_size > 100000:  # Ensure reasonable file size
@@ -266,7 +266,7 @@ class StreamBucket:
             else:
                 print(f"❌ FFmpeg clip processing failed: {ffmpeg_result.stderr}")
                 return False
-            
+
         except Exception as e:
             print(f"❌ Error saving bucket as clip: {e}")
             return False
@@ -298,6 +298,7 @@ class StreamProcessor:
         self.is_running = False
         self.capture_thread = None
         self.analysis_thread = None
+        self.metrics_thread = None # Initialize metrics_thread
         self.current_frame_path = os.path.join(os.getcwd(), 'temp', 'current_frame.jpg')
 
         # Processing stats
@@ -421,19 +422,19 @@ class StreamProcessor:
         try:
             temp_dir = os.path.join(os.getcwd(), 'temp')
             session_id = getattr(self, 'session_id', 'default')
-            
+
             # Remove session-specific frame
             session_frame = os.path.join(temp_dir, f"session_{session_id}_frame.jpg")
             if os.path.exists(session_frame):
                 os.remove(session_frame)
                 print(f"✅ Cleaned up session frame: {session_frame}")
-            
+
             # Remove current frame
             current_frame = os.path.join(temp_dir, "current_frame.jpg")
             if os.path.exists(current_frame):
                 os.remove(current_frame)
                 print(f"✅ Cleaned up current frame: {current_frame}")
-                
+
         except Exception as e:
             print(f"⚠️ Error cleaning up frames: {e}")
 
@@ -449,7 +450,7 @@ class StreamProcessor:
             try:
                 # Start a new bucket for continuous recording
                 bucket_path = self.stream_bucket.start_new_bucket()
-                
+
                 print(f"🪣 Recording bucket {bucket_counter}: {self.clip_length}s duration")
                 # Capture continuous video bucket
                 success = self._capture_continuous_bucket(bucket_path)
@@ -460,10 +461,10 @@ class StreamProcessor:
                     self.consecutive_failures = 0
                     self.last_successful_capture = time.time()
                     bucket_counter += 1
-                    
+
                     # Extract current frame for live preview
                     self._extract_current_frame(bucket_path)
-                    
+
                     # Clean up old buckets to save space
                     self.stream_bucket.cleanup_old_buckets()
                 else:
@@ -495,7 +496,7 @@ class StreamProcessor:
         while self.is_running:
             try:
                 bucket_info = self.stream_bucket.get_current_bucket_info()
-                
+
                 if not bucket_info:
                     print(f"⏳ Waiting for bucket to start recording...")
                     time.sleep(1)
@@ -505,7 +506,7 @@ class StreamProcessor:
                 if self.stream_bucket.is_recording_bucket:
                     time.sleep(2)
                     continue
-                
+
                 # Additional wait to ensure file is completely written
                 time.sleep(1)
 
@@ -607,22 +608,22 @@ class StreamProcessor:
         """Generate realistic metrics without complex FFmpeg analysis."""
         import random
         import time
-        
+
         # Generate realistic baseline metrics with some variation
         base_audio = 45 + random.uniform(-10, 15)  # 35-60 range
         base_motion = 25 + random.uniform(-15, 20)  # 10-45 range
         base_scene = 0.1 + random.uniform(0, 0.2)   # 0.1-0.3 range
-        
+
         # Occasionally generate spikes for highlight detection
         if random.random() < 0.05:  # 5% chance of audio spike
             base_audio += random.uniform(20, 40)
-            
+
         if random.random() < 0.08:  # 8% chance of motion spike
             base_motion += random.uniform(15, 35)
-            
+
         if random.random() < 0.03:  # 3% chance of scene change
             base_scene += random.uniform(0.2, 0.5)
-        
+
         return {
             'frames_analyzed': 60,
             'audio_level': min(100, max(0, base_audio)),
@@ -824,7 +825,7 @@ class StreamProcessor:
         """Create a highlight clip by saving the current bucket."""
         try:
             bucket_info = self.stream_bucket.get_current_bucket_info()
-            
+
             if not bucket_info:
                 print("No bucket available for clipping")
                 return
@@ -1105,7 +1106,7 @@ class StreamProcessor:
         except Exception as e:
             print(f"Error capturing clip thumbnail: {e}")
 
-    def _capture_detection_frame(self, detection_time: float, clip_segments: List[Dict], thumbnail_filename: str):
+    def _create_detection_frame(self, detection_time: float, clip_segments: List[Dict], thumbnail_filename: str):
         """Capture a frame at the exact detection moment for thumbnail."""
         try:
             # Find the segment containing the detection moment
@@ -1268,7 +1269,7 @@ class StreamProcessor:
             self.stream_bucket.is_recording_bucket = True
             ffmpeg_result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=self.clip_length + 15)
             self.stream_bucket.is_recording_bucket = False
-            
+
             # Give the file system a moment to finish writing and ensure file integrity
             import time
             time.sleep(3)  # Increased wait time for better file completion
@@ -1334,7 +1335,7 @@ class StreamProcessor:
                     print("❌ CRITICAL: Ad Gatekeeper failed to get clean URL")
                     return False
             else:
-                # Fallback to direct streamlink (legacy behavior)
+                # Fallback to direct streamlink
                 print(f"⚠️ Ad Gatekeeper not available, using direct streamlink")
                 url_cmd = [
                     'streamlink',
@@ -1481,93 +1482,110 @@ class StreamProcessor:
         except Exception as e:
             print(f"⚠️ Error notifying stream end: {e}")
 
+    def _send_metrics_update(self):
+        """Sends the latest metrics to the main server."""
+        try:
+            uptime = time.time() - self.start_time if self.start_time else 0
+            hours = int(uptime // 3600)
+            minutes = int((uptime % 3600) // 60)
+            seconds = int(uptime % 60)
+            uptime_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+            # Try to get latest analysis metrics
+            latest_metrics = {}
+            try:
+                latest_metrics = self.metrics_queue.get_nowait()
+            except Empty:
+                pass
+
+            status_data = {
+                'isProcessing': True,
+                'framesProcessed': self.frames_processed,
+                'streamUptime': uptime_str,
+                'audioLevel': latest_metrics.get('audio_level', 0),
+                'motionLevel': latest_metrics.get('motion_level', 0),
+                'sceneChange': latest_metrics.get('scene_change', 0),
+                'clipsGenerated': self.clips_generated,
+                'streamEnded': self.stream_ended,
+                'consecutiveFailures': self.consecutive_failures,
+                'lastSuccessfulCapture': self.last_successful_capture,
+                'calibrationProgress': latest_metrics.get('calibration_progress', 0),
+                'isCalibrating': latest_metrics.get('is_calibrating', False),
+                'isCalibrated': latest_metrics.get('is_calibrated', False),
+                'detectionMode': latest_metrics.get('detection_mode', 'unknown'),
+            }
+
+            # Send to main server for SSE broadcast
+            requests.post(
+                'http://0.0.0.0:5000/api/internal/metrics',
+                json=status_data,
+                timeout=2
+            )
+        except Exception as e:
+            print(f"Error sending metrics update: {e}")
+
     def _metrics_update_loop(self):
         """Send periodic metrics updates via SSE."""
         while self.is_running:
-            try:
-                # Get latest metrics
-                uptime = time.time() - self.start_time if self.start_time else 0
-                hours = int(uptime // 3600)
-                minutes = int((uptime % 3600) // 60)
-                seconds = int(uptime % 60)
-                uptime_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-
-                # Try to get latest analysis metrics
-                latest_metrics = {}
-                try:
-                    latest_metrics = self.metrics_queue.get_nowait()
-                except Empty:
-                    pass
-
-                status_data = {
-                    'isProcessing': True,
-                    'framesProcessed': self.frames_processed,
-                    'streamUptime': uptime_str,
-                    'audioLevel': latest_metrics.get('audio_level', 0),
-                    'motionLevel': latest_metrics.get('motion_level', 0),
-                    'sceneChange': latest_metrics.get('scene_change', 0),
-                    'clipsGenerated': self.clips_generated,
-                    'streamEnded': self.stream_ended,
-                    'consecutiveFailures': self.consecutive_failures,
-                    'lastSuccessfulCapture': self.last_successful_capture,
-                }
-
-                # Send to main server for SSE broadcast
-                requests.post(
-                    'http://0.0.0.0:5000/api/internal/metrics',
-                    json=status_data,
-                    timeout=2
-                )
-
-            except Exception as e:
-                print(f"Error updating metrics: {e}")
-
+            self._send_metrics_update()
             time.sleep(1)
 
-    def _extract_current_frame(self, segment_path: str):
-        """Extract a frame from the current segment for live preview."""
+    def _extract_current_frame(self, bucket_path: str):
+        """Extract current frame from bucket for live preview."""
         try:
-            # Check if the segment file exists and is not empty
-            if not os.path.exists(segment_path):
-                return
-            
-            file_size = os.path.getsize(segment_path)
-            if file_size < 10000:  # Skip very small files
+            temp_dir = os.path.join(os.getcwd(), 'temp')
+            session_id = getattr(self, 'session_id', 'default')
+
+            # Save session-specific frame
+            session_frame_path = os.path.join(temp_dir, f"session_{session_id}_frame.jpg")
+
+            # Also save a general current frame
+            current_frame_path = os.path.join(temp_dir, "current_frame.jpg")
+
+            if not os.path.exists(bucket_path):
+                print(f"⚠️ Bucket file not found for frame extraction: {bucket_path}")
                 return
 
-            frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", "current_frame.jpg")
-
-            # Use ffmpeg to extract a frame from the segment
+            # Extract frame from bucket - try middle frame for better content
             cmd = [
                 "ffmpeg", "-y",
-                "-i", segment_path,
-                "-vf", "select=eq(n\\,0)",
+                "-i", bucket_path,
+                "-ss", "1",  # Seek 1 second in for better frame
+                "-vf", "select=eq(n\\,0)",  # Select first frame after seek
                 "-q:v", "2",
                 "-frames:v", "1",
-                frame_path
+                session_frame_path
             ]
 
-            result = subprocess.run(cmd, capture_output=True, timeout=5)
-            
-            # Only log errors if not during cleanup
-            if result.returncode != 0 and self.is_running:
-                print(f"Frame extraction failed (non-critical): {result.stderr.decode()}")
-                
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+
+            if result.returncode == 0 and os.path.exists(session_frame_path):
+                # Copy to current_frame.jpg as well
+                import shutil
+                shutil.copy2(session_frame_path, current_frame_path)
+
+                file_size = os.path.getsize(session_frame_path)
+                print(f"✅ Frame extracted: {session_frame_path} ({file_size} bytes)")
+
+                # Also update metrics with successful frame capture
+                self._send_metrics_update()
+            else:
+                print(f"❌ Frame extraction failed: {result.stderr}")
+
         except Exception as e:
-            # Silent fail - frame extraction is not critical
-            pass
+            print(f"❌ Error extracting frame: {e}")
 
     def _capture_session_screenshot(self):
         """Capture a static screenshot when session starts."""
         try:
             session_id = getattr(self, 'session_id', 'default')
             frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", f"session_{session_id}_frame.jpg")
-            
+
             print(f"📸 Capturing session screenshot for session {session_id}")
 
             # Get stream URL using the same method as continuous capture
             stream_url = None
-            
+
             # Extract channel name for Ad Gatekeeper
             channel_name = None
             if 'twitch.tv/' in self.url:
@@ -1580,7 +1598,7 @@ class StreamProcessor:
             if self.ad_gatekeeper and channel_name:
                 print(f"🛡️ Using Ad Gatekeeper for session screenshot: {channel_name}")
                 stream_url = self.ad_gatekeeper.get_clean_twitch_url(channel_name, quality='best')
-                
+
                 if stream_url:
                     print(f"✅ Got clean stream URL for screenshot: {stream_url[:80]}...")
                 else:
@@ -1599,7 +1617,7 @@ class StreamProcessor:
                 ]
 
                 url_result = subprocess.run(url_cmd, capture_output=True, text=True, timeout=20)
-                
+
                 if url_result.returncode != 0:
                     print(f"❌ Streamlink failed for screenshot: {url_result.stderr}")
                     return
