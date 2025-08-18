@@ -130,10 +130,8 @@ export default function ProcessingStatus() {
               </div>
             )}
 
-
           </div>
-        </div>
-      </CardContent>
+        </CardContent>
     </Card>
   );
 }
