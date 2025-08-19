@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { useSSE } from "@/hooks/use-sse";
 import type { ProcessingStatus } from "@shared/schema";
-import ReactPlayer from "react-player";
+import LivePlayer from "./live-player";
 
 export default function ProcessingStatus() {
   const { data: status } = useQuery<ProcessingStatus>({
@@ -10,11 +10,14 @@ export default function ProcessingStatus() {
     refetchInterval: 1000,
   });
 
-  // Get resolved stream URL for active session
-  const { data: streamData } = useQuery<{ resolvedStreamUrl: string }>({
+  // Get resolved stream URL for active session (decoupled from processing)
+  const { data: streamData, error: streamError } = useQuery<{ resolvedStreamUrl: string }>({
     queryKey: ["/api/stream-url"],
-    refetchInterval: 30000, // Refresh every 30 seconds to handle token expiration
+    refetchInterval: 60000, // Refresh every 60 seconds to handle token expiration
+    refetchOnWindowFocus: true,
     enabled: !!status?.currentSession, // Only fetch when session is active
+    retry: 3,
+    retryDelay: 5000,
   });
 
   // Listen for SSE updates
@@ -54,26 +57,12 @@ export default function ProcessingStatus() {
           <div className="relative bg-slate-700 rounded-lg mb-4 min-h-[240px] overflow-hidden">
             {status?.currentSession ? (
               <div className="w-full h-full">
-                {streamData?.resolvedStreamUrl ? (
-                  <ReactPlayer
-                    url={streamData.resolvedStreamUrl}
-                    playing
-                    controls
-                    config={{ file: { forceHLS: true }}}
-                    width="100%"
-                    height="100%"
-                    onError={(error) => {
-                      console.error('Player Error:', error);
-                    }}
-                  />
-                ) : (
-                  <div className="flex items-center justify-center h-full">
-                    <div className="text-white text-center">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-2"></div>
-                      <div>Resolving stream URL...</div>
-                    </div>
-                  </div>
-                )}
+                <LivePlayer
+                  streamUrl={streamData?.resolvedStreamUrl || ""}
+                  onError={(error) => {
+                    console.error('Stream playback error:', error);
+                  }}
+                />
                 <div className="absolute bottom-2 left-2 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded">
                   Live Stream: {status.currentSession.url}
                 </div>

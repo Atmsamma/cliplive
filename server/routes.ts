@@ -491,7 +491,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get resolved stream URL for display
+  // Get resolved stream URL for display (decoupled from processing)
   app.get('/api/stream-url', async (req, res) => {
     try {
       const activeSession = await storage.getActiveSession();
@@ -499,15 +499,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: 'No active session' });
       }
 
+      console.log(`🔗 Resolving stream URL for display: ${activeSession.url}`);
+
       // Extract channel name from URL for Ad Gatekeeper
       let resolvedStreamUrl = null;
       let channel_name = null;
 
       if (activeSession.url.includes('twitch.tv/')) {
         try {
-          channel_name = activeSession.url.split('twitch.tv/')[-1].split('/')[0].split('?')[0];
-        } catch {
-          // Fall back to original URL if parsing fails
+          const urlParts = activeSession.url.split('twitch.tv/');
+          if (urlParts.length > 1) {
+            channel_name = urlParts[1].split('/')[0].split('?')[0];
+          }
+        } catch (error) {
+          console.log('Error parsing Twitch channel name:', error);
         }
       }
 
@@ -517,40 +522,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const { AdGatekeeper } = require('../backend/ad_gatekeeper');
           const adGatekeeper = new AdGatekeeper();
           resolvedStreamUrl = await adGatekeeper.get_clean_twitch_url(channel_name, 'best');
+          
+          if (resolvedStreamUrl) {
+            console.log(`✅ Ad Gatekeeper resolved URL for display: ${resolvedStreamUrl.substring(0, 80)}...`);
+            return res.json({ resolvedStreamUrl });
+          }
         } catch (error) {
-          console.log('Ad Gatekeeper not available, using streamlink fallback');
+          console.log('Ad Gatekeeper not available for display, using streamlink fallback');
         }
       }
 
       // Fallback to streamlink if Ad Gatekeeper fails
-      if (!resolvedStreamUrl) {
-        const { spawn } = require('child_process');
+      console.log('🔄 Using streamlink to resolve URL for display');
+      const { spawn } = require('child_process');
+      
+      return new Promise((resolve, reject) => {
         const streamlinkProcess = spawn('streamlink', [
           activeSession.url,
           'best',
-          '--stream-url'
-        ]);
+          '--stream-url',
+          '--retry-streams', '2',
+          '--retry-max', '3'
+        ], {
+          timeout: 30000
+        });
 
         let streamUrl = '';
+        let errorOutput = '';
+
         streamlinkProcess.stdout.on('data', (data) => {
           streamUrl += data.toString();
         });
 
+        streamlinkProcess.stderr.on('data', (data) => {
+          errorOutput += data.toString();
+        });
+
         streamlinkProcess.on('close', (code) => {
           if (code === 0 && streamUrl.trim()) {
-            resolvedStreamUrl = streamUrl.trim();
-            res.json({ resolvedStreamUrl });
+            const cleanUrl = streamUrl.trim();
+            console.log(`✅ Streamlink resolved URL for display: ${cleanUrl.substring(0, 80)}...`);
+            res.json({ resolvedStreamUrl: cleanUrl });
+            resolve(null);
           } else {
-            res.status(500).json({ error: 'Failed to resolve stream URL' });
+            console.error(`❌ Streamlink failed for display (code: ${code}): ${errorOutput}`);
+            res.status(500).json({ error: 'Failed to resolve stream URL for display' });
+            resolve(null);
           }
         });
 
-        return; // Wait for streamlink to complete
-      }
+        streamlinkProcess.on('error', (error) => {
+          console.error(`❌ Streamlink process error for display: ${error}`);
+          res.status(500).json({ error: 'Stream URL resolution process failed' });
+          resolve(null);
+        });
+      });
 
-      res.json({ resolvedStreamUrl });
     } catch (error) {
-      console.error('Error getting stream URL:', error);
+      console.error('Error getting stream URL for display:', error);
       res.status(500).json({ error: 'Failed to get stream URL' });
     }
   });
