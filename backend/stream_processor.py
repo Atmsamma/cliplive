@@ -515,9 +515,6 @@ class StreamProcessor:
                     self.last_successful_capture = time.time()
                     bucket_counter += 1
                     
-                    # Extract current frame for live preview
-                    self._extract_current_frame(bucket_path)
-                    
                     # Clean up old buckets to save space
                     self.stream_bucket.cleanup_old_buckets()
                 else:
@@ -1578,50 +1575,7 @@ class StreamProcessor:
 
             time.sleep(1)
 
-    def _extract_current_frame(self, segment_path: str):
-        """Extract a frame from the current segment for live preview."""
-        try:
-            # Use correct path for temp directory
-            temp_dir = os.path.join(os.getcwd(), 'temp')
-            os.makedirs(temp_dir, exist_ok=True)
-            frame_path = os.path.join(temp_dir, "current_frame.jpg")
-
-            print(f"🖼️ Extracting frame from: {segment_path}")
-            print(f"🖼️ Saving frame to: {frame_path}")
-
-            # Check if source segment exists and has content
-            if not os.path.exists(segment_path):
-                print(f"❌ Source segment doesn't exist: {segment_path}")
-                return
-                
-            file_size = os.path.getsize(segment_path)
-            if file_size < 10000:  # Less than 10KB
-                print(f"❌ Source segment too small: {file_size} bytes")
-                return
-
-            # Use ffmpeg to extract a frame from the segment
-            cmd = [
-                "ffmpeg", "-y",
-                "-i", segment_path,
-                "-vf", "select=eq(n\\,0)",  # Select first frame
-                "-q:v", "2",  # High quality
-                "-frames:v", "1",  # Extract exactly 1 frame
-                frame_path
-            ]
-
-            print(f"🖼️ Running FFmpeg: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-            
-            if result.returncode == 0 and os.path.exists(frame_path):
-                frame_size = os.path.getsize(frame_path)
-                print(f"✅ Frame extracted successfully: {frame_size} bytes")
-            else:
-                print(f"❌ Frame extraction failed: {result.stderr}")
-                
-        except Exception as e:
-            print(f"❌ Error extracting current frame: {e}")
-            import traceback
-            traceback.print_exc()
+    
 
     def _capture_session_screenshot(self):
         """Capture a static screenshot when session starts."""
