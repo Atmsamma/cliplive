@@ -48,7 +48,7 @@ export default function ProcessingStatus() {
             {status?.currentSession?.url ? (
               <div className="w-full h-full">
                 <ReactPlayer
-                  url={status.currentSession.url}
+                  url={status.currentSession.resolvedStreamUrl || status.currentSession.url}
                   playing={true}
                   muted={true}
                   width="100%"

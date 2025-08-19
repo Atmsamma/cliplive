@@ -1,7 +1,7 @@
 import type { Express, Response as ExpressResponse } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertStreamSessionSchema, insertClipSchema, type ProcessingStatus, type SSEEvent } from "@shared/schema";
+import { insertStreamSessionSchema, insertClipSchema, type ProcessingStatus, type SSEEvent, type StreamSession } from "@shared/schema";
 import { z } from "zod";
 import fs from "fs";
 import path from "path";
@@ -542,6 +542,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ success: true });
   });
 
+  // Endpoint to receive resolved stream URL from the processor
+  app.post("/api/internal/stream-url", (req, res) => {
+    const { resolvedStreamUrl } = req.body;
+
+    // Update the current session with the resolved stream URL
+    if (processingStatus.currentSession && resolvedStreamUrl) {
+      processingStatus.currentSession.resolvedStreamUrl = resolvedStreamUrl;
+      console.log(`📺 Stream URL resolved: ${resolvedStreamUrl.substring(0, 80)}...`);
+
+      // Broadcast an update to clients about the new stream URL
+      broadcastSSE({
+        type: 'stream-url-resolved',
+        data: {
+          sessionId: processingStatus.currentSession.id,
+          resolvedStreamUrl: resolvedStreamUrl,
+        },
+      });
+    }
+
+    res.json({ success: true });
+  });
+
+
   const httpServer = createServer(app);
   return httpServer;
+}
+
+// Dummy function for thumbnail generation if not defined elsewhere
+async function generateThumbnail(clipPath: string, thumbnailPath: string) {
+  console.log(`Generating thumbnail for ${clipPath} at ${thumbnailPath}`);
+  // In a real application, you would use a library like ffmpeg-static or similar
+  // to generate a thumbnail from the video file.
+  // For now, we'll just create a placeholder file.
+  try {
+    fs.writeFileSync(thumbnailPath, 'dummy thumbnail content');
+  } catch (error) {
+    console.error('Failed to create dummy thumbnail:', error);
+  }
 }

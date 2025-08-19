@@ -15,6 +15,7 @@ export const clips = pgTable("clips", {
 export const streamSessions = pgTable("stream_sessions", {
   id: serial("id").primaryKey(),
   url: text("url").notNull(),
+  resolvedStreamUrl: text("resolved_stream_url"),
   isActive: boolean("is_active").default(false).notNull(),
   audioThreshold: integer("audio_threshold").default(6).notNull(),
   motionThreshold: integer("motion_threshold").default(30).notNull(),
