@@ -491,6 +491,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get resolved stream URL for display
+  app.get('/api/stream-url', async (req, res) => {
+    try {
+      const activeSession = await storage.getActiveSession();
+      if (!activeSession) {
+        return res.status(404).json({ error: 'No active session' });
+      }
+
+      // Extract channel name from URL for Ad Gatekeeper
+      let resolvedStreamUrl = null;
+      let channel_name = null;
+
+      if (activeSession.url.includes('twitch.tv/')) {
+        try {
+          channel_name = activeSession.url.split('twitch.tv/')[-1].split('/')[0].split('?')[0];
+        } catch {
+          // Fall back to original URL if parsing fails
+        }
+      }
+
+      // Use Ad Gatekeeper if available and we have a channel name
+      if (channel_name) {
+        try {
+          const { AdGatekeeper } = require('../backend/ad_gatekeeper');
+          const adGatekeeper = new AdGatekeeper();
+          resolvedStreamUrl = await adGatekeeper.get_clean_twitch_url(channel_name, 'best');
+        } catch (error) {
+          console.log('Ad Gatekeeper not available, using streamlink fallback');
+        }
+      }
+
+      // Fallback to streamlink if Ad Gatekeeper fails
+      if (!resolvedStreamUrl) {
+        const { spawn } = require('child_process');
+        const streamlinkProcess = spawn('streamlink', [
+          activeSession.url,
+          'best',
+          '--stream-url'
+        ]);
+
+        let streamUrl = '';
+        streamlinkProcess.stdout.on('data', (data) => {
+          streamUrl += data.toString();
+        });
+
+        streamlinkProcess.on('close', (code) => {
+          if (code === 0 && streamUrl.trim()) {
+            resolvedStreamUrl = streamUrl.trim();
+            res.json({ resolvedStreamUrl });
+          } else {
+            res.status(500).json({ error: 'Failed to resolve stream URL' });
+          }
+        });
+
+        return; // Wait for streamlink to complete
+      }
+
+      res.json({ resolvedStreamUrl });
+    } catch (error) {
+      console.error('Error getting stream URL:', error);
+      res.status(500).json({ error: 'Failed to get stream URL' });
+    }
+  });
+
   // Internal stream ended notification endpoint
   app.post('/api/internal/stream-ended', async (req, res) => {
     const { url, endTime, totalClips, totalDuration, lastSuccessfulCapture } = req.body;

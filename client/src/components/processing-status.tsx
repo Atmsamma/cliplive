@@ -10,6 +10,13 @@ export default function ProcessingStatus() {
     refetchInterval: 1000,
   });
 
+  // Get resolved stream URL for active session
+  const { data: streamData } = useQuery<{ resolvedStreamUrl: string }>({
+    queryKey: ["/api/stream-url"],
+    refetchInterval: 30000, // Refresh every 30 seconds to handle token expiration
+    enabled: !!status?.currentSession, // Only fetch when session is active
+  });
+
   // Listen for SSE updates
   useSSE("/api/events");
 
@@ -47,19 +54,28 @@ export default function ProcessingStatus() {
           <div className="relative bg-slate-700 rounded-lg mb-4 min-h-[240px] overflow-hidden">
             {status?.currentSession ? (
               <div className="w-full h-full">
-                <ReactPlayer
-                  url="https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
-                  playing
-                  controls
-                  config={{ file: { forceHLS: true }}}
-                  width="100%"
-                  height="100%"
-                  onError={(error) => {
-                    console.error('Player Error:', error);
-                  }}
-                />
+                {streamData?.resolvedStreamUrl ? (
+                  <ReactPlayer
+                    url={streamData.resolvedStreamUrl}
+                    playing
+                    controls
+                    config={{ file: { forceHLS: true }}}
+                    width="100%"
+                    height="100%"
+                    onError={(error) => {
+                      console.error('Player Error:', error);
+                    }}
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="text-white text-center">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-2"></div>
+                      <div>Resolving stream URL...</div>
+                    </div>
+                  </div>
+                )}
                 <div className="absolute bottom-2 left-2 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded">
-                  Demo Stream (Processing: {status.currentSession.url})
+                  Live Stream: {status.currentSession.url}
                 </div>
               </div>
             ) : (
