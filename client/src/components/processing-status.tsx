@@ -111,14 +111,7 @@ export default function ProcessingStatus() {
             )}
           </div>
 
-          {/* Status Details (if session is active) */}
-          {status?.currentSession && (
-            <div className="mt-4 text-center">
-              <div className="text-xs text-slate-400">
-                Stream Source: {status.currentSession.url}
-              </div>
-            </div>
-          )}
+          
 
         </div>
       </CardContent>
