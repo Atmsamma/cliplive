@@ -521,18 +521,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Use Ad Gatekeeper if available and we have a channel name
       if (channel_name) {
         try {
-          const { AdGatekeeper } = require('../backend/ad_gatekeeper');
-          const adGatekeeper = new AdGatekeeper();
-          console.log('🛡️ Using Ad Gatekeeper to resolve stream URL...');
-          
-          resolvedStreamUrl = await adGatekeeper.get_clean_twitch_url(channel_name, 'best');
-          
-          if (resolvedStreamUrl) {
-            console.log(`✅ Ad Gatekeeper resolved URL for display: ${resolvedStreamUrl.substring(0, 80)}...`);
-            return res.json({ resolvedStreamUrl });
-          } else {
-            console.log('⚠️ Ad Gatekeeper returned null URL');
-          }
+          // For now, skip Ad Gatekeeper in TypeScript context and go directly to streamlink
+          console.log('⚠️ Skipping Ad Gatekeeper (Python module), using streamlink directly');
         } catch (error) {
           console.log('⚠️ Ad Gatekeeper error for display, using streamlink fallback:', error.message);
         }
@@ -540,7 +530,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Fallback to streamlink if Ad Gatekeeper fails
       console.log('🔄 Using streamlink to resolve URL for display');
-      const { spawn } = require('child_process');
       
       return new Promise((resolve, reject) => {
         const streamlinkProcess = spawn('streamlink', [
