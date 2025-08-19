@@ -40,7 +40,7 @@ export default function PlatformIframePlayer({ streamUrl, className = "" }: Plat
     switch (platform) {
       case 'twitch':
         return (
-          <div className={`w-full h-full ${className}`}>
+          <>
             <div id={`twitch-embed-${channelOrVideo}`} className="w-full h-full"></div>
             <script 
               src="https://player.twitch.tv/js/embed/v1.js"
@@ -57,64 +57,58 @@ export default function PlatformIframePlayer({ streamUrl, className = "" }: Plat
                 }
               }}
             />
-          </div>
+          </>
         );
 
       case 'youtube':
         return (
-          <div className={`w-full h-full ${className}`}>
-            <iframe 
-              width="100%" 
-              height="100%" 
-              src={`https://www.youtube.com/embed/${channelOrVideo}`}
-              title="YouTube video player" 
-              frameBorder="0" 
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-              referrerPolicy="strict-origin-when-cross-origin" 
-              allowFullScreen
-              className="w-full h-full"
-            />
-          </div>
+          <iframe 
+            width="100%" 
+            height="100%" 
+            src={`https://www.youtube.com/embed/${channelOrVideo}`}
+            title="YouTube video player" 
+            frameBorder="0" 
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+            referrerPolicy="strict-origin-when-cross-origin" 
+            allowFullScreen
+            className="w-full h-full rounded-lg"
+          />
         );
 
       case 'kick':
         return (
-          <div className={`w-full h-full ${className}`}>
-            <iframe 
-              src={`https://player.kick.com/${channelOrVideo}`}
-              width="100%" 
-              height="100%" 
-              frameBorder="0" 
-              scrolling="no" 
-              allowFullScreen
-              className="w-full h-full"
-            />
-          </div>
+          <iframe 
+            src={`https://player.kick.com/${channelOrVideo}`}
+            width="100%" 
+            height="100%" 
+            frameBorder="0" 
+            scrolling="no" 
+            allowFullScreen
+            className="w-full h-full rounded-lg"
+          />
         );
 
       default:
         return (
-          <div className={`w-full h-full ${className}`}>
-            <iframe 
-              src={streamUrl}
-              width="100%" 
-              height="100%" 
-              frameBorder="0" 
-              allowFullScreen
-              className="w-full h-full"
-              title="Generic stream player"
-            />
-          </div>
+          <iframe 
+            src={streamUrl}
+            width="100%" 
+            height="100%" 
+            frameBorder="0" 
+            allowFullScreen
+            className="w-full h-full rounded-lg"
+            title="Generic stream player"
+          />
         );
     }
   };
 
   return (
-    <div className="w-full h-full grid grid-cols-1 gap-5">
-      <div className="w-full aspect-video">
+    <div className="w-full h-full flex flex-col">
+      <div className="flex-1 w-full">
         {renderPlayer()}
       </div>
-      <div className="text-center text-sm text-slate-400">
+      <div className="text-center text-xs text-slate-400 mt-2 py-1">
         Platform: {platform.charAt(0).toUpperCase() + platform.slice(1)}
         {channelOrVideo && ` • ${channelOrVideo}`}
       </div>
