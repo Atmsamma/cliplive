@@ -1,0 +1,118 @@
+<!-- Unified Player: One 16:9 frame that switches between YouTube, Twitch, Kick
+     Notes:
+     - Twitch requires ?parent=...; this is fixed to www.example.com as requested.
+     - YouTube embed URL does NOT use the "si=" session parameter. We only pass the video ID.
+     - Autoplay may be blocked with sound; enabling autoplay here sets mute for YouTube to improve success.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Unified Player</title>
+  <style>
+    :root { --gap: 12px; --radius: 12px; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#0b0b0c; color:#e9eaed; }
+    .wrap { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
+    .controls { display:flex; flex-wrap:wrap; gap: var(--gap); align-items:center; margin-bottom: var(--gap); }
+    .controls input, .controls select, .controls button { padding: 8px 10px; border-radius: 8px; border: 1px solid #2a2d35; background:#121317; color:#e9eaed; }
+    .frame { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: var(--radius); overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+    .frame iframe { position:absolute; inset:0; width:100%; height:100%; border:0; }
+    .badge { font-size: 12px; opacity:.7; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1 style="font-size:22px; margin:0 0 12px;">Unified Player (YouTube · Twitch · Kick)</h1>
+    <div class="badge">Twitch parent fixed to <code>www.example.com</code>. YouTube URL uses only the video ID (no <code>si=</code>).</div>
+
+    <!-- Config: set your channels / video IDs here -->
+    <script>
+      const CONFIG = {
+        youtubeId: "r_ZH3UoxJn8",   // YouTube video ID only
+        twitchChannel: "xqc",        // Twitch channel
+        kickChannel: "kick_clipz",   // Kick channel
+        twitchParent: "www.example.com" // FIXED as requested
+      };
+    </script>
+
+    <div class="controls">
+      <label for="platform">Platform:</label>
+      <select id="platform">
+        <option value="youtube">YouTube</option>
+        <option value="twitch">Twitch</option>
+        <option value="kick">Kick</option>
+      </select>
+
+      <label for="autoplay">Autoplay</label>
+      <input id="autoplay" type="checkbox" />
+
+      <!-- Quick ID edits (optional) -->
+      <input id="youtubeId"   placeholder="YouTube ID"   value="r_ZH3UoxJn8" />
+      <input id="twitchChan"  placeholder="Twitch channel" value="xqc" />
+      <input id="kickChan"    placeholder="Kick channel"   value="kick_clipz" />
+      <button id="apply">Apply</button>
+    </div>
+
+    <div class="frame">
+      <iframe id="player"
+              title="Unified Player"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowfullscreen
+              referrerpolicy="strict-origin-when-cross-origin">
+      </iframe>
+    </div>
+  </div>
+
+  <script>
+    const platformSel = document.getElementById("platform");
+    const autoplayChk = document.getElementById("autoplay");
+    const player      = document.getElementById("player");
+
+    const ytInput  = document.getElementById("youtubeId");
+    const twInput  = document.getElementById("twitchChan");
+    const kkInput  = document.getElementById("kickChan");
+    const applyBtn = document.getElementById("apply");
+
+    function ytUrl(id, autoplay) {
+      // Clean, safe YouTube embed: no si=; we add modest params
+      const ap = autoplay ? 1 : 0;
+      const mute = autoplay ? 1 : 0; // improve autoplay success by starting muted
+      return `https://www.youtube.com/embed/${encodeURIComponent(id)}?autoplay=${ap}&mute=${mute}&playsinline=1&rel=0&modestbranding=1`; 
+    }
+
+    function twitchUrl(channel, parent, autoplay) {
+      const ap = autoplay ? "true" : "false";
+      return `https://player.twitch.tv/?channel=${encodeURIComponent(channel)}&parent=${encodeURIComponent(parent)}&autoplay=${ap}`;
+    }
+
+    function kickUrl(channel) {
+      return `https://player.kick.com/${encodeURIComponent(channel)}`;
+    }
+
+    function render() {
+      const plat = platformSel.value;
+      if (plat === "youtube") {
+        player.src = ytUrl(CONFIG.youtubeId, autoplayChk.checked);
+      } else if (plat === "twitch") {
+        player.src = twitchUrl(CONFIG.twitchChannel, CONFIG.twitchParent, autoplayChk.checked);
+      } else if (plat === "kick") {
+        player.src = kickUrl(CONFIG.kickChannel);
+      }
+    }
+
+    applyBtn.addEventListener("click", () => {
+      CONFIG.youtubeId     = ytInput.value.trim()   || CONFIG.youtubeId;
+      CONFIG.twitchChannel = twInput.value.trim()   || CONFIG.twitchChannel;
+      CONFIG.kickChannel   = kkInput.value.trim()   || CONFIG.kickChannel;
+      render();
+    });
+
+    platformSel.addEventListener("change", render);
+    autoplayChk.addEventListener("change", render);
+
+    // Initial render
+    render();
+  </script>
+</body>
+</html>
