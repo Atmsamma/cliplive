@@ -91,14 +91,7 @@ export default function ProcessingStatus() {
               </div>
             )}
 
-            {/* Activity indicator overlay */}
-            {status?.currentSession && (
-              <div className={`absolute top-3 right-3 w-4 h-4 rounded-full ${
-                animationState === 'high' ? 'bg-red-500 animate-ping' :
-                animationState === 'medium' ? 'bg-red-400 animate-pulse' :
-                animationState === 'low' ? 'bg-red-300 animate-pulse' : 'bg-slate-500'
-              }`} />
-            )}
+            
 
             {/* Recording indicator dot - red camera dot */}
             {status?.currentSession && (
