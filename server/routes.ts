@@ -515,30 +515,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ success: true });
   });
 
-  // Proxy route for stream resolution
-  app.post('/api/resolve', async (req, res) => {
-    try {
-      const response = await fetch('http://localhost:8000/api/resolve', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(req.body),
-      });
-
-      const data = await response.json();
-      
-      if (!response.ok) {
-        return res.status(response.status).json(data);
-      }
-
-      res.json(data);
-    } catch (error) {
-      console.error('Stream resolution error:', error);
-      res.status(500).json({ error: 'Failed to resolve stream' });
-    }
-  });
-
   const httpServer = createServer(app);
   return httpServer;
 }

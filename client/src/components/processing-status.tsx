@@ -3,7 +3,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TrendingUp } from "lucide-react";
 import { useSSE } from "@/hooks/use-sse";
 import type { ProcessingStatus } from "@shared/schema";
-import WatchPanel from "./WatchPanel";
 
 export default function ProcessingStatus() {
   const { data: status } = useQuery<ProcessingStatus>({
@@ -70,20 +69,43 @@ export default function ProcessingStatus() {
             )}
           </div>
 
-          {/* Watch Panel - Live Stream Display */}
+          {/* Stream Status Display */}
           <div className="relative flex-1 bg-slate-700 rounded-lg overflow-hidden border border-slate-600 min-h-48">
-            <WatchPanel sourceUrl={status?.currentSession?.url} />
-          </div>
-
-          {/* Recording indicator dot - red camera dot */}
-          {status?.currentSession && (
-            <div className="absolute top-3 left-3 flex items-center space-x-1">
-              <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
-              <div className="text-xs text-white bg-black bg-opacity-60 px-1 py-0.5 rounded">
-                watching
+            <div className="w-full h-full flex items-center justify-center">
+              <div className="text-center">
+                {status?.currentSession ? (
+                  <>
+                    <div className="text-4xl mb-2">📺</div>
+                    <div className="text-lg">Stream Active</div>
+                    <div className="text-sm text-slate-400 mt-2">
+                      Monitoring: {status.currentSession.url}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      Frames processed: {status.framesProcessed}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-4xl mb-2">⏸️</div>
+                    <div className="text-lg">No Stream</div>
+                    <div className="text-sm text-slate-500 mt-2">Enter a URL and click Start Clipping</div>
+                  </>
+                )}
               </div>
             </div>
-          )}
+
+            {/* Recording indicator dot - red camera dot */}
+            {status?.currentSession && (
+              <div className="absolute top-3 left-3 flex items-center space-x-1">
+                <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+                <div className="text-xs text-white bg-black bg-opacity-60 px-1 py-0.5 rounded">
+                  watching
+                </div>
+              </div>
+            )}
+
+
+          </div>
         </div>
       </CardContent>
     </Card>
