@@ -1245,7 +1245,6 @@ class StreamProcessor:
 
                 if stream_url:
                     print(f"✅ Got clean stream URL for bucket: {stream_url[:80]}...")
-                    self.send_stream_url_to_backend(stream_url) # Send resolved URL to backend
                 else:
                     print("❌ CRITICAL: Ad Gatekeeper failed to get clean URL for bucket")
                     return False
@@ -1287,7 +1286,6 @@ class StreamProcessor:
                     return False
 
                 print(f"✅ Got stream URL for bucket: {stream_url[:80]}...")
-                self.send_stream_url_to_backend(stream_url) # Send resolved URL to backend
 
             # Use FFmpeg to capture continuous video bucket for full clip duration
             ffmpeg_cmd = [
@@ -1370,7 +1368,6 @@ class StreamProcessor:
 
                 if stream_url:
                     print(f"✅ Got clean stream URL via Ad Gatekeeper: {stream_url[:80]}...")
-                    self.send_stream_url_to_backend(stream_url) # Send resolved URL to backend
                 else:
                     print("❌ CRITICAL: Ad Gatekeeper failed to get clean URL")
                     return False
@@ -1413,7 +1410,6 @@ class StreamProcessor:
                     return False
 
                 print(f"✅ Got stream URL: {stream_url[:80]}...")
-                self.send_stream_url_to_backend(stream_url) # Send resolved URL to backend
 
             # Use FFmpeg to capture a 2-second segment directly from HLS
             ffmpeg_cmd = [
@@ -1583,16 +1579,7 @@ class StreamProcessor:
         except Exception as e:
             print(f"Error sending metrics: {e}")
 
-    def send_stream_url_to_backend(self, stream_url):
-        """Send resolved stream URL to the backend for display"""
-        try:
-            response = requests.post('http://0.0.0.0:5000/api/internal/stream-url', json={'resolvedStreamUrl': stream_url}, timeout=5)
-            if response.status_code == 200:
-                print(f"✅ Stream URL sent to backend successfully")
-            else:
-                print(f"❌ Failed to send stream URL: {response.status_code}")
-        except Exception as e:
-            print(f"❌ Error sending stream URL to backend: {e}")
+    
 
 
 def main():

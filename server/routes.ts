@@ -542,33 +542,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ success: true });
   });
 
-  // Endpoint to receive resolved stream URL from the processor
-  app.post("/api/internal/stream-url", (req, res) => {
-    const { resolvedStreamUrl } = req.body;
-
-    // Update the current session with the resolved stream URL
-    if (processingStatus.currentSession && resolvedStreamUrl) {
-      processingStatus.currentSession.resolvedStreamUrl = resolvedStreamUrl;
-      console.log(`📺 Stream URL resolved: ${resolvedStreamUrl.substring(0, 80)}...`);
-
-      // Broadcast an update to clients about the new stream URL
-      broadcastSSE({
-        type: 'stream-url-resolved',
-        data: {
-          sessionId: processingStatus.currentSession.id,
-          resolvedStreamUrl: resolvedStreamUrl,
-        },
-      });
-
-      // Also broadcast updated processing status so the frontend gets the new URL
-      broadcastSSE({
-        type: 'processing-status',
-        data: processingStatus,
-      });
-    }
-
-    res.json({ success: true });
-  });
+  
 
 
   const httpServer = createServer(app);

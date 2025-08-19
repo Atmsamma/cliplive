@@ -45,10 +45,10 @@ export default function ProcessingStatus() {
 
           {/* Stream Player / Preview */}
           <div className="relative bg-slate-700 rounded-lg mb-4 min-h-[240px] overflow-hidden">
-            {status?.currentSession?.resolvedStreamUrl ? (
+            {status?.currentSession ? (
               <div className="w-full h-full">
                 <ReactPlayer
-                  url={status.currentSession.resolvedStreamUrl}
+                  url="https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
                   playing
                   controls
                   config={{ file: { forceHLS: true }}}
@@ -58,12 +58,8 @@ export default function ProcessingStatus() {
                     console.error('Player Error:', error);
                   }}
                 />
-              </div>
-            ) : status?.currentSession?.url ? (
-              <div className="p-8 flex items-center justify-center h-[240px]">
-                <div className="text-center">
-                  <div className="text-4xl mb-2">🔄</div>
-                  <div className="text-sm text-slate-400">Resolving stream URL...</div>
+                <div className="absolute bottom-2 left-2 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded">
+                  Demo Stream (Processing: {status.currentSession.url})
                 </div>
               </div>
             ) : (
