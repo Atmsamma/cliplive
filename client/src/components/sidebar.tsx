@@ -14,12 +14,12 @@ export default function Sidebar() {
   const navItems = [
     {
       name: "Stream Capture",
-      path: "/",
+      path: "/app",
       icon: Video,
     },
     {
       name: "Clip Library",
-      path: "/clips", 
+      path: "/app/clips",
       icon: Library,
     },
   ];
@@ -50,8 +50,8 @@ export default function Sidebar() {
               <div
                 className={cn(
                   "flex items-center space-x-3 px-3 py-2 rounded-lg cursor-pointer transition-colors",
-                  isActive 
-                    ? "bg-blue-600 text-white" 
+                  isActive
+                    ? "bg-blue-600 text-white"
                     : "text-slate-300 hover:bg-slate-700 hover:text-white"
                 )}
               >
