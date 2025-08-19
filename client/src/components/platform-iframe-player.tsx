@@ -171,8 +171,13 @@ export default function PlatformIframePlayer({ streamUrl, className = "" }: Plat
 
   return (
     <div className="w-full h-full flex flex-col">
-      <div className="flex-1 w-full">
+      <div className="flex-1 w-full relative">
         {renderPlayer()}
+        {/* Watching overlay with red REC dot */}
+        <div className="absolute top-2 left-2 bg-black/70 px-2 py-1 rounded-md flex items-center space-x-1 z-10">
+          <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+          <span className="text-white text-xs font-medium">watching</span>
+        </div>
       </div>
       <div className="text-center text-xs text-slate-400 mt-2 py-1 relative overflow-hidden">
         <div className="relative">
