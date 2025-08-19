@@ -128,7 +128,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     console.error('Error cleaning clip directory:', error);
   }
 
-  // SSE endpoint
+  // Server-Sent Events endpoint
   app.get('/api/events', (req, res) => {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -423,281 +423,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Download all clips as ZIP
-  app.get("/api/download-all", async (req, res) => {
+  app.get('/api/download-all', async (req, res) => {
     try {
       const clips = await storage.getClips();
-
       if (clips.length === 0) {
-        return res.status(404).json({ error: "No clips found" });
+        return res.status(400).json({ error: 'No clips to download' });
       }
 
-      const archive = archiver('zip', { zlib: { level: 9 } });
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-
-      res.attachment(`clips-${timestamp}.zip`);
-      archive.pipe(res);
-
-      let filesAdded = 0;
-      for (const clip of clips) {
-        const filePath = path.join(process.cwd(), 'clips', clip.filename);
-        if (fs.existsSync(filePath)) {
-          archive.file(filePath, { name: clip.filename });
-          filesAdded++;
-        }
-      }
-
-      if (filesAdded === 0) {
-        return res.status(404).json({ error: "No clip files found on disk" });
-      }
-
-      await archive.finalize();
+      // For now, just return the list of clips
+      // In a real implementation, you'd create a ZIP file
+      res.json({
+        message: 'ZIP download would be implemented here',
+        clips: clips.length,
+      });
     } catch (error) {
-      console.error('Download all error:', error);
-      res.status(500).json({ error: "Failed to create archive" });
-    }
-  });
-
-  // Stream embed endpoint - provides embedded video player
-  app.get("/api/stream-embed", async (req, res) => {
-    try {
-      let streamUrl = req.query.url as string;
-
-      if (!streamUrl) {
-        return res.status(400).send("Stream URL required");
-      }
-
-      // Try to get the resolved stream URL from the processor status
-      let resolvedUrl = streamUrl;
-      try {
-        // Check if we have a resolved URL in processingStatus
-        if (processingStatus.resolvedStreamUrl) {
-          resolvedUrl = processingStatus.resolvedStreamUrl;
-          console.log('Using resolved stream URL for embed:', resolvedUrl.substring(0, 80) + '...');
-        } else {
-          console.log('No resolved URL available, using original:', streamUrl);
-        }
-      } catch (e) {
-        console.log('Could not get resolved URL, using original URL');
-      }
-
-      // Generate HTML for embedded stream player with better error handling
-      const embedHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Live Stream</title>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            background: #0f172a;
-            font-family: system-ui, -apple-system, sans-serif;
-            overflow: hidden;
-        }
-
-        #video-container {
-            width: 100vw;
-            height: 100vh;
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        video {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-            background: #000;
-        }
-
-        .loading {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: #64748b;
-            font-size: 14px;
-            text-align: center;
-        }
-
-        .error {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: #ef4444;
-            font-size: 14px;
-            text-align: center;
-        }
-
-        .spinner {
-            border: 2px solid #64748b;
-            border-top: 2px solid #3b82f6;
-            border-radius: 50%;
-            width: 20px;
-            height: 20px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 10px;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-    </style>
-</head>
-<body>
-    <div id="video-container">
-        <div class="loading" id="loading">
-            <div class="spinner"></div>
-            Loading stream...
-        </div>
-        <video id="stream-video" controls autoplay muted playsinline style="display: none;">
-            <source src="${resolvedUrl}" type="application/x-mpegURL">
-            <source src="${resolvedUrl}" type="video/mp4">
-            Your browser does not support the video tag.
-        </video>
-        <div class="error" id="error" style="display: none;">
-            Failed to load stream<br>
-            <small>Stream may be offline or URL invalid</small><br>
-            <button onclick="retryStream()" style="margin-top: 10px; padding: 5px 10px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer;">Retry</button>
-        </div>
-    </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-    <script>
-        const video = document.getElementById('stream-video');
-        const loading = document.getElementById('loading');
-        const error = document.getElementById('error');
-        const streamUrl = '${resolvedUrl}';
-        let hls = null;
-
-        function showError() {
-            loading.style.display = 'none';
-            video.style.display = 'none';
-            error.style.display = 'block';
-            console.log('Stream failed to load:', streamUrl.substring(0, 80));
-        }
-
-        function showVideo() {
-            loading.style.display = 'none';
-            error.style.display = 'none';
-            video.style.display = 'block';
-        }
-
-        function retryStream() {
-            error.style.display = 'none';
-            loading.style.display = 'block';
-            initializeStream();
-        }
-
-        function initializeStream() {
-            console.log('Initializing stream:', streamUrl.substring(0, 80));
-            
-            // Clean up existing HLS instance
-            if (hls) {
-                hls.destroy();
-                hls = null;
-            }
-
-            // Check if it's an HLS stream
-            if (streamUrl.includes('.m3u8') || streamUrl.includes('playlist')) {
-                if (Hls.isSupported()) {
-                    console.log('Using HLS.js for stream playback');
-                    hls = new Hls({
-                        enableWorker: false,
-                        lowLatencyMode: true,
-                        backBufferLength: 30,
-                        maxLoadingDelay: 4,
-                        startFragPrefetch: true,
-                        fragLoadingTimeOut: 20000,
-                        manifestLoadingTimeOut: 10000
-                    });
-
-                    hls.loadSource(streamUrl);
-                    hls.attachMedia(video);
-
-                    hls.on(Hls.Events.MANIFEST_PARSED, function() {
-                        console.log('HLS manifest parsed successfully');
-                        showVideo();
-                        video.play().catch(e => {
-                            console.log('Autoplay prevented:', e);
-                            showVideo(); // Still show controls even if autoplay fails
-                        });
-                    });
-
-                    hls.on(Hls.Events.ERROR, function (event, data) {
-                        console.error('HLS Error:', data.type, data.details);
-                        if (data.fatal) {
-                            console.error('Fatal HLS error, showing error message');
-                            showError();
-                        } else {
-                            console.warn('Non-fatal HLS error, attempting to recover');
-                            // Try to recover from non-fatal errors
-                            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-                                hls.startLoad();
-                            } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-                                hls.recoverMediaError();
-                            }
-                        }
-                    });
-
-                    hls.on(Hls.Events.FRAG_LOADED, function() {
-                        console.log('Fragment loaded successfully');
-                    });
-
-                } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                    console.log('Using native HLS support');
-                    video.src = streamUrl;
-                    video.addEventListener('loadeddata', showVideo);
-                    video.addEventListener('error', showError);
-                    video.load();
-                } else {
-                    console.error('HLS not supported in this browser');
-                    showError();
-                }
-            } else {
-                console.log('Using native video element for non-HLS stream');
-                video.src = streamUrl;
-                video.addEventListener('loadeddata', showVideo);
-                video.addEventListener('error', showError);
-                video.load();
-            }
-        }
-
-        // Initialize stream on page load
-        initializeStream();
-
-        // Handle video events
-        video.addEventListener('waiting', () => {
-            console.log('Video buffering...');
-        });
-
-        video.addEventListener('playing', () => {
-            console.log('Video playing successfully');
-        });
-
-        video.addEventListener('loadstart', () => {
-            console.log('Video load started');
-        });
-
-        video.addEventListener('canplay', () => {
-            console.log('Video can start playing');
-        });
-    </script>
-</body>
-</html>`;
-
-      res.setHeader('Content-Type', 'text/html');
-      res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-      res.send(embedHtml);
-
-    } catch (error) {
-      console.error('Stream embed error:', error);
-      res.status(500).send("Failed to generate stream embed");
+      res.status(500).json({ error: 'Failed to create download' });
     }
   });
 
@@ -737,11 +477,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Update global processing status
       processingStatus = { ...processingStatus, ...metricsData };
-      
-      // Store resolved stream URL if provided
-      if (metricsData.resolvedStreamUrl) {
-        processingStatus.resolvedStreamUrl = metricsData.resolvedStreamUrl;
-      }
 
       // Broadcast updated metrics via SSE
       broadcastSSE({

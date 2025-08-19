@@ -1,0 +1,243 @@
+Show Live Stream in React Using Streamlink (Python → React)
+Summary
+
+Backend (Python/FastAPI): Take an input like https://twitch.tv/<channel>, use Streamlink to resolve it to a direct HLS URL (.m3u8), return JSON.
+
+Frontend (React): Call that API, get the .m3u8 URL, and play it inside the Watch panel using hls.js + <video>.
+
+Backend (Python / FastAPI)
+1) Install
+pip install fastapi uvicorn streamlink
+
+2) backend/main.py
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import subprocess, json, shlex
+
+app = FastAPI()
+
+# Allow the React dev server (adjust if needed)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+class ResolveReq(BaseModel):
+    source_url: str  # e.g., "https://twitch.tv/somechannel"
+
+@app.post("/api/resolve")
+def resolve_stream(req: ResolveReq):
+    """
+    Use streamlink to get a playable URL (HLS .m3u8).
+    We use --json so we can parse it safely.
+    """
+    # NOTE: Use "best" quality. Change if needed.
+    cmd = f"streamlink --json {shlex.quote(req.source_url)} best"
+
+    try:
+        proc = subprocess.run(
+            cmd, shell=True, capture_output=True, text=True, timeout=15
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="Stream resolve timed out")
+
+    if proc.returncode != 0:
+        # Stream offline or URL invalid
+        msg = proc.stderr.strip() or "Failed to resolve stream"
+        raise HTTPException(status_code=400, detail=msg)
+
+    try:
+        data = json.loads(proc.stdout)
+        # Streamlink returns a dict of streams; "url" holds the playable URL
+        stream_url = data["streams"]["best"]["url"]
+    except Exception:
+        raise HTTPException(status_code=500, detail="Bad response from Streamlink")
+
+    return {"playback_url": stream_url}
+
+3) Run backend
+uvicorn main:app --reload --port 8000
+
+Frontend (React)
+1) Install
+npm install hls.js
+
+2) Create a service to call the backend
+
+src/api/streams.ts
+
+export async function resolveStream(sourceUrl: string): Promise<string> {
+  const res = await fetch("http://localhost:8000/api/resolve", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source_url: sourceUrl }),
+  });
+
+  if (!res.ok) {
+    const msg = await res.text();
+    throw new Error(msg || "Failed to resolve stream");
+  }
+
+  const data = await res.json();
+  return data.playback_url; // the .m3u8 URL
+}
+
+3) Make a React hook to load/play HLS
+
+src/hooks/useHlsPlayer.ts
+
+import { useEffect, useRef, useState } from "react";
+import Hls from "hls.js";
+
+export function useHlsPlayer(hlsUrl?: string) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setError(null);
+    if (!hlsUrl || !videoRef.current) return;
+
+    // Safari can play HLS natively
+    const video = videoRef.current;
+    if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = hlsUrl;
+      video.play().catch(() => {});
+      return;
+    }
+
+    // Other browsers: use hls.js
+    if (Hls.isSupported()) {
+      const hls = new Hls({
+        liveSyncDuration: 1,
+        maxLiveSyncPlaybackRate: 1.5,
+      });
+      hls.loadSource(hlsUrl);
+      hls.attachMedia(video);
+
+      hls.on(Hls.Events.ERROR, (_, data) => {
+        if (data?.fatal) setError("Playback error. Please Retry.");
+      });
+
+      video.play().catch(() => {});
+
+      return () => {
+        hls.destroy();
+      };
+    } else {
+      setError("HLS not supported in this browser.");
+    }
+  }, [hlsUrl]);
+
+  return { videoRef, error };
+}
+
+4) Build the Watch component (the panel in your UI)
+
+src/components/WatchPanel.tsx
+
+import React, { useEffect, useState } from "react";
+import { resolveStream } from "../api/streams";
+import { useHlsPlayer } from "../hooks/useHlsPlayer";
+
+type Props = {
+  sourceUrl: string; // e.g. "https://twitch.tv/somechannel"
+};
+
+export default function WatchPanel({ sourceUrl }: Props) {
+  const [hlsUrl, setHlsUrl] = useState<string | undefined>(undefined);
+  const [status, setStatus] = useState<"idle"|"resolving"|"ready"|"error">("idle");
+  const [message, setMessage] = useState<string>("Ready to Clip Live");
+
+  const { videoRef, error } = useHlsPlayer(hlsUrl);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function go() {
+      setStatus("resolving");
+      setMessage("Fetching stream…");
+      try {
+        const playback = await resolveStream(sourceUrl);
+        if (!cancelled) {
+          setHlsUrl(playback);
+          setStatus("ready");
+          setMessage("Watching");
+        }
+      } catch (e: any) {
+        if (!cancelled) {
+          setStatus("error");
+          setMessage("Failed to load stream");
+        }
+      }
+    }
+
+    go();
+    return () => { cancelled = true; };
+  }, [sourceUrl]);
+
+  return (
+    <div className="w-full h-full rounded-xl border border-slate-700 bg-slate-900 p-4 flex flex-col">
+      <div className="text-rose-400 text-xl font-semibold mb-2">
+        {message}
+      </div>
+
+      {status === "error" || error ? (
+        <div className="text-red-400">
+          Stream may be offline or URL invalid.
+          <button
+            className="mt-3 px-3 py-1 rounded bg-slate-700 hover:bg-slate-600"
+            onClick={() => setHlsUrl(undefined) || setMessage("Retrying…") || setStatus("resolving")}
+          >
+            Retry
+          </button>
+        </div>
+      ) : null}
+
+      {/* The actual video area */}
+      <div className="mt-2 flex-1">
+        <video
+          ref={videoRef}
+          className="w-full h-full bg-black rounded-lg"
+          controls
+          autoPlay
+          muted
+          playsInline
+        />
+      </div>
+    </div>
+  );
+}
+
+5) Use it in your page
+// Example usage somewhere in your React app:
+<WatchPanel sourceUrl="https://twitch.tv/somechannel" />
+
+Notes & Pitfalls (read carefully)
+
+No popup windows. The <video> renders inside the Watch panel.
+
+CORS: Backend enables CORS for localhost:3000/5173. Adjust if your host differs.
+
+Twitch/YouTube auth: If a platform needs cookies/tokens, Streamlink may require extra args. Add them in the backend if needed.
+
+Offline streams: Show the red “Failed to load stream” message (already handled). Keep the Retry button.
+
+Latency: hls.js is not ultra low-latency; it’s fine for most use cases. WebRTC would be needed for sub-second latency.
+
+Testing: Try a known public HLS URL to confirm the player works, e.g. any .m3u8 test stream.
+
+Acceptance Criteria (Done when)
+
+Posting to POST /api/resolve with {"source_url":"<platform url>"} returns {"playback_url":"https://...m3u8"}.
+
+The React Watch panel shows the stream inside the panel (no separate window).
+
+If the stream is offline/invalid, the UI shows “Failed to load stream” and a Retry button.
+
+Works in Chrome and Safari (Safari should play HLS natively).
+
+Code is split into: streams.ts, useHlsPlayer.ts, and WatchPanel.tsx.

@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Monitor, Zap, Volume2, Activity, Clock, Tv } from "lucide-react";
+import { TrendingUp } from "lucide-react";
+import { useSSE } from "@/hooks/use-sse";
 import type { ProcessingStatus } from "@shared/schema";
-import { useEffect, useState } from "react";
 
 export default function ProcessingStatus() {
   const { data: status } = useQuery<ProcessingStatus>({
@@ -10,19 +10,8 @@ export default function ProcessingStatus() {
     refetchInterval: 1000,
   });
 
-  const [streamUrl, setStreamUrl] = useState<string | null>(null);
-
-  // Update stream URL when status changes and isProcessing is true
-  useEffect(() => {
-    if (status?.currentSession && status.isProcessing) {
-      // Use resolved stream URL if available, otherwise fall back to original URL
-      const urlToUse = (status as any).resolvedStreamUrl || status.currentSession.url;
-      setStreamUrl(urlToUse);
-      console.log('Stream URL updated:', urlToUse);
-    } else {
-      setStreamUrl(null); // Reset if not processing or no current session
-    }
-  }, [status?.currentSession, status?.isProcessing, (status as any)?.resolvedStreamUrl]);
+  // Listen for SSE updates
+  useSSE("/api/events");
 
   // Determine animation state based on stream data
   const getAnimationState = () => {
@@ -82,49 +71,40 @@ export default function ProcessingStatus() {
 
           {/* Stream Status Display */}
           <div className="relative flex-1 bg-slate-700 rounded-lg overflow-hidden border border-slate-600 min-h-48">
-            {status?.currentSession && streamUrl ? (
-              /* Embedded Stream Player */
-              <div className="w-full h-full">
-                <iframe
-                  src={`/api/stream-embed?url=${encodeURIComponent(streamUrl)}`}
-                  className="w-full h-full border-0"
-                  title="Live Stream"
-                  allow="autoplay; fullscreen"
-                />
-                
-                {/* Recording indicator dot - red camera dot */}
-                <div className="absolute top-3 left-3 flex items-center space-x-1 z-10">
-                  <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
-                  <div className="text-xs text-white bg-black bg-opacity-60 px-1 py-0.5 rounded">
-                    watching
-                  </div>
-                </div>
+            <div className="w-full h-full flex items-center justify-center">
+              <div className="text-center">
+                {status?.currentSession ? (
+                  <>
+                    <div className="text-4xl mb-2">📺</div>
+                    <div className="text-lg">Stream Active</div>
+                    <div className="text-sm text-slate-400 mt-2">
+                      Monitoring: {status.currentSession.url}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      Frames processed: {status.framesProcessed}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-4xl mb-2">⏸️</div>
+                    <div className="text-lg">No Stream</div>
+                    <div className="text-sm text-slate-500 mt-2">Enter a URL and click Start Clipping</div>
+                  </>
+                )}
               </div>
-            ) : (
-              /* Placeholder when no stream */
-              <div className="w-full h-full flex items-center justify-center">
-                <div className="text-center">
-                  {status?.currentSession ? (
-                    <>
-                      <div className="text-4xl mb-2">📺</div>
-                      <div className="text-lg">Stream Active</div>
-                      <div className="text-sm text-slate-400 mt-2">
-                        Monitoring: {status.currentSession.url}
-                      </div>
-                      <div className="text-xs text-slate-500 mt-1">
-                        Frames processed: {status.framesProcessed}
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="text-4xl mb-2">⏸️</div>
-                      <div className="text-lg">No Stream</div>
-                      <div className="text-sm text-slate-500 mt-2">Enter a URL and click Start Clipping</div>
-                    </>
-                  )}
+            </div>
+
+            {/* Recording indicator dot - red camera dot */}
+            {status?.currentSession && (
+              <div className="absolute top-3 left-3 flex items-center space-x-1">
+                <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+                <div className="text-xs text-white bg-black bg-opacity-60 px-1 py-0.5 rounded">
+                  watching
                 </div>
               </div>
             )}
+
+
           </div>
         </div>
       </CardContent>
