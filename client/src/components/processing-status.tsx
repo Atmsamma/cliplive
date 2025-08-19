@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useSSE } from "@/hooks/use-sse";
 import type { ProcessingStatus } from "@shared/schema";
 import LivePlayer from "./live-player";
+import PlatformIframePlayer from "./platform-iframe-player";
 import { useState, useEffect } from 'react';
 
 export default function ProcessingStatus() {
@@ -97,10 +98,17 @@ export default function ProcessingStatus() {
 
           {/* Stream Player / Preview */}
           <div className="bg-slate-700 rounded-lg p-4 aspect-video flex items-center justify-center relative overflow-hidden">
-            <div className="text-center text-slate-400">
-              <div className="text-4xl mb-2">🎬</div>
-              <div>Ready to start clipping</div>
-            </div>
+            {status?.currentSession?.url ? (
+              <PlatformIframePlayer 
+                streamUrl={status.currentSession.url} 
+                className="w-full h-full"
+              />
+            ) : (
+              <div className="text-center text-slate-400">
+                <div className="text-4xl mb-2">🎬</div>
+                <div>Ready to start clipping</div>
+              </div>
+            )}
           </div>
 
           {/* Status Details (if session is active) */}
