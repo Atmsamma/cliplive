@@ -20,7 +20,7 @@
 }
 
 .animate-scan {
-  animation: scan 3s ease-in-out infinite;
+  animation: scan 4.5s ease-in-out infinite;
   background: linear-gradient(90deg, 
     transparent 0%, 
     rgba(239, 68, 68, 0.1) 20%, 
