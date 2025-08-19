@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { TrendingUp } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 import { useSSE } from "@/hooks/use-sse";
 import type { ProcessingStatus } from "@shared/schema";
+import VlcPlayer from "react-vlc-player";
 
 export default function ProcessingStatus() {
   const { data: status } = useQuery<ProcessingStatus>({
@@ -69,30 +69,34 @@ export default function ProcessingStatus() {
             )}
           </div>
 
-          {/* Stream Status Display */}
-          <div className="relative flex-1 bg-slate-700 rounded-lg overflow-hidden border border-slate-600 min-h-48">
-            <div className="w-full h-full flex items-center justify-center">
-              <div className="text-center">
-                {status?.currentSession ? (
-                  <>
-                    <div className="text-4xl mb-2">📺</div>
-                    <div className="text-lg">Stream Active</div>
-                    <div className="text-sm text-slate-400 mt-2">
-                      Monitoring: {status.currentSession.url}
-                    </div>
-                    <div className="text-xs text-slate-500 mt-1">
-                      Frames processed: {status.framesProcessed}
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="text-4xl mb-2">⏸️</div>
-                    <div className="text-lg">No Stream</div>
-                    <div className="text-sm text-slate-500 mt-2">Enter a URL and click Start Clipping</div>
-                  </>
-                )}
+          {/* Stream Player / Preview */}
+          <div className="relative bg-slate-700 rounded-lg mb-4 min-h-[240px] overflow-hidden">
+            {status?.currentSession?.url ? (
+              <div className="w-full h-full">
+                <VlcPlayer
+                  vlcArgs={[
+                    '--no-audio',
+                    '--network-caching=300',
+                    '--clock-jitter=0',
+                    '--clock-synchro=0'
+                  ]}
+                  muted={true}
+                  src={status.currentSession.url}
+                  style={{
+                    width: '100%',
+                    height: '240px',
+                    borderRadius: '8px'
+                  }}
+                  onError={(error) => {
+                    console.log('VLC Player Error:', error);
+                  }}
+                />
               </div>
-            </div>
+            ) : (
+              <div className="p-8 flex items-center justify-center h-[240px]">
+                <div className="text-6xl">📺</div>
+              </div>
+            )}
 
             {/* Recording indicator dot - red camera dot */}
             {status?.currentSession && (
@@ -105,6 +109,63 @@ export default function ProcessingStatus() {
             )}
 
 
+          </div>
+
+          {/* Additional details */}
+          <div className="flex flex-col lg:flex-row gap-4">
+            {/* Motion Detection */}
+            <Card className="flex-1 bg-slate-800 border-slate-700">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base font-medium text-slate-300 flex justify-between items-center">
+                  Motion Detection
+                  <TrendingUp className="w-4 h-4 text-green-400" />
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-slate-200">
+                  {status?.motionLevel !== undefined ? `${status.motionLevel}%` : '-'}
+                </div>
+                <div className="text-xs text-slate-400 mt-1">
+                  {status?.motionTriggered ? 'Triggered' : 'Idle'}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Audio Detection */}
+            <Card className="flex-1 bg-slate-800 border-slate-700">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base font-medium text-slate-300 flex justify-between items-center">
+                  Audio Detection
+                  <TrendingUp className="w-4 h-4 text-blue-400" />
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-slate-200">
+                  {status?.audioLevel !== undefined ? `${status.audioLevel}%` : '-'}
+                </div>
+                <div className="text-xs text-slate-400 mt-1">
+                  {status?.audioTriggered ? 'Triggered' : 'Idle'}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Scene Change Detection */}
+            <Card className="flex-1 bg-slate-800 border-slate-700">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base font-medium text-slate-300 flex justify-between items-center">
+                  Scene Change
+                  <TrendingUp className="w-4 h-4 text-purple-400" />
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-slate-200">
+                  {status?.sceneChange !== undefined ? status.sceneChange.toFixed(2) : '-'}
+                </div>
+                <div className="text-xs text-slate-400 mt-1">
+                  {status?.sceneChangeTriggered ? 'Triggered' : 'Idle'}
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
       </CardContent>
