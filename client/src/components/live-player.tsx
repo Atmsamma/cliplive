@@ -142,8 +142,12 @@ export default function LivePlayer({ streamUrl, onError }: LivePlayerProps) {
           },
         }}
         style={{
-          pointerEvents: 'none', // Prevent user interaction that might cause interruptions
+          pointerEvents: 'none',
         }}
+        controls={false}
+        light={false}
+        pip={false}
+        playsinline={true}
       />
     </div>
   );
