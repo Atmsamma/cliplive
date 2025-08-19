@@ -156,29 +156,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(processingStatus);
   });
 
-  // Get current frame (static session screenshot)
-  app.get('/api/current-frame', (req, res) => {
-    const sessionId = req.query.session;
-
-    if (sessionId) {
-      // Serve static session screenshot
-      const sessionFramePath = path.join(process.cwd(), 'temp', `session_${sessionId}_frame.jpg`);
-
-      if (fs.existsSync(sessionFramePath)) {
-        res.sendFile(sessionFramePath);
-        return;
-      }
-    }
-
-    // Fallback to current frame if no session-specific frame
-    const framePath = path.join(process.cwd(), 'temp', 'current_frame.jpg');
-
-    if (fs.existsSync(framePath)) {
-      res.sendFile(framePath);
-    } else {
-      res.status(404).json({ error: 'No frame available' });
-    }
-  });
+  
 
   // Start stream capture
   app.post('/api/start', async (req, res) => {
@@ -233,6 +211,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sessionId: session.id,
       };
 
+      console.log('🚀 Starting stream processor with config:', processorConfig);
       const started = startStreamProcessor(processorConfig);
 
       if (started) {
@@ -242,6 +221,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         processingStatus.currentSession = session;
         sessionStartTime = new Date();
 
+        console.log('✅ Stream processor started successfully');
+        console.log('📊 Current processing status:', processingStatus);
+
         broadcastSSE({
           type: 'session-started',
           data: session,
@@ -250,6 +232,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json(session);
       } else {
         // Failed to start processor
+        console.log('❌ Failed to start stream processor');
         await storage.updateSessionStatus(session.id, false);
         res.status(500).json({ error: 'Failed to start stream processor' });
       }
@@ -370,25 +353,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get current frame being processed
-  app.get("/api/current-frame", (req, res) => {
-    const framePath = path.join(process.cwd(), 'temp', 'current_frame.jpg');
-
-    // Check if frame exists and is recent (within last 5 seconds)
-    try {
-      const stats = fs.statSync(framePath);
-      const now = Date.now();
-      const frameAge = now - stats.mtime.getTime();
-
-      if (frameAge < 5000) { // 5 seconds
-        res.sendFile(framePath);
-      } else {
-        res.status(404).json({ error: 'No recent frame available' });
-      }
-    } catch (error) {
-      res.status(404).json({ error: 'No frame available' });
-    }
-  });
+  
 
   // Get single clip
   app.get('/api/clips/:id', async (req, res) => {
@@ -460,12 +425,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get current frame for live preview
   app.get('/api/current-frame', async (req, res) => {
     try {
+      const sessionId = req.query.session;
+      
+      // If session ID provided, try session-specific frame first
+      if (sessionId) {
+        const sessionFramePath = path.join(process.cwd(), 'temp', `session_${sessionId}_frame.jpg`);
+        if (fs.existsSync(sessionFramePath)) {
+          console.log(`Serving session frame: session_${sessionId}_frame.jpg`);
+          return res.sendFile(sessionFramePath);
+        }
+      }
+      
+      // Fallback to current frame
       const framePath = path.join(process.cwd(), 'temp', 'current_frame.jpg');
-
+      
       if (fs.existsSync(framePath)) {
-        res.sendFile(framePath);
+        // Check if frame is recent (within last 10 seconds)
+        const stats = fs.statSync(framePath);
+        const frameAge = Date.now() - stats.mtime.getTime();
+        
+        if (frameAge < 10000) { // 10 seconds
+          console.log(`Serving current frame (${frameAge}ms old)`);
+          return res.sendFile(framePath);
+        } else {
+          console.log(`Frame too old (${frameAge}ms), returning 404`);
+          return res.status(404).json({ error: 'Frame too old' });
+        }
       } else {
-        res.status(404).json({ error: 'No current frame available' });
+        console.log('No current frame available');
+        return res.status(404).json({ error: 'No current frame available' });
       }
     } catch (error) {
       console.error('Error serving current frame:', error);

@@ -1581,22 +1581,47 @@ class StreamProcessor:
     def _extract_current_frame(self, segment_path: str):
         """Extract a frame from the current segment for live preview."""
         try:
-            frame_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp", "current_frame.jpg")
+            # Use correct path for temp directory
+            temp_dir = os.path.join(os.getcwd(), 'temp')
+            os.makedirs(temp_dir, exist_ok=True)
+            frame_path = os.path.join(temp_dir, "current_frame.jpg")
+
+            print(f"🖼️ Extracting frame from: {segment_path}")
+            print(f"🖼️ Saving frame to: {frame_path}")
+
+            # Check if source segment exists and has content
+            if not os.path.exists(segment_path):
+                print(f"❌ Source segment doesn't exist: {segment_path}")
+                return
+                
+            file_size = os.path.getsize(segment_path)
+            if file_size < 10000:  # Less than 10KB
+                print(f"❌ Source segment too small: {file_size} bytes")
+                return
 
             # Use ffmpeg to extract a frame from the segment
             cmd = [
                 "ffmpeg", "-y",
                 "-i", segment_path,
-                "-vf", "select=eq(n\\,0)",
-                "-q:v", "2",
-                "-frames:v", "1",
+                "-vf", "select=eq(n\\,0)",  # Select first frame
+                "-q:v", "2",  # High quality
+                "-frames:v", "1",  # Extract exactly 1 frame
                 frame_path
             ]
 
-            subprocess.run(cmd, capture_output=True, timeout=5)
+            print(f"🖼️ Running FFmpeg: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            
+            if result.returncode == 0 and os.path.exists(frame_path):
+                frame_size = os.path.getsize(frame_path)
+                print(f"✅ Frame extracted successfully: {frame_size} bytes")
+            else:
+                print(f"❌ Frame extraction failed: {result.stderr}")
+                
         except Exception as e:
-            # Silent fail - frame extraction is not critical
-            pass
+            print(f"❌ Error extracting current frame: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _capture_session_screenshot(self):
         """Capture a static screenshot when session starts."""
@@ -1641,29 +1666,52 @@ class StreamProcessor:
             # Also capture to current_frame.jpg for immediate display
             current_frame_path = os.path.join(temp_dir, "current_frame.jpg")
 
-            # Capture screenshot using FFmpeg
+            # Capture screenshot using FFmpeg - simplified approach
             cmd = [
                 "ffmpeg", "-y",
                 "-i", capture_url,
-                "-t", "3",  # Capture for 3 seconds to ensure we get a good frame
-                "-vf", "select=eq(n\\,60)",  # Select frame 60 (2 seconds in)
-                "-q:v", "2",
-                "-frames:v", "1",
+                "-t", "5",  # Capture for 5 seconds
+                "-vf", "select=eq(n\\,30)",  # Select frame 30 (1 second in at 30fps)
+                "-q:v", "2",  # High quality
+                "-frames:v", "1",  # Extract exactly 1 frame
                 frame_path
             ]
 
-            print(f"📸 Running FFmpeg screenshot command...")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+            print(f"📸 Running FFmpeg screenshot command: {' '.join(cmd[:4])}...")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
 
             if result.returncode == 0 and os.path.exists(frame_path):
-                # Copy to current_frame.jpg for immediate UI display
-                import shutil
-                shutil.copy2(frame_path, current_frame_path)
-                print(f"✅ Session screenshot captured successfully: {frame_path}")
-                print(f"✅ Current frame updated: {current_frame_path}")
+                frame_size = os.path.getsize(frame_path)
+                if frame_size > 1000:  # Ensure we got a real image
+                    # Copy to current_frame.jpg for immediate UI display
+                    import shutil
+                    shutil.copy2(frame_path, current_frame_path)
+                    print(f"✅ Session screenshot captured successfully: {frame_path} ({frame_size} bytes)")
+                    print(f"✅ Current frame updated: {current_frame_path}")
+                else:
+                    print(f"❌ Screenshot file too small: {frame_size} bytes")
             else:
                 print(f"❌ Failed to capture session screenshot")
+                print(f"❌ FFmpeg stdout: {result.stdout}")
                 print(f"❌ FFmpeg stderr: {result.stderr}")
+                
+                # Fallback: try a different approach for session screenshot
+                print(f"📸 Trying fallback screenshot method...")
+                fallback_cmd = [
+                    "ffmpeg", "-y",
+                    "-i", capture_url,
+                    "-frames:v", "1",  # Just get first available frame
+                    "-q:v", "2",
+                    frame_path
+                ]
+                
+                fallback_result = subprocess.run(fallback_cmd, capture_output=True, text=True, timeout=15)
+                if fallback_result.returncode == 0 and os.path.exists(frame_path):
+                    import shutil
+                    shutil.copy2(frame_path, current_frame_path)
+                    print(f"✅ Fallback screenshot captured successfully")
+                else:
+                    print(f"❌ Fallback screenshot also failed: {fallback_result.stderr}")
 
         except Exception as e:
             print(f"❌ Error capturing session screenshot: {e}")
