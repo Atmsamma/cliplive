@@ -7,10 +7,10 @@
     transform: translateX(-150%);
     opacity: 0;
   }
-  30% {
+  15% {
     opacity: 1;
   }
-  70% {
+  85% {
     opacity: 1;
   }
   100% {
@@ -20,7 +20,7 @@
 }
 
 .animate-scan {
-  animation: scan 4.5s ease-in-out infinite;
+  animation: scan 2.5s linear infinite;
   background: linear-gradient(90deg, 
     transparent 0%, 
     rgba(239, 68, 68, 0.1) 20%, 
