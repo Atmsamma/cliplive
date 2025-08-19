@@ -1,5 +1,87 @@
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
+
+interface TwitchEmbedProps {
+  channel: string;
+}
+
+function TwitchEmbed({ channel }: TwitchEmbedProps) {
+  const embedRef = useRef<HTMLDivElement>(null);
+  const playerRef = useRef<any>(null);
+
+  useEffect(() => {
+    // Create unique ID for this embed
+    const embedId = `twitch-embed-${channel}-${Date.now()}`;
+    if (embedRef.current) {
+      embedRef.current.id = embedId;
+    }
+
+    // Function to initialize Twitch player
+    const initializeTwitchPlayer = () => {
+      if (window.Twitch && embedRef.current) {
+        try {
+          // Destroy existing player if any
+          if (playerRef.current) {
+            playerRef.current.destroy();
+          }
+          
+          playerRef.current = new window.Twitch.Player(embedId, {
+            channel: channel,
+            width: "100%",
+            height: "100%",
+            parent: [window.location.hostname, "localhost"]
+          });
+        } catch (error) {
+          console.error('Error initializing Twitch player:', error);
+        }
+      }
+    };
+
+    // Check if Twitch script is already loaded
+    if (window.Twitch) {
+      initializeTwitchPlayer();
+    } else {
+      // Load Twitch script if not already loaded
+      const existingScript = document.querySelector('script[src="https://player.twitch.tv/js/embed/v1.js"]');
+      
+      if (!existingScript) {
+        const script = document.createElement('script');
+        script.src = 'https://player.twitch.tv/js/embed/v1.js';
+        script.async = true;
+        script.onload = initializeTwitchPlayer;
+        document.head.appendChild(script);
+      } else {
+        // Script exists, wait for it to load
+        const checkTwitch = setInterval(() => {
+          if (window.Twitch) {
+            clearInterval(checkTwitch);
+            initializeTwitchPlayer();
+          }
+        }, 100);
+      }
+    }
+
+    // Cleanup function
+    return () => {
+      if (playerRef.current) {
+        try {
+          playerRef.current.destroy();
+        } catch (error) {
+          console.error('Error destroying Twitch player:', error);
+        }
+      }
+    };
+  }, [channel]);
+
+  return <div ref={embedRef} className="w-full h-full" />;
+}
+
+// Extend Window interface for TypeScript
+declare global {
+  interface Window {
+    Twitch: any;
+  }
+}
 
 interface PlatformIframePlayerProps {
   streamUrl: string;
@@ -39,26 +121,7 @@ export default function PlatformIframePlayer({ streamUrl, className = "" }: Plat
   const renderPlayer = () => {
     switch (platform) {
       case 'twitch':
-        return (
-          <>
-            <div id={`twitch-embed-${channelOrVideo}`} className="w-full h-full"></div>
-            <script 
-              src="https://player.twitch.tv/js/embed/v1.js"
-              onLoad={() => {
-                // @ts-ignore
-                if (window.Twitch) {
-                  // @ts-ignore
-                  new window.Twitch.Player(`twitch-embed-${channelOrVideo}`, {
-                    channel: channelOrVideo,
-                    width: "100%",
-                    height: "100%",
-                    parent: [window.location.hostname]
-                  });
-                }
-              }}
-            />
-          </>
-        );
+        return <TwitchEmbed channel={channelOrVideo} />;
 
       case 'youtube':
         return (
