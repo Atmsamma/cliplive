@@ -154,11 +154,6 @@ export default function ProcessingStatus() {
               <div className="text-xs text-slate-400">
                 Stream Source: {status.currentSession.url}
               </div>
-              {streamData?.resolvedStreamUrl && (
-                <div className="text-xs text-slate-500 mt-1">
-                  Resolved URL: {streamData.resolvedStreamUrl.substring(0, 80)}...
-                </div>
-              )}
             </div>
           )}
 
