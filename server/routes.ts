@@ -159,20 +159,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get current frame (static session screenshot)
   app.get('/api/current-frame', (req, res) => {
     const sessionId = req.query.session;
-    
+
     if (sessionId) {
       // Serve static session screenshot
       const sessionFramePath = path.join(process.cwd(), 'temp', `session_${sessionId}_frame.jpg`);
-      
+
       if (fs.existsSync(sessionFramePath)) {
         res.sendFile(sessionFramePath);
         return;
       }
     }
-    
+
     // Fallback to current frame if no session-specific frame
     const framePath = path.join(process.cwd(), 'temp', 'current_frame.jpg');
-    
+
     if (fs.existsSync(framePath)) {
       res.sendFile(framePath);
     } else {
@@ -195,7 +195,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Clean up temp directory and old session artifacts before starting new session
       try {
         console.log('🧹 Cleaning temp directory before starting new session...');
-        
+
         const tempDir = path.join(process.cwd(), 'temp');
         if (fs.existsSync(tempDir)) {
           const tempFiles = fs.readdirSync(tempDir);
@@ -212,7 +212,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Create temp directory if it doesn't exist
           fs.mkdirSync(tempDir, { recursive: true });
         }
-        
+
         console.log('✅ Temp directory cleaned for new session');
       } catch (cleanupError) {
         console.error('Error cleaning temp directory:', cleanupError);
@@ -434,20 +434,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/thumbnails/:filename", (req, res) => {
-    const filename = req.params.filename;
+  app.get("/api/thumbnails/:filename", async (req, res) => {
+    try {
+      const filename = req.params.filename;
+      const thumbnailPath = path.join(process.cwd(), 'clips', 'thumbnails', filename.replace('.mp4', '.jpg'));
 
-    // Remove the extension and add .jpg for thumbnail
-    const baseFilename = filename.replace(/\.[^/.]+$/, "");
-    const thumbnailPath = path.join(process.cwd(), "clips", "thumbnails", `${baseFilename}.jpg`);
-
-    // Check if thumbnail exists and serve it
-    if (fs.existsSync(thumbnailPath)) {
-      return res.sendFile(thumbnailPath);
+      if (fs.existsSync(thumbnailPath)) {
+        res.sendFile(thumbnailPath);
+      } else {
+        // Generate thumbnail if it doesn't exist
+        const clipPath = path.join(process.cwd(), 'clips', filename);
+        if (fs.existsSync(clipPath)) {
+          await generateThumbnail(clipPath, thumbnailPath);
+          res.sendFile(thumbnailPath);
+        } else {
+          res.status(404).json({ error: 'Clip not found' });
+        }
+      }
+    } catch (error) {
+      console.error('Error serving thumbnail:', error);
+      res.status(500).json({ error: 'Failed to serve thumbnail' });
     }
+  });
 
-    // If thumbnail doesn't exist, return 404
-    res.status(404).json({ error: "Thumbnail not found" });
+  // Get current frame for live preview
+  app.get('/api/current-frame', async (req, res) => {
+    try {
+      const framePath = path.join(process.cwd(), 'temp', 'current_frame.jpg');
+
+      if (fs.existsSync(framePath)) {
+        res.sendFile(framePath);
+      } else {
+        res.status(404).json({ error: 'No current frame available' });
+      }
+    } catch (error) {
+      console.error('Error serving current frame:', error);
+      res.status(500).json({ error: 'Failed to serve current frame' });
+    }
   });
 
   // Download all clips as ZIP
