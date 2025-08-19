@@ -496,7 +496,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const activeSession = await storage.getActiveSession();
       if (!activeSession) {
-        return res.status(404).json({ error: 'No active session' });
+        console.log('❌ No active session found for stream URL request');
+        return res.status(404).json({ error: 'No active session found' });
       }
 
       console.log(`🔗 Resolving stream URL for display: ${activeSession.url}`);
@@ -510,6 +511,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const urlParts = activeSession.url.split('twitch.tv/');
           if (urlParts.length > 1) {
             channel_name = urlParts[1].split('/')[0].split('?')[0];
+            console.log(`📺 Extracted channel name: ${channel_name}`);
           }
         } catch (error) {
           console.log('Error parsing Twitch channel name:', error);
@@ -521,14 +523,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           const { AdGatekeeper } = require('../backend/ad_gatekeeper');
           const adGatekeeper = new AdGatekeeper();
+          console.log('🛡️ Using Ad Gatekeeper to resolve stream URL...');
+          
           resolvedStreamUrl = await adGatekeeper.get_clean_twitch_url(channel_name, 'best');
           
           if (resolvedStreamUrl) {
             console.log(`✅ Ad Gatekeeper resolved URL for display: ${resolvedStreamUrl.substring(0, 80)}...`);
             return res.json({ resolvedStreamUrl });
+          } else {
+            console.log('⚠️ Ad Gatekeeper returned null URL');
           }
         } catch (error) {
-          console.log('Ad Gatekeeper not available for display, using streamlink fallback');
+          console.log('⚠️ Ad Gatekeeper error for display, using streamlink fallback:', error.message);
         }
       }
 
@@ -565,22 +571,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
             res.json({ resolvedStreamUrl: cleanUrl });
             resolve(null);
           } else {
-            console.error(`❌ Streamlink failed for display (code: ${code}): ${errorOutput}`);
-            res.status(500).json({ error: 'Failed to resolve stream URL for display' });
+            console.error(`❌ Streamlink failed for display (code: ${code})`);
+            console.error(`❌ Streamlink stderr: ${errorOutput}`);
+            res.status(500).json({ 
+              error: 'Failed to resolve stream URL for display',
+              details: `Streamlink exit code: ${code}`,
+              stderr: errorOutput.substring(0, 200)
+            });
             resolve(null);
           }
         });
 
         streamlinkProcess.on('error', (error) => {
           console.error(`❌ Streamlink process error for display: ${error}`);
-          res.status(500).json({ error: 'Stream URL resolution process failed' });
+          res.status(500).json({ 
+            error: 'Stream URL resolution process failed',
+            details: error.message 
+          });
           resolve(null);
         });
       });
 
     } catch (error) {
-      console.error('Error getting stream URL for display:', error);
-      res.status(500).json({ error: 'Failed to get stream URL' });
+      console.error('❌ Error getting stream URL for display:', error);
+      res.status(500).json({ 
+        error: 'Failed to get stream URL',
+        details: error.message 
+      });
     }
   });
 

@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useSSE } from "@/hooks/use-sse";
 import type { ProcessingStatus } from "@shared/schema";
 import LivePlayer from "./live-player";
+import { useState, useEffect } from 'react';
 
 export default function ProcessingStatus() {
   const { data: status } = useQuery<ProcessingStatus>({
@@ -20,8 +21,49 @@ export default function ProcessingStatus() {
     retryDelay: 5000,
   });
 
+  const [streamUrl, setStreamUrl] = useState<string | null>(null);
+  const [isLoadingStreamUrl, setIsLoadingStreamUrl] = useState<boolean>(false);
+  const [displayStreamError, setDisplayStreamError] = useState<string | null>(null);
+
   // Listen for SSE updates
   useSSE("/api/events");
+
+  // Fetch stream URL when processing starts
+  useEffect(() => {
+    if (status?.isProcessing && !streamUrl && !isLoadingStreamUrl) {
+      setIsLoadingStreamUrl(true);
+
+      console.log('Fetching stream URL...');
+
+      fetch('/api/stream-url')
+        .then(res => {
+          console.log('Stream URL response status:', res.status);
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
+          }
+          return res.json();
+        })
+        .then(data => {
+          console.log('Stream URL data:', data);
+          if (data.resolvedStreamUrl) {
+            console.log('Setting stream URL:', data.resolvedStreamUrl.substring(0, 80) + '...');
+            setStreamUrl(data.resolvedStreamUrl);
+            setDisplayStreamError(null);
+          } else {
+            console.error('No resolved stream URL in response:', data);
+            setDisplayStreamError('No stream URL received from server');
+          }
+        })
+        .catch(err => {
+          console.error('Failed to fetch stream URL:', err);
+          setDisplayStreamError(`Failed to load stream: ${err.message}`);
+        })
+        .finally(() => {
+          setIsLoadingStreamUrl(false);
+        });
+    }
+  }, [status?.isProcessing, streamUrl, isLoadingStreamUrl]);
+
 
   return (
     <Card className="bg-slate-800 border-slate-600 mb-6">
@@ -54,39 +96,72 @@ export default function ProcessingStatus() {
           </div>
 
           {/* Stream Player / Preview */}
-          <div className="relative bg-slate-700 rounded-lg mb-4 min-h-[240px] overflow-hidden">
-            {status?.currentSession ? (
-              <div className="w-full h-full">
-                <LivePlayer
-                  streamUrl={streamData?.resolvedStreamUrl || ""}
-                  onError={(error) => {
-                    console.error('Stream playback error:', error);
-                  }}
-                />
-                <div className="absolute bottom-2 left-2 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded">
-                  Live Stream: {status.currentSession.url}
+          <div className="bg-slate-700 rounded-lg p-4 aspect-video flex items-center justify-center relative overflow-hidden">
+          {isLoadingStreamUrl ? (
+            <div className="flex items-center justify-center h-full bg-slate-700 rounded-lg">
+              <div className="text-white text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-2"></div>
+                <div>Loading stream...</div>
+                <div className="text-xs text-slate-400 mt-1">Resolving stream URL...</div>
+              </div>
+            </div>
+          ) : displayStreamError ? (
+            <div className="text-center text-red-400">
+              <div className="text-2xl mb-2">⚠️</div>
+              <div className="text-sm mb-2">{displayStreamError}</div>
+              <div className="text-xs text-slate-400 mb-2">
+                Check console for details
+              </div>
+              <button 
+                onClick={() => {
+                  console.log('Retrying stream URL fetch...');
+                  setDisplayStreamError(null);
+                  setStreamUrl(null);
+                  setIsLoadingStreamUrl(false);
+                }}
+                className="mt-2 px-3 py-1 bg-red-600 hover:bg-red-700 rounded text-white text-xs"
+              >
+                Retry Stream Load
+              </button>
+            </div>
+          ) : streamUrl ? (
+            <LivePlayer 
+              streamUrl={streamUrl} 
+              onError={(error) => {
+                console.error('LivePlayer error:', error);
+                setDisplayStreamError('Stream playback failed - check browser console');
+              }}
+            />
+          ) : status?.isProcessing ? (
+            <div className="text-center text-slate-400">
+              <div className="text-2xl mb-2">📺</div>
+              <div>Waiting for stream URL...</div>
+              <div className="text-xs text-slate-300 mt-1">
+                Processing: {status.framesProcessed} frames
+              </div>
+            </div>
+          ) : (
+            <div className="text-center text-slate-400">
+              <div className="text-4xl mb-2">🎬</div>
+              <div>Ready to start streaming</div>
+            </div>
+          )}
+        </div>
+
+          {/* Status Details (if session is active) */}
+          {status?.currentSession && (
+            <div className="mt-4 text-center">
+              <div className="text-xs text-slate-400">
+                Stream Source: {status.currentSession.url}
+              </div>
+              {streamData?.resolvedStreamUrl && (
+                <div className="text-xs text-slate-500 mt-1">
+                  Resolved URL: {streamData.resolvedStreamUrl.substring(0, 80)}...
                 </div>
-              </div>
-            ) : (
-              <div className="p-8 flex items-center justify-center h-[240px]">
-                <div className="text-6xl">📺</div>
-              </div>
-            )}
+              )}
+            </div>
+          )}
 
-            {/* Recording indicator dot - red camera dot */}
-            {status?.currentSession && (
-              <div className="absolute top-3 left-3 flex items-center space-x-1">
-                <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
-                <div className="text-xs text-white bg-black bg-opacity-60 px-1 py-0.5 rounded">
-                  watching
-                </div>
-              </div>
-            )}
-
-
-          </div>
-
-          
         </div>
       </CardContent>
     </Card>
