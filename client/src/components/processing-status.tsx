@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { useSSE } from "@/hooks/use-sse";
-import { TrendingUp } from "lucide-react";
 import type { ProcessingStatus } from "@shared/schema";
 import ReactPlayer from "react-player";
 
@@ -112,62 +111,7 @@ export default function ProcessingStatus() {
 
           </div>
 
-          {/* Additional details */}
-          <div className="flex flex-col lg:flex-row gap-4">
-            {/* Motion Detection */}
-            <Card className="flex-1 bg-slate-800 border-slate-700">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base font-medium text-slate-300 flex justify-between items-center">
-                  Motion Detection
-                  <TrendingUp className="w-4 h-4 text-green-400" />
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-slate-200">
-                  {status?.motionLevel !== undefined ? `${status.motionLevel}%` : '-'}
-                </div>
-                <div className="text-xs text-slate-400 mt-1">
-                  {status?.motionTriggered ? 'Triggered' : 'Idle'}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Audio Detection */}
-            <Card className="flex-1 bg-slate-800 border-slate-700">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base font-medium text-slate-300 flex justify-between items-center">
-                  Audio Detection
-                  <TrendingUp className="w-4 h-4 text-blue-400" />
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-slate-200">
-                  {status?.audioLevel !== undefined ? `${status.audioLevel}%` : '-'}
-                </div>
-                <div className="text-xs text-slate-400 mt-1">
-                  {status?.audioTriggered ? 'Triggered' : 'Idle'}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Scene Change Detection */}
-            <Card className="flex-1 bg-slate-800 border-slate-700">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base font-medium text-slate-300 flex justify-between items-center">
-                  Scene Change
-                  <TrendingUp className="w-4 h-4 text-purple-400" />
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-slate-200">
-                  {status?.sceneChange !== undefined ? status.sceneChange.toFixed(2) : '-'}
-                </div>
-                <div className="text-xs text-slate-400 mt-1">
-                  {status?.sceneChangeTriggered ? 'Triggered' : 'Idle'}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          
         </div>
       </CardContent>
     </Card>
