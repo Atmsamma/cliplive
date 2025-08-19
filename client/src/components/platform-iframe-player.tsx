@@ -10,8 +10,8 @@ function TwitchEmbed({ channel }: TwitchEmbedProps) {
   const playerRef = useRef<any>(null);
 
   useEffect(() => {
-    // Create unique ID for this embed
-    const embedId = `twitch-embed-${channel}-${Date.now()}`;
+    // Set the ID for the Twitch embed
+    const embedId = "twitch-embed";
     if (embedRef.current) {
       embedRef.current.id = embedId;
     }
@@ -25,11 +25,9 @@ function TwitchEmbed({ channel }: TwitchEmbedProps) {
             playerRef.current.destroy();
           }
           
+          // Create a Twitch.Player object exactly as specified
           playerRef.current = new window.Twitch.Player(embedId, {
-            channel: channel,
-            width: "100%",
-            height: "100%",
-            parent: [window.location.hostname, "localhost"]
+            channel: channel
           });
         } catch (error) {
           console.error('Error initializing Twitch player:', error);
@@ -41,7 +39,7 @@ function TwitchEmbed({ channel }: TwitchEmbedProps) {
     if (window.Twitch) {
       initializeTwitchPlayer();
     } else {
-      // Load Twitch script if not already loaded
+      // Load the Twitch embed script if not already loaded
       const existingScript = document.querySelector('script[src="https://player.twitch.tv/js/embed/v1.js"]');
       
       if (!existingScript) {
@@ -73,7 +71,8 @@ function TwitchEmbed({ channel }: TwitchEmbedProps) {
     };
   }, [channel]);
 
-  return <div ref={embedRef} className="w-full h-full" />;
+  // Add a placeholder for the Twitch embed
+  return <div ref={embedRef} id="twitch-embed" className="w-full h-full" />;
 }
 
 // Extend Window interface for TypeScript
@@ -99,6 +98,7 @@ export default function PlatformIframePlayer({ streamUrl, className = "" }: Plat
   const extractChannelOrVideo = (url: string, platform: string) => {
     switch (platform) {
       case 'twitch':
+        // Extract channel from URLs like https://www.twitch.tv/<channel>
         const twitchMatch = url.match(/twitch\.tv\/([^\/\?]+)/);
         return twitchMatch ? twitchMatch[1] : '';
       
