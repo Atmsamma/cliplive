@@ -40,6 +40,15 @@ except ImportError as e:
     print(f"⚠️ Ad Gatekeeper not available: {e}")
     AD_GATEKEEPER_AVAILABLE = False
 
+# Import VLC Display
+try:
+    from vlc_display import display_stream, stop_stream as stop_vlc_stream, cleanup_vlc
+    VLC_DISPLAY_AVAILABLE = True
+    print("🎬 VLC Display available")
+except ImportError as e:
+    print(f"⚠️ VLC Display not available: {e}")
+    VLC_DISPLAY_AVAILABLE = False
+
 class BaselineTracker:
     """Tracks baseline metrics for adaptive threshold detection."""
 
@@ -375,6 +384,10 @@ class StreamProcessor:
         elif not self.use_ad_gatekeeper:
             print("🛡️ Ad Gatekeeper disabled by configuration")
 
+        # VLC Display configuration
+        self.use_vlc_display = config.get('useVlcDisplay', False)
+        self.vlc_stream_url = None
+
         # Ensure clips and temp directories exist
         self.clips_dir = os.path.join(os.getcwd(), 'clips')
         os.makedirs(self.clips_dir, exist_ok=True)
@@ -385,6 +398,7 @@ class StreamProcessor:
         print(f"Stream processor initialized with config: {config}")
         print(f"AI Detection: {'Enabled' if self.ai_detector else 'Disabled'}")
         print(f"Ad Gatekeeper: {'Enabled' if self.ad_gatekeeper else 'Disabled'}")
+        print(f"VLC Display: {'Enabled' if self.use_vlc_display and VLC_DISPLAY_AVAILABLE else 'Disabled'}")
 
     def start_processing(self, url: str, audio_threshold: float, motion_threshold: float, clip_length: int, session_id: str = None):
         """Start the stream processing with real FFmpeg integration."""
@@ -487,6 +501,12 @@ class StreamProcessor:
         if self.ai_detector:
             print("🧹 Cleaning up AI detector resources...")
             self.ai_detector.cleanup()
+
+        # Clean up VLC display
+        if self.use_vlc_display and VLC_DISPLAY_AVAILABLE:
+            print("🧹 Cleaning up VLC display...")
+            stop_vlc_stream()
+            cleanup_vlc()
 
         print("✅ Stream processing stopped and all artifacts cleaned up")
 
@@ -1265,6 +1285,14 @@ class StreamProcessor:
 
                 if stream_url:
                     print(f"✅ Got clean stream URL for bucket: {stream_url[:80]}...")
+                    
+                    # Start VLC display if enabled
+                    if self.use_vlc_display and VLC_DISPLAY_AVAILABLE:
+                        if not self.vlc_stream_url or self.vlc_stream_url != stream_url:
+                            self.vlc_stream_url = stream_url
+                            stream_title = f"Live Stream - {channel_name}"
+                            print(f"🎬 Starting VLC display: {stream_title}")
+                            display_stream(stream_url, stream_title)
                 else:
                     print("❌ CRITICAL: Ad Gatekeeper failed to get clean URL for bucket")
                     return False
