@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useSSE } from "@/hooks/use-sse";
 import type { ProcessingStatus } from "@shared/schema";
 import LivePlayer from "./live-player";
+import UnifiedPlayer from "./unified-player";
 import { useState, useEffect } from 'react';
 
 export default function ProcessingStatus() {
@@ -97,49 +98,8 @@ export default function ProcessingStatus() {
 
           {/* Stream Player / Preview */}
           <div className="bg-slate-700 rounded-lg p-4 aspect-video flex items-center justify-center relative overflow-hidden">
-          {isLoadingStreamUrl ? (
-            <div className="flex items-center justify-center h-full bg-slate-700 rounded-lg">
-              <div className="text-white text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-2"></div>
-                <div>Loading stream...</div>
-                <div className="text-xs text-slate-400 mt-1">Resolving stream URL...</div>
-              </div>
-            </div>
-          ) : displayStreamError ? (
-            <div className="text-center text-red-400">
-              <div className="text-2xl mb-2">⚠️</div>
-              <div className="text-sm mb-2">{displayStreamError}</div>
-              <div className="text-xs text-slate-400 mb-2">
-                Check console for details
-              </div>
-              <button 
-                onClick={() => {
-                  console.log('Retrying stream URL fetch...');
-                  setDisplayStreamError(null);
-                  setStreamUrl(null);
-                  setIsLoadingStreamUrl(false);
-                }}
-                className="mt-2 px-3 py-1 bg-red-600 hover:bg-red-700 rounded text-white text-xs"
-              >
-                Retry Stream Load
-              </button>
-            </div>
-          ) : streamUrl ? (
-            <LivePlayer 
-              streamUrl={streamUrl} 
-              onError={(error) => {
-                console.error('LivePlayer error:', error);
-                setDisplayStreamError('Stream playback failed - check browser console');
-              }}
-            />
-          ) : status?.isProcessing ? (
-            <div className="text-center text-slate-400">
-              <div className="text-2xl mb-2">📺</div>
-              <div>Waiting for stream URL...</div>
-              <div className="text-xs text-slate-300 mt-1">
-                Processing: {status.framesProcessed} frames
-              </div>
-            </div>
+          {status?.isProcessing ? (
+            <UnifiedPlayer isVisible={true} />
           ) : (
             <div className="text-center text-slate-400">
               <div className="text-4xl mb-2">🎬</div>
