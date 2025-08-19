@@ -672,6 +672,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Update global processing status
       processingStatus = { ...processingStatus, ...metricsData };
+      
+      // Store resolved stream URL if provided
+      if (metricsData.resolvedStreamUrl) {
+        processingStatus.resolvedStreamUrl = metricsData.resolvedStreamUrl;
+      }
 
       // Broadcast updated metrics via SSE
       broadcastSSE({

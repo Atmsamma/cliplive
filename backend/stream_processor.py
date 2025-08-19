@@ -385,7 +385,7 @@ class StreamProcessor:
             print("🛡️ Ad Gatekeeper disabled by configuration")
 
         # VLC Display configuration
-        self.use_vlc_display = config.get('useVlcDisplay', False)
+        self.use_vlc_display = config.get('useVlcDisplay', True)  # Enable by default
         self.vlc_stream_url = None
         self.resolved_url = None # Store the resolved URL for embedding
 
@@ -426,7 +426,18 @@ class StreamProcessor:
             return False
 
         # Store resolved URL for embedding
-        self.resolved_url = self.resolved_url
+        print(f"🔗 Resolved URL stored for embedding: {self.resolved_url[:80]}...")
+        
+        # Update global status with resolved URL
+        try:
+            import requests
+            requests.post(
+                'http://0.0.0.0:5000/api/internal/metrics',
+                json={'resolvedStreamUrl': self.resolved_url},
+                timeout=2
+            )
+        except Exception as e:
+            print(f"Failed to update resolved URL: {e}")
 
         # Initialize stream bucket for continuous recording
         self.stream_bucket = StreamBucket(clip_duration=self.clip_length)
