@@ -59,17 +59,9 @@ export default function ProcessingStatus() {
                   config={{
                     file: {
                       attributes: {
-                        crossOrigin: 'anonymous',
-                        autoPlay: true,
-                        playsInline: true,
-                        preload: 'auto'
+                        crossOrigin: 'anonymous'
                       },
-                      forceHLS: true,
-                      hlsOptions: {
-                        enableWorker: false,
-                        lowLatencyMode: true,
-                        backBufferLength: 90
-                      }
+                      forceHLS: true
                     }
                   }}
                   onReady={() => {
@@ -83,12 +75,6 @@ export default function ProcessingStatus() {
                   }}
                   onError={(error) => {
                     console.error('Player Error:', error);
-                  }}
-                  onBuffer={() => {
-                    console.log('Player buffering...');
-                  }}
-                  onBufferEnd={() => {
-                    console.log('Player buffer ended');
                   }}
                 />
               </div>

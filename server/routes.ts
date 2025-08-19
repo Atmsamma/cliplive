@@ -559,6 +559,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           resolvedStreamUrl: resolvedStreamUrl,
         },
       });
+
+      // Also broadcast updated processing status so the frontend gets the new URL
+      broadcastSSE({
+        type: 'processing-status',
+        data: processingStatus,
+      });
     }
 
     res.json({ success: true });
