@@ -156,7 +156,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(processingStatus);
   });
 
-  
+
 
   // Start stream capture
   app.post('/api/start', async (req, res) => {
@@ -353,7 +353,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  
+
 
   // Get single clip
   app.get('/api/clips/:id', async (req, res) => {
@@ -422,45 +422,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get current frame for live preview
-  app.get('/api/current-frame', async (req, res) => {
-    try {
-      const sessionId = req.query.session;
-      
-      // If session ID provided, try session-specific frame first
-      if (sessionId) {
-        const sessionFramePath = path.join(process.cwd(), 'temp', `session_${sessionId}_frame.jpg`);
-        if (fs.existsSync(sessionFramePath)) {
-          console.log(`Serving session frame: session_${sessionId}_frame.jpg`);
-          return res.sendFile(sessionFramePath);
-        }
-      }
-      
-      // Fallback to current frame
-      const framePath = path.join(process.cwd(), 'temp', 'current_frame.jpg');
-      
-      if (fs.existsSync(framePath)) {
-        // Check if frame is recent (within last 10 seconds)
-        const stats = fs.statSync(framePath);
-        const frameAge = Date.now() - stats.mtime.getTime();
-        
-        if (frameAge < 10000) { // 10 seconds
-          console.log(`Serving current frame (${frameAge}ms old)`);
-          return res.sendFile(framePath);
-        } else {
-          console.log(`Frame too old (${frameAge}ms), returning 404`);
-          return res.status(404).json({ error: 'Frame too old' });
-        }
-      } else {
-        console.log('No current frame available');
-        return res.status(404).json({ error: 'No current frame available' });
-      }
-    } catch (error) {
-      console.error('Error serving current frame:', error);
-      res.status(500).json({ error: 'Failed to serve current frame' });
-    }
-  });
-
   // Download all clips as ZIP
   app.get('/api/download-all', async (req, res) => {
     try {
@@ -471,7 +432,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // For now, just return the list of clips
       // In a real implementation, you'd create a ZIP file
-      res.json({ 
+      res.json({
         message: 'ZIP download would be implemented here',
         clips: clips.length,
       });

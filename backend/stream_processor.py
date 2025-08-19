@@ -319,7 +319,6 @@ class StreamProcessor:
         self.is_running = False
         self.capture_thread = None
         self.analysis_thread = None
-        self.current_frame_path = os.path.join(os.getcwd(), 'temp', 'current_frame.jpg')
 
         # Processing stats
         self.frames_processed = 0
@@ -429,11 +428,7 @@ class StreamProcessor:
         except Exception as e:
             print(f"⚠️ Error cleaning old frames: {e}")
 
-        # Capture fresh session screenshot immediately
-        self._capture_session_screenshot()
         
-        # Wait a moment to ensure screenshot is ready
-        time.sleep(2)
 
         # Start capture, analysis, and metrics update threads
         self.capture_thread = threading.Thread(target=self._stream_capture_loop, daemon=True)
@@ -1577,100 +1572,7 @@ class StreamProcessor:
 
     
 
-    def _capture_session_screenshot(self):
-        """Capture a static screenshot when session starts."""
-        try:
-            print(f"📸 Capturing session screenshot for: {self.url}")
-            
-            # First try to get stream URL using streamlink
-            capture_url = self.url
-            
-            # For Twitch URLs, try to get HLS stream URL
-            if 'twitch.tv' in self.url:
-                try:
-                    # Extract channel name
-                    channel_match = re.search(r'twitch\.tv/([^/?]+)', self.url)
-                    if channel_match:
-                        channel = channel_match.group(1)
-                        print(f"📸 Getting stream URL for channel: {channel}")
-                        
-                        # Try Ad Gatekeeper first
-                        if self.ad_gatekeeper:
-                            clean_url = self.ad_gatekeeper.get_clean_twitch_url(channel, quality='720p')
-                            if clean_url:
-                                capture_url = clean_url
-                                print(f"📸 Using Ad Gatekeeper URL for screenshot")
-                        
-                        # Fallback to streamlink if Ad Gatekeeper fails
-                        if capture_url == self.url:
-                            streamlink_cmd = ['streamlink', self.url, '720p', '--stream-url']
-                            result = subprocess.run(streamlink_cmd, capture_output=True, text=True, timeout=15)
-                            if result.returncode == 0 and result.stdout.strip():
-                                capture_url = result.stdout.strip()
-                                print(f"📸 Using streamlink URL for screenshot")
-                except Exception as e:
-                    print(f"⚠️ Could not get stream URL, using original: {e}")
-
-            session_id = getattr(self, 'session_id', 'default')
-            temp_dir = os.path.join(os.getcwd(), "temp")
-            os.makedirs(temp_dir, exist_ok=True)
-            
-            frame_path = os.path.join(temp_dir, f"session_{session_id}_frame.jpg")
-            
-            # Also capture to current_frame.jpg for immediate display
-            current_frame_path = os.path.join(temp_dir, "current_frame.jpg")
-
-            # Capture screenshot using FFmpeg - simplified approach
-            cmd = [
-                "ffmpeg", "-y",
-                "-i", capture_url,
-                "-t", "5",  # Capture for 5 seconds
-                "-vf", "select=eq(n\\,30)",  # Select frame 30 (1 second in at 30fps)
-                "-q:v", "2",  # High quality
-                "-frames:v", "1",  # Extract exactly 1 frame
-                frame_path
-            ]
-
-            print(f"📸 Running FFmpeg screenshot command: {' '.join(cmd[:4])}...")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-
-            if result.returncode == 0 and os.path.exists(frame_path):
-                frame_size = os.path.getsize(frame_path)
-                if frame_size > 1000:  # Ensure we got a real image
-                    # Copy to current_frame.jpg for immediate UI display
-                    import shutil
-                    shutil.copy2(frame_path, current_frame_path)
-                    print(f"✅ Session screenshot captured successfully: {frame_path} ({frame_size} bytes)")
-                    print(f"✅ Current frame updated: {current_frame_path}")
-                else:
-                    print(f"❌ Screenshot file too small: {frame_size} bytes")
-            else:
-                print(f"❌ Failed to capture session screenshot")
-                print(f"❌ FFmpeg stdout: {result.stdout}")
-                print(f"❌ FFmpeg stderr: {result.stderr}")
-                
-                # Fallback: try a different approach for session screenshot
-                print(f"📸 Trying fallback screenshot method...")
-                fallback_cmd = [
-                    "ffmpeg", "-y",
-                    "-i", capture_url,
-                    "-frames:v", "1",  # Just get first available frame
-                    "-q:v", "2",
-                    frame_path
-                ]
-                
-                fallback_result = subprocess.run(fallback_cmd, capture_output=True, text=True, timeout=15)
-                if fallback_result.returncode == 0 and os.path.exists(frame_path):
-                    import shutil
-                    shutil.copy2(frame_path, current_frame_path)
-                    print(f"✅ Fallback screenshot captured successfully")
-                else:
-                    print(f"❌ Fallback screenshot also failed: {fallback_result.stderr}")
-
-        except Exception as e:
-            print(f"❌ Error capturing session screenshot: {e}")
-            import traceback
-            traceback.print_exc()
+    
 
 
 def main():

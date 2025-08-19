@@ -69,36 +69,37 @@ export default function ProcessingStatus() {
             )}
           </div>
 
-          {/* Static Stream Screenshot - Full Size */}
+          {/* Stream Status Display */}
           <div className="relative flex-1 bg-slate-700 rounded-lg overflow-hidden border border-slate-600 min-h-48">
-            {status?.currentSession ? (
-              <img 
-                src={`/api/current-frame?session=${status.currentSession.id}`}
-                alt="Stream screenshot"
-                className="w-full h-full object-cover"
-                style={{ display: 'block' }}
-                onError={(e) => {
-                  console.log('Frame load error, showing fallback');
-                }}
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <div className="text-center">
-                  <div className="text-4xl mb-2">⏸️</div>
-                  <div className="text-lg">No Stream</div>
-                  <div className="text-sm text-slate-500 mt-2">Enter a URL and click Start Clipping</div>
-                </div>
+            <div className="w-full h-full flex items-center justify-center">
+              <div className="text-center">
+                {status?.currentSession ? (
+                  <>
+                    <div className="text-4xl mb-2">📺</div>
+                    <div className="text-lg">Stream Active</div>
+                    <div className="text-sm text-slate-400 mt-2">
+                      Monitoring: {status.currentSession.url}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      Frames processed: {status.framesProcessed}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-4xl mb-2">⏸️</div>
+                    <div className="text-lg">No Stream</div>
+                    <div className="text-sm text-slate-500 mt-2">Enter a URL and click Start Clipping</div>
+                  </>
+                )}
               </div>
-            )}
-
-            
+            </div>
 
             {/* Recording indicator dot - red camera dot */}
             {status?.currentSession && (
               <div className="absolute top-3 left-3 flex items-center space-x-1">
                 <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
                 <div className="text-xs text-white bg-black bg-opacity-60 px-1 py-0.5 rounded">
-                  watching
+                  monitoring
                 </div>
               </div>
             )}
