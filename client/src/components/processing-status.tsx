@@ -13,32 +13,6 @@ export default function ProcessingStatus() {
   // Listen for SSE updates
   useSSE("/api/events");
 
-  // Determine animation state based on stream data
-  const getAnimationState = () => {
-    if (!status?.currentSession) return 'idle';
-
-    const audioLevel = status?.audioLevel || 0;
-    const motionLevel = status?.motionLevel || 0;
-    const sceneChange = status?.sceneChange || 0;
-
-    // High activity - fast animation
-    if (audioLevel > 60 || motionLevel > 60 || sceneChange > 0.8) {
-      return 'high';
-    }
-    // Medium activity - medium animation
-    if (audioLevel > 30 || motionLevel > 30 || sceneChange > 0.4) {
-      return 'medium';
-    }
-    // Low activity - slow animation
-    if (audioLevel > 10 || motionLevel > 10 || sceneChange > 0.1) {
-      return 'low';
-    }
-
-    return 'idle';
-  };
-
-  const animationState = getAnimationState();
-
   return (
     <Card className="bg-slate-800 border-slate-600 mb-6">
       <CardContent className="pt-6">
