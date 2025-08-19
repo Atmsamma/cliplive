@@ -14,12 +14,12 @@ export default function Sidebar() {
   const navItems = [
     {
       name: "Stream Capture",
-      path: "/app",
+      path: "/capture",
       icon: Video,
     },
     {
       name: "Clip Library",
-      path: "/app/clips",
+      path: "/capture/clips",
       icon: Library,
     },
   ];

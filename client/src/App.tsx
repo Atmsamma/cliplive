@@ -1,3 +1,4 @@
+
 import { Switch, Route } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -13,13 +14,13 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Landing} />
-      <Route path="/app">
+      <Route path="/capture">
         <div className="flex h-screen bg-slate-900">
           <Sidebar />
           <div className="flex-1 flex flex-col overflow-hidden">
             <Switch>
-              <Route path="/app" component={StreamCapture} />
-              <Route path="/app/clips" component={ClipLibrary} />
+              <Route path="/capture" component={StreamCapture} />
+              <Route path="/capture/clips" component={ClipLibrary} />
               <Route component={NotFound} />
             </Switch>
           </div>

@@ -31,7 +31,7 @@ export default function Landing() {
 
   const handleSignIn = () => {
     // Simple authentication simulation - in real app this would be proper auth
-    setIsSignedIn(true);
+    window.location.href = "/capture";
     toast({
       title: "Signed In",
       description: "Welcome to Stream Clipper!",
