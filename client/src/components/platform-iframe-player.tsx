@@ -174,9 +174,11 @@ export default function PlatformIframePlayer({ streamUrl, className = "" }: Plat
       <div className="flex-1 w-full">
         {renderPlayer()}
       </div>
-      <div className="text-center text-xs text-slate-400 mt-2 py-1">
-        Platform: {platform.charAt(0).toUpperCase() + platform.slice(1)}
-        {channelOrVideo && ` • ${channelOrVideo}`}
+      <div className="text-center text-xs text-slate-400 mt-2 py-1 relative overflow-hidden">
+        <div className="relative">
+          <span className="inline-block animate-pulse">watching</span>
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-blue-400/30 to-transparent animate-scan"></div>
+        </div>
       </div>
     </div>
   );
