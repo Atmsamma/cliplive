@@ -467,17 +467,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Try to get the resolved stream URL from the processor status
+      let resolvedUrl = streamUrl;
       try {
-        const statusResponse = await fetch('http://localhost:3001/status');
-        const status = await statusResponse.json();
-        if (status.resolvedStreamUrl) {
-          streamUrl = status.resolvedStreamUrl;
+        // Check if we have a resolved URL in processingStatus
+        if (processingStatus.resolvedStreamUrl) {
+          resolvedUrl = processingStatus.resolvedStreamUrl;
+          console.log('Using resolved stream URL for embed:', resolvedUrl.substring(0, 80) + '...');
+        } else {
+          console.log('No resolved URL available, using original:', streamUrl);
         }
       } catch (e) {
-        console.log('Could not get resolved URL from processor, using original URL');
+        console.log('Could not get resolved URL, using original URL');
       }
 
-      // Generate HTML for embedded stream player
+      // Generate HTML for embedded stream player with better error handling
       const embedHtml = `
 <!DOCTYPE html>
 <html>
@@ -517,6 +520,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             transform: translate(-50%, -50%);
             color: #64748b;
             font-size: 14px;
+            text-align: center;
         }
 
         .error {
@@ -528,19 +532,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
             font-size: 14px;
             text-align: center;
         }
+
+        .spinner {
+            border: 2px solid #64748b;
+            border-top: 2px solid #3b82f6;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
     <div id="video-container">
-        <div class="loading" id="loading">Loading stream...</div>
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            Loading stream...
+        </div>
         <video id="stream-video" controls autoplay muted playsinline style="display: none;">
-            <source src="${streamUrl}" type="application/x-mpegURL">
-            <source src="${streamUrl}" type="video/mp4">
+            <source src="${resolvedUrl}" type="application/x-mpegURL">
+            <source src="${resolvedUrl}" type="video/mp4">
             Your browser does not support the video tag.
         </video>
         <div class="error" id="error" style="display: none;">
             Failed to load stream<br>
-            <small>Stream may be offline or URL invalid</small>
+            <small>Stream may be offline or URL invalid</small><br>
+            <button onclick="retryStream()" style="margin-top: 10px; padding: 5px 10px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer;">Retry</button>
         </div>
     </div>
 
@@ -549,12 +572,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const video = document.getElementById('stream-video');
         const loading = document.getElementById('loading');
         const error = document.getElementById('error');
-        const streamUrl = '${streamUrl}';
+        const streamUrl = '${resolvedUrl}';
+        let hls = null;
 
         function showError() {
             loading.style.display = 'none';
             video.style.display = 'none';
             error.style.display = 'block';
+            console.log('Stream failed to load:', streamUrl.substring(0, 80));
         }
 
         function showVideo() {
@@ -563,43 +588,88 @@ export async function registerRoutes(app: Express): Promise<Server> {
             video.style.display = 'block';
         }
 
-        // Try to load with HLS.js if supported
-        if (Hls.isSupported() && (streamUrl.includes('.m3u8') || streamUrl.includes('twitch.tv'))) {
-            const hls = new Hls({
-                enableWorker: false,
-                lowLatencyMode: true,
-                backBufferLength: 90
-            });
+        function retryStream() {
+            error.style.display = 'none';
+            loading.style.display = 'block';
+            initializeStream();
+        }
 
-            hls.loadSource(streamUrl);
-            hls.attachMedia(video);
+        function initializeStream() {
+            console.log('Initializing stream:', streamUrl.substring(0, 80));
+            
+            // Clean up existing HLS instance
+            if (hls) {
+                hls.destroy();
+                hls = null;
+            }
 
-            hls.on(Hls.Events.MANIFEST_PARSED, function() {
-                showVideo();
-                video.play().catch(e => console.log('Autoplay prevented:', e));
-            });
+            // Check if it's an HLS stream
+            if (streamUrl.includes('.m3u8') || streamUrl.includes('playlist')) {
+                if (Hls.isSupported()) {
+                    console.log('Using HLS.js for stream playback');
+                    hls = new Hls({
+                        enableWorker: false,
+                        lowLatencyMode: true,
+                        backBufferLength: 30,
+                        maxLoadingDelay: 4,
+                        startFragPrefetch: true,
+                        fragLoadingTimeOut: 20000,
+                        manifestLoadingTimeOut: 10000
+                    });
 
-            hls.on(Hls.Events.ERROR, function (event, data) {
-                console.error('HLS Error:', data);
-                if (data.fatal) {
+                    hls.loadSource(streamUrl);
+                    hls.attachMedia(video);
+
+                    hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                        console.log('HLS manifest parsed successfully');
+                        showVideo();
+                        video.play().catch(e => {
+                            console.log('Autoplay prevented:', e);
+                            showVideo(); // Still show controls even if autoplay fails
+                        });
+                    });
+
+                    hls.on(Hls.Events.ERROR, function (event, data) {
+                        console.error('HLS Error:', data.type, data.details);
+                        if (data.fatal) {
+                            console.error('Fatal HLS error, showing error message');
+                            showError();
+                        } else {
+                            console.warn('Non-fatal HLS error, attempting to recover');
+                            // Try to recover from non-fatal errors
+                            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                                hls.startLoad();
+                            } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                                hls.recoverMediaError();
+                            }
+                        }
+                    });
+
+                    hls.on(Hls.Events.FRAG_LOADED, function() {
+                        console.log('Fragment loaded successfully');
+                    });
+
+                } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                    console.log('Using native HLS support');
+                    video.src = streamUrl;
+                    video.addEventListener('loadeddata', showVideo);
+                    video.addEventListener('error', showError);
+                    video.load();
+                } else {
+                    console.error('HLS not supported in this browser');
                     showError();
                 }
-            });
-        } 
-        // Fallback to native video element
-        else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-            video.src = streamUrl;
-            video.addEventListener('loadeddata', showVideo);
-            video.addEventListener('error', showError);
-            video.load();
+            } else {
+                console.log('Using native video element for non-HLS stream');
+                video.src = streamUrl;
+                video.addEventListener('loadeddata', showVideo);
+                video.addEventListener('error', showError);
+                video.load();
+            }
         }
-        // Final fallback
-        else {
-            video.src = streamUrl;
-            video.addEventListener('loadeddata', showVideo);
-            video.addEventListener('error', showError);
-            video.load();
-        }
+
+        // Initialize stream on page load
+        initializeStream();
 
         // Handle video events
         video.addEventListener('waiting', () => {
@@ -607,27 +677,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
 
         video.addEventListener('playing', () => {
-            console.log('Video playing');
+            console.log('Video playing successfully');
         });
 
-        // Auto-retry on error
-        let retryCount = 0;
-        video.addEventListener('error', () => {
-            if (retryCount < 3) {
-                retryCount++;
-                console.log('Retrying stream...', retryCount);
-                setTimeout(() => {
-                    video.load();
-                }, 2000 * retryCount);
-            } else {
-                showError();
-            }
+        video.addEventListener('loadstart', () => {
+            console.log('Video load started');
+        });
+
+        video.addEventListener('canplay', () => {
+            console.log('Video can start playing');
         });
     </script>
 </body>
 </html>`;
 
       res.setHeader('Content-Type', 'text/html');
+      res.setHeader('X-Frame-Options', 'SAMEORIGIN');
       res.send(embedHtml);
 
     } catch (error) {
