@@ -20,8 +20,28 @@ export default function LivePlayer({ streamUrl, onError }: LivePlayerProps) {
     onError?.(error);
   };
 
-  const initializeHls = () => {
+  const testStreamConnectivity = async (url: string): Promise<boolean> => {
+    try {
+      const response = await fetch(url, { 
+        method: 'HEAD',
+        mode: 'no-cors' // Avoid CORS issues
+      });
+      return true;
+    } catch (error) {
+      console.error('Stream connectivity test failed:', error);
+      return false;
+    }
+  };
+
+  const initializeHls = async () => {
     if (!videoRef.current || !streamUrl) return;
+
+    // Test connectivity first
+    console.log('Testing stream connectivity...');
+    const isConnectable = await testStreamConnectivity(streamUrl);
+    if (!isConnectable) {
+      console.warn('Stream connectivity test failed, but attempting anyway...');
+    }
 
     // Destroy existing HLS instance
     if (hlsRef.current) {
@@ -34,13 +54,27 @@ export default function LivePlayer({ streamUrl, onError }: LivePlayerProps) {
     if (Hls.isSupported()) {
       const hls = new Hls({
         enableWorker: false,
-        lowLatencyMode: true,
-        backBufferLength: 30,
-        maxBufferLength: 60,
+        lowLatencyMode: false, // Disable for better compatibility
+        backBufferLength: 10,
+        maxBufferLength: 30,
         liveSyncDurationCount: 3,
-        liveMaxLatencyDurationCount: 10,
+        liveMaxLatencyDurationCount: 5,
         autoStartLoad: true,
-        debug: false,
+        debug: true, // Enable debug for troubleshooting
+        xhrSetup: (xhr, url) => {
+          // Add headers to avoid detection
+          xhr.setRequestHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+        },
+        fetchSetup: (context, initParams) => {
+          // Add headers for fetch requests
+          return new Request(context.url, {
+            ...initParams,
+            headers: {
+              ...initParams.headers,
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+          });
+        }
       });
 
       hlsRef.current = hls;
@@ -64,20 +98,36 @@ export default function LivePlayer({ streamUrl, onError }: LivePlayerProps) {
         if (data.fatal) {
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
-              console.log('Network error, attempting to recover...');
-              setIsReconnecting(true);
-              hls.startLoad();
+              if (data.details === 'manifestLoadError') {
+                console.error('Cannot load stream manifest - likely network/geographic restriction');
+                setPlayerError('Stream not accessible from this location');
+              } else {
+                console.log('Network error, attempting to recover...');
+                setIsReconnecting(true);
+                setTimeout(() => {
+                  if (hlsRef.current) {
+                    hlsRef.current.startLoad();
+                  }
+                }, 2000);
+              }
               break;
             case Hls.ErrorTypes.MEDIA_ERROR:
               console.log('Media error, attempting to recover...');
               setIsReconnecting(true);
-              hls.recoverMediaError();
+              setTimeout(() => {
+                if (hlsRef.current) {
+                  hlsRef.current.recoverMediaError();
+                }
+              }, 1000);
               break;
             default:
               console.log('Fatal error, destroying HLS instance');
               handleError(data);
               break;
           }
+        } else {
+          // Non-fatal errors
+          console.warn('Non-fatal HLS error:', data);
         }
       });
 
@@ -125,17 +175,24 @@ export default function LivePlayer({ streamUrl, onError }: LivePlayerProps) {
   if (playerError) {
     return (
       <div className="flex items-center justify-center h-full bg-slate-700 rounded-lg">
-        <div className="text-center text-red-400">
+        <div className="text-center text-red-400 max-w-sm px-4">
           <div className="text-2xl mb-2">⚠️</div>
           <div className="text-sm mb-2">{playerError}</div>
+          {playerError.includes('not accessible') && (
+            <div className="text-xs text-slate-400 mb-3">
+              This may be due to geographic restrictions or network filtering. 
+              Try a different stream or check your network connection.
+            </div>
+          )}
           <button 
             onClick={() => {
               setPlayerError(null);
+              setIsReconnecting(false);
               initializeHls();
             }}
             className="mt-2 px-3 py-1 bg-red-600 hover:bg-red-700 rounded text-white text-xs"
           >
-            Retry
+            Retry Connection
           </button>
         </div>
       </div>
