@@ -54,15 +54,32 @@ export default function ProcessingStatus() {
                   width="100%"
                   height="240px"
                   style={{ borderRadius: '8px' }}
+                  controls={false}
                   config={{
                     file: {
                       attributes: {
-                        crossOrigin: 'anonymous'
-                      }
+                        crossOrigin: 'anonymous',
+                        autoPlay: true,
+                        playsInline: true
+                      },
+                      forceHLS: true
+                    },
+                    hls: {
+                      isLive: true,
+                      forceHLS: true
                     }
+                  }}
+                  onReady={() => {
+                    console.log('Player ready for:', status.currentSession?.url);
                   }}
                   onError={(error) => {
                     console.log('Player Error:', error);
+                  }}
+                  onBuffer={() => {
+                    console.log('Player buffering...');
+                  }}
+                  onBufferEnd={() => {
+                    console.log('Player buffer ended');
                   }}
                 />
               </div>
