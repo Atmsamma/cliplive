@@ -4,15 +4,31 @@
 
 @keyframes scan {
   0% {
-    transform: translateX(-100%);
+    transform: translateX(-150%);
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
   }
   100% {
-    transform: translateX(300%);
+    transform: translateX(250%);
+    opacity: 0;
   }
 }
 
 .animate-scan {
-  animation: scan 4s ease-in-out infinite;
+  animation: scan 3s ease-in-out infinite;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(239, 68, 68, 0.1) 20%, 
+    rgba(239, 68, 68, 0.3) 50%, 
+    rgba(239, 68, 68, 0.1) 80%, 
+    transparent 100%
+  );
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.2);
 }
 
 :root {
