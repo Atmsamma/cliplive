@@ -74,17 +74,28 @@ export default function ProcessingStatus() {
             {status?.currentSession ? (
               <>
                 <img 
-                  src={`/api/current-frame?session=${status.currentSession.id}`}
+                  src={`/api/current-frame?session=${status.currentSession.id}&t=${Date.now()}`}
                   alt="First frame from stream"
                   className="w-full h-full object-cover"
                   style={{ display: 'block' }}
+                  onLoad={() => console.log('First frame loaded successfully')}
                   onError={(e) => {
                     console.log('Frame load error, showing fallback');
+                    // Try fallback without session parameter
+                    const img = e.target as HTMLImageElement;
+                    if (img.src.includes('session=')) {
+                      img.src = `/api/current-frame?t=${Date.now()}`;
+                    }
                   }}
                 />
                 {/* Stream info overlay */}
                 <div className="absolute bottom-3 left-3 text-xs text-white bg-black bg-opacity-60 px-2 py-1 rounded">
-                  First frame (ad-free)
+                  📸 First frame (ad-free)
+                </div>
+                {/* Processing status overlay */}
+                <div className="absolute top-3 right-3 text-xs text-white bg-green-600 bg-opacity-80 px-2 py-1 rounded flex items-center gap-1">
+                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                  Processing
                 </div>
               </>
             ) : (
