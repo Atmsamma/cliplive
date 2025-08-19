@@ -99,8 +99,8 @@ export default function ProcessingStatus() {
           {/* Stream Player / Preview */}
           <div className="bg-slate-700 rounded-lg aspect-video flex items-center justify-center relative overflow-hidden">
             {status?.currentSession?.url ? (
-              <PlatformIframePlayer 
-                streamUrl={status.currentSession.url} 
+              <PlatformIframePlayer
+                streamUrl={status.currentSession.url}
                 className="w-full h-full"
               />
             ) : (
@@ -111,7 +111,19 @@ export default function ProcessingStatus() {
             )}
           </div>
 
-          
+          {/* Processing Status - only show when actively processing without connection issues */}
+          {status?.isProcessing && status?.framesProcessed > 0 && (!status?.consecutiveFailures || status.consecutiveFailures === 0) && (
+            <div className="mt-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-slate-50 mb-1">
+                  {status.framesProcessed}
+                </div>
+                <div className="text-xs text-slate-400">
+                  frames processed
+                </div>
+              </div>
+            </div>
+          )}
 
         </div>
       </CardContent>
