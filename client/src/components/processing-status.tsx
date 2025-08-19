@@ -73,27 +73,13 @@ export default function ProcessingStatus() {
           {/* Status Header */}
           <div className="text-center mb-4">
             <div className="text-2xl font-bold mb-1">
-              <span className={
-                status?.streamEnded ? 'text-red-400' :
-                status?.currentSession ? 'text-red-400' : 'text-slate-400'
-              }>
-                {status?.streamEnded ? 'ENDED' :
-                 status?.currentSession ? 'Ready to Clip Live' : 'IDLE'}
+              <span className="text-red-400">
+                Ready to Clip Live
               </span>
             </div>
             <div className="text-sm text-slate-400">
               {status?.streamUptime || "00:00:00"}
             </div>
-            {status?.streamEnded && (
-              <div className="text-xs text-red-400 mt-1">
-                Stream no longer available
-              </div>
-            )}
-            {status?.consecutiveFailures && status.consecutiveFailures > 0 && status.consecutiveFailures < 5 && (
-              <div className="text-xs text-yellow-400 mt-1">
-                Connection issues ({status.consecutiveFailures}/5)
-              </div>
-            )}
           </div>
 
           {/* Stream Player / Preview */}
