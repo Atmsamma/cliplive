@@ -183,4 +183,3 @@ export default function LivePlayer({ streamUrl, onError }: LivePlayerProps) {
     </div>
   );
 }
-</video>
