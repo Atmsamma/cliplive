@@ -25,9 +25,12 @@ function TwitchEmbed({ channel }: TwitchEmbedProps) {
             playerRef.current.destroy();
           }
           
-          // Create a Twitch.Player object exactly as specified
+          // Create a Twitch.Player object with full dimensions
           playerRef.current = new window.Twitch.Player(embedId, {
-            channel: channel
+            channel: channel,
+            width: "100%",
+            height: "100%",
+            parent: [window.location.hostname, "localhost"]
           });
         } catch (error) {
           console.error('Error initializing Twitch player:', error);
