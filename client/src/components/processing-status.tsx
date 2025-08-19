@@ -49,30 +49,11 @@ export default function ProcessingStatus() {
               <div className="w-full h-full">
                 <ReactPlayer
                   url={status.currentSession.resolvedStreamUrl}
-                  playing={true}
-                  muted={true}
+                  playing
+                  controls
+                  config={{ file: { forceHLS: true }}}
                   width="100%"
-                  height="240px"
-                  style={{ borderRadius: '8px' }}
-                  controls={true}
-                  light={false}
-                  config={{
-                    file: {
-                      attributes: {
-                        crossOrigin: 'anonymous'
-                      },
-                      forceHLS: true
-                    }
-                  }}
-                  onReady={() => {
-                    console.log('Player ready for HLS:', status.currentSession?.resolvedStreamUrl?.substring(0, 50));
-                  }}
-                  onStart={() => {
-                    console.log('Player started');
-                  }}
-                  onPlay={() => {
-                    console.log('Player playing');
-                  }}
+                  height="100%"
                   onError={(error) => {
                     console.error('Player Error:', error);
                   }}
