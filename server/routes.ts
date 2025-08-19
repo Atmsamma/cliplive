@@ -492,13 +492,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Internal stream ended notification endpoint
-  app.post('/api/internal/stream-ended', (req, res) => {
+  app.post('/api/internal/stream-ended', async (req, res) => {
     const { url, endTime, totalClips, totalDuration, lastSuccessfulCapture } = req.body;
 
     console.log(`Stream ended notification: ${url} after ${totalDuration}s with ${totalClips} clips`);
 
-    // Update processing status
-    processingStatus.isProcessing = false;
+    // Stop the stream processor to ensure clean shutdown
+    stopStreamProcessor();
+
+    // Update active session status in database
+    try {
+      const activeSession = await storage.getActiveSession();
+      if (activeSession) {
+        await storage.updateSessionStatus(activeSession.id, false);
+      }
+    } catch (error) {
+      console.error('Error updating session status on stream end:', error);
+    }
+
+    // Reset processing status completely
+    processingStatus = {
+      isProcessing: false,
+      framesProcessed: 0,
+      streamUptime: "00:00:00",
+      audioLevel: 0,
+      motionLevel: 0,
+      sceneChange: 0,
+    };
+    sessionStartTime = null;
 
     // Notify all connected clients
     broadcastSSE({
@@ -510,6 +531,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalDuration: Math.round(totalDuration),
         endTime: new Date(endTime * 1000).toISOString(),
       },
+    });
+
+    // Also broadcast the reset status
+    broadcastSSE({
+      type: 'processing-status',
+      data: processingStatus,
     });
 
     res.json({ success: true });

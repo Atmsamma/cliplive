@@ -49,6 +49,15 @@ export function useSSE(url: string) {
               description: sseEvent.data.message || "The stream is no longer available",
               variant: "destructive",
             });
+            // Reset processing status to allow new stream capture
+            queryClient.setQueryData(["/api/status"], {
+              isProcessing: false,
+              framesProcessed: 0,
+              streamUptime: "00:00:00",
+              audioLevel: 0,
+              motionLevel: 0,
+              sceneChange: 0,
+            });
             queryClient.invalidateQueries({ queryKey: ["/api/status"] });
             break;
             
