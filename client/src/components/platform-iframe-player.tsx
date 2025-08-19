@@ -177,7 +177,7 @@ export default function PlatformIframePlayer({ streamUrl, className = "" }: Plat
       <div className="text-center text-xs text-slate-400 mt-2 py-1 relative overflow-hidden">
         <div className="relative">
           <span className="inline-block animate-pulse">watching</span>
-          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-blue-400/30 to-transparent animate-scan"></div>
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-red-400/30 to-transparent animate-scan"></div>
         </div>
       </div>
     </div>

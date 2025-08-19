@@ -12,7 +12,7 @@
 }
 
 .animate-scan {
-  animation: scan 2s ease-in-out infinite;
+  animation: scan 4s ease-in-out infinite;
 }
 
 :root {
