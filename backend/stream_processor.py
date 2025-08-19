@@ -206,10 +206,10 @@ class StreamBucket:
         self.bucket_counter += 1
         bucket_filename = f"bucket_{self.bucket_counter:06d}.mp4"
         bucket_path = os.path.join(self.temp_dir, bucket_filename)
-        
+
         self.current_bucket_path = bucket_path
         self.current_bucket_start_time = time.time()
-        
+
         print(f"🪣 Starting new bucket: {bucket_filename} (duration: {self.clip_duration}s)")
         return bucket_path
 
@@ -217,7 +217,7 @@ class StreamBucket:
         """Get information about the current recording bucket."""
         if not self.current_bucket_path or not self.current_bucket_start_time:
             return None
-            
+
         return {
             'path': self.current_bucket_path,
             'start_time': self.current_bucket_start_time,
@@ -234,7 +234,7 @@ class StreamBucket:
             # Wait a moment to ensure the bucket file is completely written
             import time
             time.sleep(1)
-            
+
             # Verify the source bucket is valid before copying
             probe_cmd = [
                 'ffprobe',
@@ -244,13 +244,13 @@ class StreamBucket:
                 '-of', 'csv=p=0',
                 self.current_bucket_path
             ]
-            
+
             probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=5)
-            
+
             if probe_result.returncode != 0:
                 print(f"❌ Source bucket is invalid: {probe_result.stderr}")
                 return False
-            
+
             # Use FFmpeg to ensure a valid MP4 output with proper headers
             ffmpeg_cmd = [
                 'ffmpeg',
@@ -260,10 +260,10 @@ class StreamBucket:
                 '-y',  # Overwrite output
                 clip_path
             ]
-            
+
             print(f"🔧 Processing bucket into valid clip...")
             ffmpeg_result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=30)
-            
+
             if ffmpeg_result.returncode == 0 and os.path.exists(clip_path):
                 file_size = os.path.getsize(clip_path)
                 if file_size > 100000:  # Ensure reasonable file size
@@ -275,7 +275,7 @@ class StreamBucket:
             else:
                 print(f"❌ FFmpeg clip processing failed: {ffmpeg_result.stderr}")
                 return False
-            
+
         except Exception as e:
             print(f"❌ Error saving bucket as clip: {e}")
             return False
@@ -295,22 +295,22 @@ class StreamBucket:
         """Clean up all temporary files and bucket artifacts."""
         try:
             print(f"🧹 Cleaning up StreamBucket directory: {self.temp_dir}")
-            
+
             if os.path.exists(self.temp_dir):
                 # List files before cleanup for debugging
                 files = os.listdir(self.temp_dir)
                 if files:
                     print(f"🧹 Removing {len(files)} bucket files: {files}")
-                
+
                 # Remove the entire temporary directory
                 shutil.rmtree(self.temp_dir)
                 print(f"✅ StreamBucket cleanup completed")
             else:
                 print(f"📁 StreamBucket temp directory already clean")
-                
+
         except Exception as e:
             print(f"⚠️ Error during StreamBucket cleanup: {e}")
-        
+
         # Reset internal state
         self.current_bucket_path = None
         self.current_bucket_start_time = None
@@ -387,6 +387,7 @@ class StreamProcessor:
         # VLC Display configuration
         self.use_vlc_display = config.get('useVlcDisplay', False)
         self.vlc_stream_url = None
+        self.resolved_url = None # Store the resolved URL for embedding
 
         # Ensure clips and temp directories exist
         self.clips_dir = os.path.join(os.getcwd(), 'clips')
@@ -416,9 +417,16 @@ class StreamProcessor:
         self.last_successful_capture = time.time()
         self.start_time = time.time()
 
-        print(f"🚀 Starting stream processor for: {url}")
-        print(f"📊 Thresholds - Audio: {audio_threshold}, Motion: {motion_threshold}")
-        print(f"⏱️ Clip length: {clip_length}s")
+        # Resolve stream URL
+        print(f"🔗 Resolving stream URL: {url}")
+        self.resolved_url = self.resolve_stream_url(url)
+        if not self.resolved_url:
+            print(f"❌ Failed to resolve stream URL")
+            self.cleanup()
+            return False
+
+        # Store resolved URL for embedding
+        self.resolved_url = self.resolved_url
 
         # Initialize stream bucket for continuous recording
         self.stream_bucket = StreamBucket(clip_duration=self.clip_length)
@@ -442,7 +450,7 @@ class StreamProcessor:
         except Exception as e:
             print(f"⚠️ Error cleaning old frames: {e}")
 
-        
+
 
         # Start capture, analysis, and metrics update threads
         self.capture_thread = threading.Thread(target=self._stream_capture_loop, daemon=True)
@@ -470,30 +478,30 @@ class StreamProcessor:
         try:
             import glob
             import shutil
-            
+
             # Clean up any temporary stream bucket directories
             temp_dirs = glob.glob('/tmp/stream_bucket_*')
             for temp_dir in temp_dirs:
                 if os.path.exists(temp_dir):
                     print(f"🧹 Removing temporary bucket directory: {temp_dir}")
                     shutil.rmtree(temp_dir)
-            
+
             # Clean up any leftover segment files
             temp_segments = glob.glob('/tmp/*segment*.ts') + glob.glob('/tmp/*segment*.mp4')
             for segment in temp_segments:
                 if os.path.exists(segment):
                     print(f"🧹 Removing temporary segment: {segment}")
                     os.remove(segment)
-            
+
             # Clean up any concat files
             concat_files = glob.glob('/tmp/concat_*.txt') + glob.glob('/tmp/realtime_*.txt')
             for concat_file in concat_files:
                 if os.path.exists(concat_file):
                     print(f"🧹 Removing concat file: {concat_file}")
                     os.remove(concat_file)
-            
+
             print("✅ Python processor artifacts cleaned up successfully")
-            
+
         except Exception as cleanup_error:
             print(f"⚠️ Error during Python processor cleanup: {cleanup_error}")
 
@@ -518,7 +526,7 @@ class StreamProcessor:
             try:
                 # Start a new bucket for continuous recording
                 bucket_path = self.stream_bucket.start_new_bucket()
-                
+
                 print(f"🪣 Recording bucket {bucket_counter}: {self.clip_length}s duration")
                 # Capture continuous video bucket
                 success = self._capture_continuous_bucket(bucket_path)
@@ -529,7 +537,7 @@ class StreamProcessor:
                     self.consecutive_failures = 0
                     self.last_successful_capture = time.time()
                     bucket_counter += 1
-                    
+
                     # Clean up old buckets to save space
                     self.stream_bucket.cleanup_old_buckets()
                 else:
@@ -561,7 +569,7 @@ class StreamProcessor:
         while self.is_running:
             try:
                 bucket_info = self.stream_bucket.get_current_bucket_info()
-                
+
                 if not bucket_info:
                     print(f"⏳ Waiting for bucket to start recording...")
                     time.sleep(1)
@@ -571,7 +579,7 @@ class StreamProcessor:
                 if self.stream_bucket.is_recording_bucket:
                     time.sleep(2)
                     continue
-                
+
                 # Additional wait to ensure file is completely written
                 time.sleep(1)
 
@@ -673,22 +681,22 @@ class StreamProcessor:
         """Generate realistic metrics without complex FFmpeg analysis."""
         import random
         import time
-        
+
         # Generate realistic baseline metrics with some variation
         base_audio = 45 + random.uniform(-10, 15)  # 35-60 range
         base_motion = 25 + random.uniform(-15, 20)  # 10-45 range
         base_scene = 0.1 + random.uniform(0, 0.2)   # 0.1-0.3 range
-        
+
         # Occasionally generate spikes for highlight detection
         if random.random() < 0.05:  # 5% chance of audio spike
             base_audio += random.uniform(20, 40)
-            
+
         if random.random() < 0.08:  # 8% chance of motion spike
             base_motion += random.uniform(15, 35)
-            
+
         if random.random() < 0.03:  # 3% chance of scene change
             base_scene += random.uniform(0.2, 0.5)
-        
+
         return {
             'frames_analyzed': 60,
             'audio_level': min(100, max(0, base_audio)),
@@ -705,15 +713,11 @@ class StreamProcessor:
                 return self._get_default_metrics()
 
             # ONLY process real video segments - no mock data allowed
+            real_video_extensions = ('.ts', '.mp4', '.m4v', '.mkv', '.mov')
             file_size = os.path.getsize(segment_path)
 
-            if file_size < 50000:
-                print(f"❌ CRITICAL: Segment file too small ({file_size} bytes) - not real video")
-                return self._get_default_metrics()
-
-            # Verify it's a real video file by checking format
-            if not segment_path.endswith(('.ts', '.mp4', '.m4v', '.mkv')):
-                print(f"❌ CRITICAL: Invalid video format - real video required")
+            if file_size < 50000 or not segment_path.lower().endswith(real_video_extensions):
+                print(f"❌ CRITICAL: Segment {os.path.basename(segment_path)} is not real video (size: {file_size}, ext: {os.path.splitext(segment_path)[1]})")
                 return self._get_default_metrics()
 
             print(f"✅ Processing REAL video segment: {file_size} bytes")
@@ -727,40 +731,20 @@ class StreamProcessor:
     def _analyze_with_ffmpeg(self, segment_path: str) -> Dict[str, float]:
         """Use FFmpeg to analyze video segment for real metrics."""
         try:
-            # Audio analysis using ffprobe
-            audio_cmd = [
-                'ffprobe',
-                '-f', 'lavfi',
-                '-i', f'amovie={segment_path},astats=metadata=1:reset=1',
-                '-show_entries', 'frame=pkt_pts_time,pkt_duration_time,metadata:tags=lavfi.astats.Overall.RMS_level',
-                '-print_format', 'csv',
-                '-of', 'csv=p=0:s=x',
-                '-v', 'quiet'
-            ]
-
-            # Motion analysis using frame differences
-            motion_cmd = [
-                'ffmpeg',
-                '-i', segment_path,
-                '-filter:v', 'select=gt(scene\\,0.1)',
-                '-vsync', 'vfr',
-                '-f', 'null',
-                '-v', 'quiet',
-                '-'
-            ]
-
             # Real-time FFmpeg analysis with enhanced audio and video detection
-            result = subprocess.run([
+            cmd = [
                 'ffmpeg',
                 '-i', segment_path,
                 '-af', 'astats=metadata=1:reset=1:measure_overall=RMS_level',
                 '-vf', 'fps=2,select=gt(scene\\,0.3),metadata=print:key=lavfi.scene_score',
                 '-f', 'null',
                 '-'
-            ], capture_output=True, text=True, timeout=10)
+            ]
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
 
             metrics = {
-                'frames_analyzed': 60,  # 2 seconds at 30fps
+                'frames_analyzed': 60,  # Default to 60 frames (2 seconds at 30fps)
                 'audio_level': 0.0,
                 'motion_level': 0.0,
                 'scene_change': 0.0,
@@ -890,7 +874,7 @@ class StreamProcessor:
         """Create a highlight clip by saving the current bucket."""
         try:
             bucket_info = self.stream_bucket.get_current_bucket_info()
-            
+
             if not bucket_info:
                 print("No bucket available for clipping")
                 return
@@ -1171,51 +1155,6 @@ class StreamProcessor:
         except Exception as e:
             print(f"Error capturing clip thumbnail: {e}")
 
-    def _capture_detection_frame(self, detection_time: float, clip_segments: List[Dict], thumbnail_filename: str):
-        """Capture a frame at the exact detection moment for thumbnail."""
-        try:
-            # Find the segment containing the detection moment
-            detection_segment = None
-            segment_offset = 0
-
-            for segment in clip_segments:
-                segment_end = segment['timestamp'] + segment['duration']
-                if segment['timestamp'] <= detection_time <= segment_end:
-                    detection_segment = segment
-                    segment_offset = detection_time - segment['timestamp']
-                    break
-
-            if not detection_segment:
-                print("Could not find segment for frame capture")
-                return
-
-            # Create thumbnail directory if it doesn't exist
-            thumbnails_dir = os.path.join(self.clips_dir, 'thumbnails')
-            os.makedirs(thumbnails_dir, exist_ok=True)
-
-            thumbnail_path = os.path.join(thumbnails_dir, thumbnail_filename)
-
-            # Use FFmpeg to extract frame at exact detection moment
-            cmd = [
-                'ffmpeg',
-                '-i', detection_segment['path'],
-                '-ss', str(segment_offset),  # Seek to detection moment within segment
-                '-vframes', '1',             # Extract exactly 1 frame
-                '-y',                        # Overwrite output
-                thumbnail_path
-            ]
-
-            print(f"🖼️ Capturing frame at detection moment: {segment_offset:.1f}s into segment")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-
-            if result.returncode == 0 and os.path.exists(thumbnail_path):
-                print(f"✅ Frame captured successfully: {thumbnail_filename}")
-            else:
-                print(f"❌ Frame capture failed: {result.stderr}")
-
-        except Exception as e:
-            print(f"Error capturing detection frame: {e}")
-
     def _create_standard_clip(self, segments, output_path, filename, trigger_reason, detection_time):
         """Fallback method for standard clipping without precise timing."""
         try:
@@ -1285,7 +1224,7 @@ class StreamProcessor:
 
                 if stream_url:
                     print(f"✅ Got clean stream URL for bucket: {stream_url[:80]}...")
-                    
+
                     # Start VLC display if enabled
                     if self.use_vlc_display and VLC_DISPLAY_AVAILABLE:
                         if not self.vlc_stream_url or self.vlc_stream_url != stream_url:
@@ -1342,7 +1281,7 @@ class StreamProcessor:
             self.stream_bucket.is_recording_bucket = True
             ffmpeg_result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=self.clip_length + 15)
             self.stream_bucket.is_recording_bucket = False
-            
+
             # Give the file system a moment to finish writing and ensure file integrity
             import time
             time.sleep(3)  # Increased wait time for better file completion
@@ -1598,9 +1537,117 @@ class StreamProcessor:
 
             time.sleep(1)
 
-    
+    def get_status(self) -> Dict[str, Any]:
+        """Get current processing status."""
+        uptime = time.time() - self.start_time if self.start_time else 0
+        uptime_str = str(datetime.timedelta(seconds=int(uptime)))
 
-    
+        return {
+            "isProcessing": self.is_running,
+            "framesProcessed": self.frames_processed,
+            "streamUptime": uptime_str,
+            "audioLevel": self.metrics_queue.queue[0]['audio_level'] if self.metrics_queue.qsize() > 0 else 0,
+            "motionLevel": self.metrics_queue.queue[0]['motion_level'] if self.metrics_queue.qsize() > 0 else 0,
+            "sceneChange": self.metrics_queue.queue[0]['scene_change'] if self.metrics_queue.qsize() > 0 else 0,
+            "currentSession": self.session_id,
+            "streamEnded": self.stream_ended,
+            "consecutiveFailures": self.consecutive_failures,
+            "lastSuccessfulCapture": self.last_successful_capture,
+            "resolvedStreamUrl": self.resolved_url if hasattr(self, 'resolved_url') else None,
+        }
+
+    def get_resolved_stream_url(self) -> str:
+        """Get the resolved HLS stream URL for embedding."""
+        if hasattr(self, 'resolved_url') and self.resolved_url:
+            return self.resolved_url
+        return ""
+
+    def resolve_stream_url(self, url: str) -> Optional[str]:
+        """Resolve the stream URL using streamlink, prioritizing clean streams."""
+        try:
+            # Check if streamlink is installed
+            streamlink_check = subprocess.run(['which', 'streamlink'], capture_output=True, text=True)
+            if streamlink_check.returncode != 0:
+                print(" streamlink not found, attempting to install...")
+                install_result = subprocess.run(['pip', 'install', 'streamlink'], capture_output=True, text=True)
+                if install_result.returncode != 0:
+                    print(f" failed to install streamlink: {install_result.stderr}")
+                    return None
+                print(" streamlink installed successfully")
+
+            # Extract channel name from URL for Ad Gatekeeper
+            channel_name = None
+            if 'twitch.tv/' in url:
+                try:
+                    # Extract channel from URLs like https://www.twitch.tv/papaplatte
+                    channel_name = url.split('twitch.tv/')[-1].split('/')[0].split('?')[0]
+                except:
+                    pass
+
+            stream_url = None
+
+            # Use Ad Gatekeeper if available and we have a channel name
+            if self.ad_gatekeeper and channel_name:
+                print(f" Using Ad Gatekeeper for channel: {channel_name}")
+                stream_url = self.ad_gatekeeper.get_clean_twitch_url(channel_name, quality='best')
+
+                if stream_url:
+                    print(f" Got clean stream URL via Ad Gatekeeper: {stream_url[:80]}...")
+                else:
+                    print(" Ad Gatekeeper failed to get clean URL, falling back to direct streamlink")
+            else:
+                # Fallback to direct streamlink
+                print(f" Ad Gatekeeper not available, using direct streamlink")
+
+            # If Ad Gatekeeper failed or was not used, use direct streamlink
+            if not stream_url:
+                url_cmd = [
+                    'streamlink',
+                    url,
+                    'best',  # Use best quality for high-definition clips
+                    '--stream-url',
+                    '--retry-streams', '3',
+                    '--retry-max', '5'
+                ]
+
+                print(f" Getting stream URL: streamlink {url} best --stream-url")
+                url_result = subprocess.run(url_cmd, capture_output=True, text=True, timeout=30)
+
+                if url_result.returncode != 0:
+                    print(f" streamlink failed with return code {url_result.returncode}")
+                    print(f" stdout: {url_result.stdout}")
+                    print(f" stderr: {url_result.stderr}")
+
+                    # Try with different quality options (prioritize higher quality)
+                    for quality in ['720p', '1080p', '480p', '360p']:
+                        print(f" Trying quality: {quality}")
+                        retry_cmd = url_cmd.copy()
+                        retry_cmd[2] = quality
+                        retry_result = subprocess.run(retry_cmd, capture_output=True, text=True, timeout=30)
+                        if retry_result.returncode == 0 and retry_result.stdout.strip():
+                            url_result = retry_result
+                            break
+                    else:
+                        print(" All quality options failed - stream may have ended")
+                        return None
+
+                stream_url = url_result.stdout.strip()
+                if not stream_url or not stream_url.startswith('http'):
+                    print(f" Invalid stream URL received: '{stream_url}'")
+                    return None
+
+                print(f" Got stream URL: {stream_url[:80]}...")
+
+            return stream_url
+
+        except subprocess.TimeoutExpired:
+            print(" Stream capture timed out")
+            return None
+        except Exception as e:
+            print(f" Stream capture error: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
 
 
 def main():

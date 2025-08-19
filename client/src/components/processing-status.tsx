@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { TrendingUp } from "lucide-react";
-import { useSSE } from "@/hooks/use-sse";
+import { Monitor, Zap, Volume2, Activity, Clock, Tv } from "lucide-react";
 import type { ProcessingStatus } from "@shared/schema";
+import { useEffect, useState } from "react";
 
 export default function ProcessingStatus() {
   const { data: status } = useQuery<ProcessingStatus>({
@@ -10,8 +10,16 @@ export default function ProcessingStatus() {
     refetchInterval: 1000,
   });
 
-  // Listen for SSE updates
-  useSSE("/api/events");
+  const [streamUrl, setStreamUrl] = useState<string | null>(null);
+
+  // Update stream URL when status changes and isProcessing is true
+  useEffect(() => {
+    if (status?.currentSession && status.isProcessing) {
+      setStreamUrl(status.currentSession.url);
+    } else {
+      setStreamUrl(null); // Reset if not processing or no current session
+    }
+  }, [status?.currentSession, status?.isProcessing]);
 
   // Determine animation state based on stream data
   const getAnimationState = () => {
