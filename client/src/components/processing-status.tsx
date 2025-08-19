@@ -111,8 +111,8 @@ export default function ProcessingStatus() {
             )}
           </div>
 
-          {/* Processing Status - only show when actively processing without connection issues */}
-          {status?.isProcessing && status?.framesProcessed > 0 && (!status?.consecutiveFailures || status.consecutiveFailures === 0) && (
+          {/* Processing Status - only show when actively processing without any connection issues */}
+          {status?.isProcessing && status?.framesProcessed > 0 && !status?.consecutiveFailures && !status?.streamEnded && (
             <div className="mt-4">
               <div className="text-center">
                 <div className="text-2xl font-bold text-slate-50 mb-1">
