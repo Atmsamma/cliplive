@@ -158,26 +158,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Get current frame (static session screenshot)
   app.get('/api/current-frame', (req, res) => {
-    const sessionId = req.query.session as string;
-    let framePath = path.join(process.cwd(), 'temp', 'current_frame.jpg');
-
-    // Try session-specific frame first if session ID provided
+    const sessionId = req.query.session;
+    
     if (sessionId) {
+      // Serve static session screenshot
       const sessionFramePath = path.join(process.cwd(), 'temp', `session_${sessionId}_frame.jpg`);
+      
       if (fs.existsSync(sessionFramePath)) {
-        framePath = sessionFramePath;
+        res.sendFile(sessionFramePath);
+        return;
       }
     }
-
+    
+    // Fallback to current frame if no session-specific frame
+    const framePath = path.join(process.cwd(), 'temp', 'current_frame.jpg');
+    
     if (fs.existsSync(framePath)) {
-      // Set cache headers to prevent browser caching issues
-      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-      res.setHeader('Pragma', 'no-cache');
-      res.setHeader('Expires', '0');
       res.sendFile(framePath);
     } else {
-      // Send a placeholder or 404
-      res.status(404).json({ error: "No current frame available" });
+      res.status(404).json({ error: 'No frame available' });
     }
   });
 
@@ -196,7 +195,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Clean up temp directory and old session artifacts before starting new session
       try {
         console.log('🧹 Cleaning temp directory before starting new session...');
-
+        
         const tempDir = path.join(process.cwd(), 'temp');
         if (fs.existsSync(tempDir)) {
           const tempFiles = fs.readdirSync(tempDir);
@@ -213,7 +212,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Create temp directory if it doesn't exist
           fs.mkdirSync(tempDir, { recursive: true });
         }
-
+        
         console.log('✅ Temp directory cleaned for new session');
       } catch (cleanupError) {
         console.error('Error cleaning temp directory:', cleanupError);

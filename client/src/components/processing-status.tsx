@@ -69,35 +69,18 @@ export default function ProcessingStatus() {
             )}
           </div>
 
-          {/* Static First Frame Display */}
+          {/* Static Stream Screenshot - Full Size */}
           <div className="relative flex-1 bg-slate-700 rounded-lg overflow-hidden border border-slate-600 min-h-48">
             {status?.currentSession ? (
-              <>
-                <img 
-                  src={`/api/current-frame?session=${status.currentSession.id}&t=${Date.now()}`}
-                  alt="First frame from stream"
-                  className="w-full h-full object-cover"
-                  style={{ display: 'block' }}
-                  onLoad={() => console.log('First frame loaded successfully')}
-                  onError={(e) => {
-                    console.log('Frame load error, showing fallback');
-                    // Try fallback without session parameter
-                    const img = e.target as HTMLImageElement;
-                    if (img.src.includes('session=')) {
-                      img.src = `/api/current-frame?t=${Date.now()}`;
-                    }
-                  }}
-                />
-                {/* Stream info overlay */}
-                <div className="absolute bottom-3 left-3 text-xs text-white bg-black bg-opacity-60 px-2 py-1 rounded">
-                  📸 First frame (ad-free)
-                </div>
-                {/* Processing status overlay */}
-                <div className="absolute top-3 right-3 text-xs text-white bg-green-600 bg-opacity-80 px-2 py-1 rounded flex items-center gap-1">
-                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                  Processing
-                </div>
-              </>
+              <img 
+                src={`/api/current-frame?session=${status.currentSession.id}`}
+                alt="Stream screenshot"
+                className="w-full h-full object-cover"
+                style={{ display: 'block' }}
+                onError={(e) => {
+                  console.log('Frame load error, showing fallback');
+                }}
+              />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
                 <div className="text-center">
@@ -117,7 +100,7 @@ export default function ProcessingStatus() {
               }`} />
             )}
 
-            {/* Recording indicator dot */}
+            {/* Recording indicator dot - red camera dot */}
             {status?.currentSession && (
               <div className="absolute top-3 left-3 flex items-center space-x-1">
                 <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
@@ -126,6 +109,8 @@ export default function ProcessingStatus() {
                 </div>
               </div>
             )}
+
+
           </div>
         </div>
       </CardContent>

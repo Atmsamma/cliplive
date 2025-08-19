@@ -429,13 +429,11 @@ class StreamProcessor:
         except Exception as e:
             print(f"⚠️ Error cleaning old frames: {e}")
 
-        # Capture the first clean frame immediately before any processing
-        print(f"📸 Step 1: Capturing first clean frame to represent the stream...")
+        # Capture fresh session screenshot immediately
         self._capture_session_screenshot()
         
-        # Wait longer to ensure the first frame is properly captured and available for UI
-        print(f"⏳ Waiting for first frame to be ready for display...")
-        time.sleep(5)
+        # Wait a moment to ensure screenshot is ready
+        time.sleep(2)
 
         # Start capture, analysis, and metrics update threads
         self.capture_thread = threading.Thread(target=self._stream_capture_loop, daemon=True)
@@ -1601,129 +1599,76 @@ class StreamProcessor:
             pass
 
     def _capture_session_screenshot(self):
-        """Capture the first frame from a clean (ad-free) stream when session starts."""
+        """Capture a static screenshot when session starts."""
         try:
-            print(f"📸 Capturing first clean frame for session: {self.url}")
+            print(f"📸 Capturing session screenshot for: {self.url}")
             
-            capture_url = None
+            # First try to get stream URL using streamlink
+            capture_url = self.url
             
-            # For Twitch URLs, ALWAYS use Ad Gatekeeper to ensure clean stream
+            # For Twitch URLs, try to get HLS stream URL
             if 'twitch.tv' in self.url:
                 try:
                     # Extract channel name
                     channel_match = re.search(r'twitch\.tv/([^/?]+)', self.url)
                     if channel_match:
                         channel = channel_match.group(1)
-                        print(f"📸 Getting clean stream URL for channel: {channel}")
+                        print(f"📸 Getting stream URL for channel: {channel}")
                         
-                        # Use Ad Gatekeeper to get clean URL (mandatory for Twitch)
+                        # Try Ad Gatekeeper first
                         if self.ad_gatekeeper:
-                            print(f"🛡️ Using Ad Gatekeeper to ensure first frame is ad-free...")
-                            # Try multiple times to ensure we get a clean stream
-                            for attempt in range(3):
-                                clean_url = self.ad_gatekeeper.get_clean_twitch_url(channel, quality='720p')
-                                if clean_url:
-                                    capture_url = clean_url
-                                    print(f"✅ Got clean URL for first frame capture (attempt {attempt + 1})")
-                                    break
-                                else:
-                                    print(f"⚠️ Attempt {attempt + 1} failed, retrying...")
-                                    time.sleep(2)
-                            
-                            if not capture_url:
-                                print(f"❌ Ad Gatekeeper failed after 3 attempts - cannot guarantee ad-free first frame")
-                                return
-                        else:
-                            print(f"❌ Ad Gatekeeper not available - cannot guarantee ad-free first frame")
-                            return
-                    else:
-                        print(f"❌ Could not extract channel name from URL")
-                        return
+                            clean_url = self.ad_gatekeeper.get_clean_twitch_url(channel, quality='720p')
+                            if clean_url:
+                                capture_url = clean_url
+                                print(f"📸 Using Ad Gatekeeper URL for screenshot")
+                        
+                        # Fallback to streamlink if Ad Gatekeeper fails
+                        if capture_url == self.url:
+                            streamlink_cmd = ['streamlink', self.url, '720p', '--stream-url']
+                            result = subprocess.run(streamlink_cmd, capture_output=True, text=True, timeout=15)
+                            if result.returncode == 0 and result.stdout.strip():
+                                capture_url = result.stdout.strip()
+                                print(f"📸 Using streamlink URL for screenshot")
                 except Exception as e:
-                    print(f"❌ Error processing Twitch URL: {e}")
-                    return
-            else:
-                # For non-Twitch URLs, try to get stream URL via streamlink first
-                try:
-                    streamlink_check = subprocess.run(['which', 'streamlink'], capture_output=True, text=True)
-                    if streamlink_check.returncode == 0:
-                        # Use streamlink to get the actual stream URL
-                        streamlink_cmd = [
-                            'streamlink',
-                            self.url,
-                            'best',
-                            '--stream-url'
-                        ]
-                        streamlink_result = subprocess.run(streamlink_cmd, capture_output=True, text=True, timeout=30)
-                        if streamlink_result.returncode == 0 and streamlink_result.stdout.strip():
-                            capture_url = streamlink_result.stdout.strip()
-                            print(f"📸 Using streamlink URL for non-Twitch stream: {capture_url[:80]}...")
-                        else:
-                            capture_url = self.url
-                            print(f"📸 Streamlink failed, using direct URL: {capture_url}")
-                    else:
-                        capture_url = self.url
-                        print(f"📸 Using direct URL for non-Twitch stream: {capture_url}")
-                except Exception as e:
-                    capture_url = self.url
-                    print(f"📸 Error with streamlink, using direct URL: {capture_url}")
-
-            if not capture_url:
-                print(f"❌ No valid capture URL obtained")
-                return
+                    print(f"⚠️ Could not get stream URL, using original: {e}")
 
             session_id = getattr(self, 'session_id', 'default')
             temp_dir = os.path.join(os.getcwd(), "temp")
             os.makedirs(temp_dir, exist_ok=True)
             
             frame_path = os.path.join(temp_dir, f"session_{session_id}_frame.jpg")
+            
+            # Also capture to current_frame.jpg for immediate display
             current_frame_path = os.path.join(temp_dir, "current_frame.jpg")
 
-            # Capture the FIRST frame from the clean stream with better parameters
+            # Capture screenshot using FFmpeg
             cmd = [
                 "ffmpeg", "-y",
                 "-i", capture_url,
-                "-vframes", "1",        # Get exactly 1 frame (the very first one)
-                "-q:v", "2",            # High quality JPEG
-                "-vf", "scale=640:360", # Resize to reasonable size for UI
-                "-f", "image2",         # Force image format
+                "-t", "3",  # Capture for 3 seconds to ensure we get a good frame
+                "-vf", "select=eq(n\\,60)",  # Select frame 60 (2 seconds in)
+                "-q:v", "2",
+                "-frames:v", "1",
                 frame_path
             ]
 
-            print(f"📸 Capturing first frame from clean stream...")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            print(f"📸 Running FFmpeg screenshot command...")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
 
             if result.returncode == 0 and os.path.exists(frame_path):
-                # Verify the frame was captured successfully
-                file_size = os.path.getsize(frame_path)
-                if file_size > 1000:  # Ensure it's a valid image
-                    # Copy to current_frame.jpg for immediate UI display
-                    import shutil
-                    shutil.copy2(frame_path, current_frame_path)
-                    print(f"✅ First clean frame captured successfully: {frame_path} ({file_size} bytes)")
-                    print(f"✅ Frame is now displayed in UI as static representation")
-                    
-                    # Also create a backup with timestamp for debugging
-                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                    backup_path = os.path.join(temp_dir, f"first_frame_{timestamp}.jpg")
-                    shutil.copy2(frame_path, backup_path)
-                    print(f"📸 Backup frame saved: {backup_path}")
-                    
-                    return True
-                else:
-                    print(f"❌ Captured frame is too small ({file_size} bytes), likely invalid")
+                # Copy to current_frame.jpg for immediate UI display
+                import shutil
+                shutil.copy2(frame_path, current_frame_path)
+                print(f"✅ Session screenshot captured successfully: {frame_path}")
+                print(f"✅ Current frame updated: {current_frame_path}")
             else:
-                print(f"❌ Failed to capture first frame")
+                print(f"❌ Failed to capture session screenshot")
                 print(f"❌ FFmpeg stderr: {result.stderr}")
-                print(f"❌ This may indicate the stream has ads or is unavailable")
-                
-            return False
 
         except Exception as e:
-            print(f"❌ Error capturing first clean frame: {e}")
+            print(f"❌ Error capturing session screenshot: {e}")
             import traceback
             traceback.print_exc()
-            return False
 
 
 def main():
