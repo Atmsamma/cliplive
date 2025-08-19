@@ -143,7 +143,7 @@ export default function ProcessingStatus() {
           ) : (
             <div className="text-center text-slate-400">
               <div className="text-4xl mb-2">🎬</div>
-              <div>Ready to start streaming</div>
+              <div>Ready to start clipping</div>
             </div>
           )}
         </div>
