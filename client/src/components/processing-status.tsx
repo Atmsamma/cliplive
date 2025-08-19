@@ -97,7 +97,7 @@ export default function ProcessingStatus() {
           </div>
 
           {/* Stream Player / Preview */}
-          <div className="bg-slate-700 rounded-lg p-4 aspect-video flex items-center justify-center relative overflow-hidden">
+          <div className="bg-slate-700 rounded-lg aspect-video flex items-center justify-center relative overflow-hidden">
             {status?.currentSession?.url ? (
               <PlatformIframePlayer 
                 streamUrl={status.currentSession.url} 
