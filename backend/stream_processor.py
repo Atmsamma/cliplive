@@ -1560,11 +1560,14 @@ class StreamProcessor:
                 }
 
                 # Send to main server for SSE broadcast
-                requests.post(
+                response = requests.post(
                     'http://0.0.0.0:5000/api/internal/metrics',
                     json=status_data,
                     timeout=2
                 )
+                
+                if response.status_code != 200:
+                    print(f"❌ Failed to send metrics: {response.status_code}")
 
             except Exception as e:
                 print(f"Error updating metrics: {e}")
@@ -1583,11 +1586,13 @@ class StreamProcessor:
     def send_stream_url_to_backend(self, stream_url):
         """Send resolved stream URL to the backend for display"""
         try:
-            response = requests.post('http://localhost:5000/api/internal/stream-url', json={'resolvedStreamUrl': stream_url})
-            if response.status_code != 200:
-                print(f"Failed to send stream URL: {response.status_code}")
+            response = requests.post('http://0.0.0.0:5000/api/internal/stream-url', json={'resolvedStreamUrl': stream_url}, timeout=5)
+            if response.status_code == 200:
+                print(f"✅ Stream URL sent to backend successfully")
+            else:
+                print(f"❌ Failed to send stream URL: {response.status_code}")
         except Exception as e:
-            print(f"Error sending stream URL: {e}")
+            print(f"❌ Error sending stream URL to backend: {e}")
 
 
 def main():

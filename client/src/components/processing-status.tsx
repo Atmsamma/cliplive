@@ -45,35 +45,44 @@ export default function ProcessingStatus() {
 
           {/* Stream Player / Preview */}
           <div className="relative bg-slate-700 rounded-lg mb-4 min-h-[240px] overflow-hidden">
-            {status?.currentSession?.url ? (
+            {status?.currentSession?.resolvedStreamUrl ? (
               <div className="w-full h-full">
                 <ReactPlayer
-                  url={status.currentSession.resolvedStreamUrl || status.currentSession.url}
+                  url={status.currentSession.resolvedStreamUrl}
                   playing={true}
                   muted={true}
                   width="100%"
                   height="240px"
                   style={{ borderRadius: '8px' }}
-                  controls={false}
+                  controls={true}
+                  light={false}
                   config={{
                     file: {
                       attributes: {
                         crossOrigin: 'anonymous',
                         autoPlay: true,
-                        playsInline: true
+                        playsInline: true,
+                        preload: 'auto'
                       },
-                      forceHLS: true
-                    },
-                    hls: {
-                      isLive: true,
-                      forceHLS: true
+                      forceHLS: true,
+                      hlsOptions: {
+                        enableWorker: false,
+                        lowLatencyMode: true,
+                        backBufferLength: 90
+                      }
                     }
                   }}
                   onReady={() => {
-                    console.log('Player ready for:', status.currentSession?.url);
+                    console.log('Player ready for HLS:', status.currentSession?.resolvedStreamUrl?.substring(0, 50));
+                  }}
+                  onStart={() => {
+                    console.log('Player started');
+                  }}
+                  onPlay={() => {
+                    console.log('Player playing');
                   }}
                   onError={(error) => {
-                    console.log('Player Error:', error);
+                    console.error('Player Error:', error);
                   }}
                   onBuffer={() => {
                     console.log('Player buffering...');
@@ -82,6 +91,13 @@ export default function ProcessingStatus() {
                     console.log('Player buffer ended');
                   }}
                 />
+              </div>
+            ) : status?.currentSession?.url ? (
+              <div className="p-8 flex items-center justify-center h-[240px]">
+                <div className="text-center">
+                  <div className="text-4xl mb-2">🔄</div>
+                  <div className="text-sm text-slate-400">Resolving stream URL...</div>
+                </div>
               </div>
             ) : (
               <div className="p-8 flex items-center justify-center h-[240px]">
