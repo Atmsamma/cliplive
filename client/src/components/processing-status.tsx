@@ -3,7 +3,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useSSE } from "@/hooks/use-sse";
 import type { ProcessingStatus } from "@shared/schema";
 import LivePlayer from "./live-player";
-import UnifiedPlayer from "./unified-player";
 import { useState, useEffect } from 'react';
 
 export default function ProcessingStatus() {
@@ -98,15 +97,11 @@ export default function ProcessingStatus() {
 
           {/* Stream Player / Preview */}
           <div className="bg-slate-700 rounded-lg p-4 aspect-video flex items-center justify-center relative overflow-hidden">
-          {status?.isProcessing ? (
-            <UnifiedPlayer isVisible={true} />
-          ) : (
             <div className="text-center text-slate-400">
               <div className="text-4xl mb-2">🎬</div>
               <div>Ready to start clipping</div>
             </div>
-          )}
-        </div>
+          </div>
 
           {/* Status Details (if session is active) */}
           {status?.currentSession && (
