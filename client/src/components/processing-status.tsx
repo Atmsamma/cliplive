@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSSE } from "@/hooks/use-sse";
+import { TrendingUp } from "lucide-react";
 import type { ProcessingStatus } from "@shared/schema";
-import VlcPlayer from "react-vlc-player";
+import ReactPlayer from "react-player";
 
 export default function ProcessingStatus() {
   const { data: status } = useQuery<ProcessingStatus>({
@@ -73,22 +74,22 @@ export default function ProcessingStatus() {
           <div className="relative bg-slate-700 rounded-lg mb-4 min-h-[240px] overflow-hidden">
             {status?.currentSession?.url ? (
               <div className="w-full h-full">
-                <VlcPlayer
-                  vlcArgs={[
-                    '--no-audio',
-                    '--network-caching=300',
-                    '--clock-jitter=0',
-                    '--clock-synchro=0'
-                  ]}
+                <ReactPlayer
+                  url={status.currentSession.url}
+                  playing={true}
                   muted={true}
-                  src={status.currentSession.url}
-                  style={{
-                    width: '100%',
-                    height: '240px',
-                    borderRadius: '8px'
+                  width="100%"
+                  height="240px"
+                  style={{ borderRadius: '8px' }}
+                  config={{
+                    file: {
+                      attributes: {
+                        crossOrigin: 'anonymous'
+                      }
+                    }
                   }}
                   onError={(error) => {
-                    console.log('VLC Player Error:', error);
+                    console.log('Player Error:', error);
                   }}
                 />
               </div>
