@@ -1,113 +1,121 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import StreamInputForm from "@/components/stream-input-form";
+
+import { useEffect, useState } from "react";
+import { streamService } from "@/lib/stream-service";
 import ProcessingStatus from "@/components/processing-status";
+import StreamInputForm from "@/components/stream-input-form";
 import ClipList from "@/components/clip-list";
-import { Download } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
-import type { ProcessingStatus as ProcessingStatusType, Clip } from "@shared/schema";
+import { useSSE } from "@/hooks/use-sse";
 
 export default function StreamCapture() {
-  const { toast } = useToast();
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionStatus, setSessionStatus] = useState<any>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
 
-  const { data: status } = useQuery<ProcessingStatusType>({
-    queryKey: ["/api/status"],
-    refetchInterval: 1000,
-  });
+  // Initialize session
+  useEffect(() => {
+    const initSession = async () => {
+      // Wait for session service to initialize
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      const sid = streamService.getSessionId();
+      setSessionId(sid);
+      
+      if (sid) {
+        console.log(`🚀 Initializing session: ${sid}`);
+        const status = await streamService.getSessionStatus();
+        setSessionStatus(status);
+        console.log(`📊 Session status:`, status);
+      }
+      
+      setIsInitialized(true);
+    };
 
-  const { data: clips } = useQuery<Clip[]>({
-    queryKey: ["/api/clips"],
-    refetchInterval: 5000,
-  });
+    initSession();
+  }, []);
 
-  const handleDownloadAll = async () => {
-    try {
-      const response = await apiRequest("GET", "/api/download-all");
-      const data = await response.json();
+  // Listen for SSE events
+  useSSE();
+  
+  // Listen for session status updates
+  useEffect(() => {
+    const handleSSEEvent = (event: CustomEvent) => {
+      const { type, data } = event.detail;
+      
+      if (type === 'processing-status') {
+        setSessionStatus(data);
+      }
+    };
 
-      toast({
-        title: "Download All",
-        description: data.message || "Download started",
-      });
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to download clips",
-        variant: "destructive",
-      });
-    }
-  };
+    window.addEventListener('sse-event', handleSSEEvent as EventListener);
+    return () => window.removeEventListener('sse-event', handleSSEEvent as EventListener);
+  }, []);
 
-  // Ensure clips is always an array and handle undefined case
-  const clipsArray = Array.isArray(clips) ? clips : [];
-  const totalSize = clipsArray.reduce((sum: number, clip: any) => sum + (clip.fileSize || 0), 0);
-  const formatSize = (bytes: number) => {
-    const mb = bytes / (1024 * 1024);
-    return `${mb.toFixed(1)} MB`;
-  };
+  // Periodic status updates
+  useEffect(() => {
+    if (!sessionId || !isInitialized) return;
+
+    const interval = setInterval(async () => {
+      const status = await streamService.getSessionStatus();
+      if (status) {
+        setSessionStatus(status);
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [sessionId, isInitialized]);
+
+  if (!isInitialized) {
+    return (
+      <div className="container mx-auto p-6">
+        <div className="text-center">
+          <h1 className="text-3xl font-bold mb-4">Stream Clipper</h1>
+          <p>Initializing session...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!sessionId) {
+    return (
+      <div className="container mx-auto p-6">
+        <div className="text-center">
+          <h1 className="text-3xl font-bold mb-4">Stream Clipper</h1>
+          <p className="text-red-600">Failed to initialize session. Please refresh the page.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <>
-      {/* Header */}
-      <header className="bg-slate-800 border-b border-slate-600 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-semibold text-slate-50">Stream Capture</h2>
-            <p className="text-slate-400 text-sm">Real-time stream monitoring - clips are created instantly as highlights occur</p>
-          </div>
-          <div className="flex items-center space-x-4">
-            {/* Processing Status Badge */}
-            <div className="flex items-center space-x-2 px-3 py-1 bg-slate-700 rounded-full text-sm">
-              <div
-                className={`w-2 h-2 rounded-full ${
-                  status?.isProcessing ? "bg-red-500 animate-pulse" : "bg-slate-500"
-                }`}
-              />
-              <span className="text-slate-300">
-                {status?.isProcessing ? "watching" : "Ready to clip"}
-              </span>
-            </div>
+    <div className="container mx-auto p-6 space-y-6">
+      <div className="text-center">
+        <h1 className="text-3xl font-bold mb-2">Stream Clipper</h1>
+        <p className="text-sm text-gray-600">Session: {sessionId.slice(0, 8)}...</p>
+      </div>
 
-            {/* Download All Button */}
-            <Button
-              variant="outline"
-              onClick={handleDownloadAll}
-              disabled={clipsArray.length === 0}
-              className="bg-slate-700 hover:bg-slate-600 text-slate-300 border-slate-600"
-            >
-              <Download size={16} className="mr-2" />
-              Download All
-            </Button>
-          </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="space-y-6">
+          <StreamInputForm sessionStatus={sessionStatus} />
+          <ProcessingStatus sessionStatus={sessionStatus} />
         </div>
-      </header>
-
-      {/* Main Content Area */}
-      <main className="flex-1 overflow-auto p-6">
-        {/* Clip Configuration and Processing Status Side by Side */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <StreamInputForm />
-          <ProcessingStatus />
+        
+        <div>
+          <ClipList sessionId={sessionId} />
         </div>
+      </div>
 
-        {/* Recent Clips */}
-        <div className="bg-slate-800 rounded-xl border border-slate-600 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-medium flex items-center space-x-2 text-slate-50">
-              <span>Recent Clips</span>
-            </h3>
-            <div className="flex items-center space-x-2">
-              <span className="text-sm text-slate-400">Total: {clipsArray.length} clips</span>
-              <div className="text-sm text-slate-400">•</div>
-              <span className="text-sm text-slate-400">{formatSize(totalSize)}</span>
-            </div>
-          </div>
-
-          <ClipList clips={clipsArray} showActions />
+      {/* Session Management */}
+      <div className="border-t pt-4">
+        <div className="flex justify-between items-center text-sm text-gray-600">
+          <span>Session ID: {sessionId}</span>
+          <button
+            onClick={() => streamService.deleteSession(false)}
+            className="text-red-600 hover:underline"
+          >
+            End Session
+          </button>
         </div>
-      </main>
-    </>
+      </div>
+    </div>
   );
 }
