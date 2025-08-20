@@ -33,5 +33,18 @@ export default defineConfig({
       strict: true,
       deny: ["**/.*"],
     },
+    // Development proxy - only active in dev mode
+    proxy: process.env.NODE_ENV === "development" ? {
+      "/api": {
+        target: process.env.VITE_API_URL || "http://localhost:5000",
+        changeOrigin: true,
+        secure: false,
+      },
+      "/clips": {
+        target: process.env.VITE_API_URL || "http://localhost:5000",
+        changeOrigin: true,
+        secure: false,
+      }
+    } : undefined,
   },
 });

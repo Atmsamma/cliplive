@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stream Clipper - Automatic Highlight Capture</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'sans': ['Inter', 'system-ui', 'sans-serif']
+                    },
+                    colors: {
+                        'slate': {
+                            850: '#1a202c',
+                            950: '#0a0f1a'
+                        }
+                    }
+                }
+            }
+        };
+    </script>
+</head>
+<body class="bg-slate-900 text-slate-50 font-sans min-h-screen">
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2">
+        <!-- Sample Toast (will be dynamically generated) -->
+        <div class="bg-emerald-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center space-x-3 transform transition-all duration-300 opacity-0 translate-x-full" id="sample-toast">
+            <i class="fas fa-check-circle"></i>
+            <span>Highlight captured at 2:34:18</span>
+            <button class="ml-2 text-white hover:text-emerald-200">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Layout -->
+    <div class="flex h-screen">
+        <!-- Sidebar -->
+        <div class="w-64 bg-slate-800 border-r border-slate-600 flex flex-col">
+            <!-- Logo/Header -->
+            <div class="p-6 border-b border-slate-600">
+                <div class="flex items-center space-x-3">
+                    <div class="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-video text-white text-sm"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-lg font-semibold">Stream Clipper</h1>
+                        <p class="text-xs text-slate-400">Highlight Capture</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Navigation -->
+            <nav class="flex-1 p-4 space-y-2">
+                <a href="#" class="flex items-center space-x-3 px-3 py-2 rounded-lg bg-blue-500 text-white">
+                    <i class="fas fa-play w-4"></i>
+                    <span>Stream Capture</span>
+                </a>
+                <a href="#" class="flex items-center space-x-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-700 hover:text-white transition-colors">
+                    <i class="fas fa-film w-4"></i>
+                    <span>Clip Library</span>
+                    <span class="ml-auto bg-slate-600 text-xs px-2 py-1 rounded-full" data-bind="clipCount">12</span>
+                </a>
+                <a href="#" class="flex items-center space-x-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-700 hover:text-white transition-colors">
+                    <i class="fas fa-cog w-4"></i>
+                    <span>Settings</span>
+                </a>
+            </nav>
+
+            <!-- Status Indicator -->
+            <div class="p-4 border-t border-slate-600">
+                <div class="flex items-center space-x-3 text-sm">
+                    <div class="w-2 h-2 bg-red-500 rounded-full animate-pulse" data-bind="processingStatus"></div>
+                    <span class="text-slate-400">Processing Stopped</span>
+                </div>
+                <div class="mt-2 text-xs text-slate-500">
+                    <div>CPU: <span data-bind="cpuUsage">34%</span></div>
+                    <div>Memory: <span data-bind="memoryUsage">2.1GB</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="flex-1 flex flex-col overflow-hidden">
+            <!-- Header -->
+            <header class="bg-slate-800 border-b border-slate-600 px-6 py-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h2 class="text-xl font-semibold">Stream Capture</h2>
+                        <p class="text-slate-400 text-sm">Monitor and capture highlights from live streams</p>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <!-- Processing Status Badge -->
+                        <div class="flex items-center space-x-2 px-3 py-1 bg-slate-700 rounded-full text-sm">
+                            <div class="w-2 h-2 bg-red-500 rounded-full"></div>
+                            <span>Idle</span>
+                        </div>
+                        
+                        <!-- Download All Button -->
+                        <button class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg transition-colors flex items-center space-x-2" data-implementation="Download all clips as ZIP">
+                            <i class="fas fa-download"></i>
+                            <span>Download All</span>
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Main Content Area -->
+            <main class="flex-1 overflow-auto p-6">
+                <!-- Stream Input Section -->
+                <!-- @COMPONENT: StreamInputForm -->
+                <div class="bg-slate-800 rounded-xl border border-slate-600 p-6 mb-6">
+                    <h3 class="text-lg font-medium mb-4 flex items-center space-x-2">
+                        <i class="fas fa-link text-blue-400"></i>
+                        <span>Stream Configuration</span>
+                    </h3>
+                    
+                    <form class="space-y-4" data-event="submit:handleStreamStart">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-300 mb-2">Stream URL</label>
+                            <div class="relative">
+                                <input 
+                                    type="url" 
+                                    placeholder="https://www.twitch.tv/username or https://youtube.com/watch?v=..." 
+                                    class="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                    data-bind="streamUrl"
+                                    data-implementation="Validate URL format and platform support"
+                                />
+                                <div class="absolute inset-y-0 right-0 flex items-center pr-3">
+                                    <i class="fas fa-globe text-slate-400"></i>
+                                </div>
+                            </div>
+                            <p class="mt-1 text-xs text-slate-400">Supports Twitch, YouTube, Kick, and HLS streams</p>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-300 mb-2">Audio Threshold</label>
+                                <select class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                    <option value="6">6dB (Default)</option>
+                                    <option value="3">3dB (Sensitive)</option>
+                                    <option value="9">9dB (Conservative)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-300 mb-2">Motion Threshold</label>
+                                <select class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                    <option value="30">30% (Default)</option>
+                                    <option value="20">20% (Sensitive)</option>
+                                    <option value="40">40% (Conservative)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-300 mb-2">Clip Length</label>
+                                <select class="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                    <option value="20">20 seconds</option>
+                                    <option value="15">15 seconds</option>
+                                    <option value="30">30 seconds</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="flex space-x-3">
+                            <button 
+                                type="submit" 
+                                class="px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium flex items-center space-x-2 transition-colors" 
+                                data-event="click:startCapture"
+                                data-implementation="Start stream capture process"
+                            >
+                                <i class="fas fa-play"></i>
+                                <span>Start Capture</span>
+                            </button>
+                            <button 
+                                type="button" 
+                                class="px-6 py-3 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium flex items-center space-x-2 transition-colors opacity-50 cursor-not-allowed"
+                                data-event="click:stopCapture"
+                                data-implementation="Stop stream capture process"
+                                disabled
+                            >
+                                <i class="fas fa-stop"></i>
+                                <span>Stop Capture</span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                <!-- @END_COMPONENT: StreamInputForm -->
+
+                <!-- Real-time Processing Status -->
+                <!-- @COMPONENT: ProcessingStatus -->
+                <div class="bg-slate-800 rounded-xl border border-slate-600 p-6 mb-6">
+                    <h3 class="text-lg font-medium mb-4 flex items-center space-x-2">
+                        <i class="fas fa-chart-line text-emerald-400"></i>
+                        <span>Processing Status</span>
+                    </h3>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div class="text-center">
+                            <div class="text-3xl font-bold text-slate-300 mb-1" data-bind="processedFrames">0</div>
+                            <div class="text-sm text-slate-400">Frames Processed</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-3xl font-bold text-emerald-400 mb-1" data-bind="clipsGenerated">12</div>
+                            <div class="text-sm text-slate-400">Clips Generated</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-3xl font-bold text-blue-400 mb-1" data-bind="streamUptime">00:00:00</div>
+                            <div class="text-sm text-slate-400">Stream Uptime</div>
+                        </div>
+                    </div>
+
+                    <!-- Real-time Metrics -->
+                    <div class="mt-6 space-y-4">
+                        <div>
+                            <div class="flex justify-between text-sm mb-1">
+                                <span class="text-slate-300">Audio Level</span>
+                                <span class="text-slate-400" data-bind="audioLevel">-12dB</span>
+                            </div>
+                            <div class="w-full bg-slate-700 rounded-full h-2">
+                                <div class="bg-emerald-400 h-2 rounded-full transition-all duration-300" style="width: 65%" data-bind="audioLevelBar"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-sm mb-1">
+                                <span class="text-slate-300">Motion Detection</span>
+                                <span class="text-slate-400" data-bind="motionLevel">23%</span>
+                            </div>
+                            <div class="w-full bg-slate-700 rounded-full h-2">
+                                <div class="bg-blue-400 h-2 rounded-full transition-all duration-300" style="width: 23%" data-bind="motionLevelBar"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-sm mb-1">
+                                <span class="text-slate-300">Scene Change</span>
+                                <span class="text-slate-400" data-bind="sceneChange">0.12</span>
+                            </div>
+                            <div class="w-full bg-slate-700 rounded-full h-2">
+                                <div class="bg-purple-400 h-2 rounded-full transition-all duration-300" style="width: 30%" data-bind="sceneChangeBar"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- @END_COMPONENT: ProcessingStatus -->
+
+                <!-- Clip Library -->
+                <!-- @COMPONENT: ClipLibrary -->
+                <div class="bg-slate-800 rounded-xl border border-slate-600 p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-medium flex items-center space-x-2">
+                            <i class="fas fa-film text-purple-400"></i>
+                            <span>Recent Clips</span>
+                        </h3>
+                        <div class="flex items-center space-x-2">
+                            <span class="text-sm text-slate-400">Total: 12 clips</span>
+                            <div class="text-sm text-slate-400">•</div>
+                            <span class="text-sm text-slate-400">346.2 MB</span>
+                        </div>
+                    </div>
+
+                    <!-- Clip Grid -->
+                    <div class="space-y-3">
+                        <!-- @MAP: clips.map(clip => ( -->
+                        <div class="flex items-center space-x-4 p-4 bg-slate-700 rounded-lg hover:bg-slate-650 transition-colors group" data-mock="true">
+                            <!-- Thumbnail placeholder -->
+                            <div class="w-20 h-12 bg-slate-600 rounded flex items-center justify-center text-slate-400 flex-shrink-0">
+                                <i class="fas fa-play"></i>
+                            </div>
+                            
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center space-x-2 mb-1">
+                                    <h4 class="text-sm font-medium text-slate-200 truncate" data-bind="clip.filename">highlight_20241215_143022.mp4</h4>
+                                    <span class="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded-full">NEW</span>
+                                </div>
+                                <div class="flex items-center space-x-4 text-xs text-slate-400">
+                                    <span data-bind="clip.timestamp">Dec 15, 2024 2:30:22 PM</span>
+                                    <span data-bind="clip.duration">20s</span>
+                                    <span data-bind="clip.fileSize">12.3 MB</span>
+                                    <span data-bind="clip.triggerReason">Audio Spike</span>
+                                </div>
+                            </div>
+
+                            <div class="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button class="p-2 text-slate-400 hover:text-blue-400 transition-colors" data-implementation="Play/preview clip">
+                                    <i class="fas fa-play"></i>
+                                </button>
+                                <button class="p-2 text-slate-400 hover:text-emerald-400 transition-colors" data-implementation="Download individual clip">
+                                    <i class="fas fa-download"></i>
+                                </button>
+                                <button class="p-2 text-slate-400 hover:text-red-400 transition-colors" data-implementation="Delete clip">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center space-x-4 p-4 bg-slate-700 rounded-lg hover:bg-slate-650 transition-colors group" data-mock="true">
+                            <div class="w-20 h-12 bg-slate-600 rounded flex items-center justify-center text-slate-400 flex-shrink-0">
+                                <i class="fas fa-play"></i>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center space-x-2 mb-1">
+                                    <h4 class="text-sm font-medium text-slate-200 truncate">highlight_20241215_142847.mp4</h4>
+                                </div>
+                                <div class="flex items-center space-x-4 text-xs text-slate-400">
+                                    <span>Dec 15, 2024 2:28:47 PM</span>
+                                    <span>20s</span>
+                                    <span>11.8 MB</span>
+                                    <span>Motion Detected</span>
+                                </div>
+                            </div>
+                            <div class="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button class="p-2 text-slate-400 hover:text-blue-400 transition-colors">
+                                    <i class="fas fa-play"></i>
+                                </button>
+                                <button class="p-2 text-slate-400 hover:text-emerald-400 transition-colors">
+                                    <i class="fas fa-download"></i>
+                                </button>
+                                <button class="p-2 text-slate-400 hover:text-red-400 transition-colors">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center space-x-4 p-4 bg-slate-700 rounded-lg hover:bg-slate-650 transition-colors group" data-mock="true">
+                            <div class="w-20 h-12 bg-slate-600 rounded flex items-center justify-center text-slate-400 flex-shrink-0">
+                                <i class="fas fa-play"></i>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center space-x-2 mb-1">
+                                    <h4 class="text-sm font-medium text-slate-200 truncate">highlight_20241215_142203.mp4</h4>
+                                </div>
+                                <div class="flex items-center space-x-4 text-xs text-slate-400">
+                                    <span>Dec 15, 2024 2:22:03 PM</span>
+                                    <span>20s</span>
+                                    <span>13.1 MB</span>
+                                    <span>Scene Change</span>
+                                </div>
+                            </div>
+                            <div class="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button class="p-2 text-slate-400 hover:text-blue-400 transition-colors">
+                                    <i class="fas fa-play"></i>
+                                </button>
+                                <button class="p-2 text-slate-400 hover:text-emerald-400 transition-colors">
+                                    <i class="fas fa-download"></i>
+                                </button>
+                                <button class="p-2 text-slate-400 hover:text-red-400 transition-colors">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <!-- @END_MAP )) -->
+
+                        <!-- Empty State (when no clips) -->
+                        <div class="text-center py-12 text-slate-400 hidden" data-implementation="Show when clips array is empty">
+                            <i class="fas fa-film text-4xl mb-4 text-slate-600"></i>
+                            <h4 class="text-lg font-medium mb-2">No clips captured yet</h4>
+                            <p class="text-sm">Start capturing a stream to automatically generate highlight clips</p>
+                        </div>
+                    </div>
+                </div>
+                <!-- @END_COMPONENT: ClipLibrary -->
+            </main>
+        </div>
+    </div>
+
+    <!-- Video Preview Modal -->
+    <div id="video-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 hidden" data-implementation="Show/hide based on preview state">
+        <div class="bg-slate-800 rounded-xl p-6 max-w-4xl w-full mx-4">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-medium">Clip Preview</h3>
+                <button class="text-slate-400 hover:text-white" data-event="click:closeModal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="aspect-video bg-slate-900 rounded-lg mb-4 flex items-center justify-center">
+                <div class="text-slate-400 text-center">
+                    <i class="fas fa-play text-4xl mb-2"></i>
+                    <p>Video player will be implemented here</p>
+                </div>
+            </div>
+            <div class="flex items-center justify-between">
+                <div class="text-sm text-slate-400">
+                    <span data-bind="modal.filename">highlight_20241215_143022.mp4</span> • <span data-bind="modal.fileSize">12.3 MB</span>
+                </div>
+                <div class="flex space-x-2">
+                    <button class="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors">
+                        <i class="fas fa-download mr-2"></i>Download
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // TODO: Implement real-time updates via Server-Sent Events
+        // TODO: Implement form validation and API calls
+        // TODO: Implement video processing and highlight detection
+        
+        (function() {
+            // Mock real-time updates for demonstration
+            function updateMetrics() {
+                const audioLevel = Math.floor(Math.random() * 100);
+                const motionLevel = Math.floor(Math.random() * 100);
+                const sceneChange = (Math.random() * 0.5).toFixed(2);
+                
+                // Update audio level display
+                const audioLevelElement = document.querySelector('[data-bind="audioLevel"]');
+                const audioBarElement = document.querySelector('[data-bind="audioLevelBar"]');
+                if (audioLevelElement && audioBarElement) {
+                    audioLevelElement.textContent = `-${Math.floor(Math.random() * 30)}dB`;
+                    audioBarElement.style.width = `${audioLevel}%`;
+                }
+                
+                // Update motion detection
+                const motionLevelElement = document.querySelector('[data-bind="motionLevel"]');
+                const motionBarElement = document.querySelector('[data-bind="motionLevelBar"]');
+                if (motionLevelElement && motionBarElement) {
+                    motionLevelElement.textContent = `${motionLevel}%`;
+                    motionBarElement.style.width = `${motionLevel}%`;
+                }
+                
+                // Update scene change
+                const sceneChangeElement = document.querySelector('[data-bind="sceneChange"]');
+                const sceneBarElement = document.querySelector('[data-bind="sceneChangeBar"]');
+                if (sceneChangeElement && sceneBarElement) {
+                    sceneChangeElement.textContent = sceneChange;
+                    sceneBarElement.style.width = `${parseFloat(sceneChange) * 100}%`;
+                }
+            }
+
+            // Mock toast notifications
+            function showToast(message, type = 'success') {
+                const toastContainer = document.getElementById('toast-container');
+                const toast = document.createElement('div');
+                const iconClass = type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle';
+                const bgClass = type === 'success' ? 'bg-emerald-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500';
+                
+                toast.innerHTML = `
+                    <div class="${bgClass} text-white px-4 py-3 rounded-lg shadow-lg flex items-center space-x-3 transform transition-all duration-300">
+                        <i class="fas ${iconClass}"></i>
+                        <span>${message}</span>
+                        <button class="ml-2 text-white hover:text-opacity-70" onclick="this.parentElement.parentElement.remove()">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                `;
+                
+                toastContainer.appendChild(toast);
+                
+                // Animate in
+                setTimeout(() => {
+                    toast.firstElementChild.classList.remove('opacity-0', 'translate-x-full');
+                }, 100);
+                
+                // Auto remove after 5 seconds
+                setTimeout(() => {
+                    if (toast.parentElement) {
+                        toast.firstElementChild.classList.add('opacity-0', 'translate-x-full');
+                        setTimeout(() => toast.remove(), 300);
+                    }
+                }, 5000);
+            }
+
+            // Demo functionality
+            let isCapturing = false;
+            let metricsInterval;
+
+            // Start/Stop capture simulation
+            document.addEventListener('click', function(e) {
+                if (e.target.closest('[data-event*="startCapture"]')) {
+                    e.preventDefault();
+                    if (!isCapturing) {
+                        isCapturing = true;
+                        showToast('Stream capture started', 'success');
+                        
+                        // Update UI state
+                        const statusElements = document.querySelectorAll('[data-bind="processingStatus"]');
+                        statusElements.forEach(el => {
+                            el.className = 'w-2 h-2 bg-emerald-500 rounded-full animate-pulse';
+                        });
+                        
+                        // Enable stop button, disable start button
+                        const startBtn = e.target.closest('button');
+                        const stopBtn = document.querySelector('[data-event*="stopCapture"]');
+                        startBtn.disabled = true;
+                        startBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                        stopBtn.disabled = false;
+                        stopBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                        
+                        // Start metrics updates
+                        metricsInterval = setInterval(updateMetrics, 1000);
+                        
+                        // Simulate clip generation
+                        setTimeout(() => showToast('Highlight captured at 2:34:18', 'success'), 3000);
+                        setTimeout(() => showToast('Highlight captured at 2:35:42', 'success'), 8000);
+                    }
+                }
+                
+                if (e.target.closest('[data-event*="stopCapture"]')) {
+                    e.preventDefault();
+                    if (isCapturing) {
+                        isCapturing = false;
+                        showToast('Stream capture stopped', 'info');
+                        
+                        // Update UI state
+                        const statusElements = document.querySelectorAll('[data-bind="processingStatus"]');
+                        statusElements.forEach(el => {
+                            el.className = 'w-2 h-2 bg-red-500 rounded-full';
+                        });
+                        
+                        // Enable start button, disable stop button
+                        const stopBtn = e.target.closest('button');
+                        const startBtn = document.querySelector('[data-event*="startCapture"]');
+                        stopBtn.disabled = true;
+                        stopBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                        startBtn.disabled = false;
+                        startBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                        
+                        // Stop metrics updates
+                        clearInterval(metricsInterval);
+                    }
+                }
+            });
+
+            // Initialize with some demo data updates
+            setTimeout(() => {
+                updateMetrics();
+            }, 1000);
+        })();
+    </script>
+</body>
+</html>

@@ -34,21 +34,31 @@ class SpeechExtractor:
     def extract_audio_text(self, video_path: str) -> str:
         """Extract text from video audio using FFmpeg + OpenAI Whisper."""
         try:
+            # Check if input video exists and is readable
+            if not os.path.exists(video_path):
+                print(f"❌ Video file not found: {video_path}")
+                return ""
+            
+            if os.path.getsize(video_path) < 1000:
+                print(f"❌ Video file too small: {video_path}")
+                return ""
+            
             # Extract audio from video
             audio_path = os.path.join(self.temp_dir, "audio.wav")
             cmd = [
                 'ffmpeg', '-i', video_path, '-ar', '16000', '-ac', '1', 
-                '-c:a', 'pcm_s16le', '-y', audio_path
+                '-c:a', 'pcm_s16le', '-y', audio_path,
+                '-v', 'quiet'  # Suppress FFmpeg output
             ]
             
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
             if result.returncode != 0:
-                print(f"Audio extraction failed: {result.stderr}")
-                return ""
+                print(f"⚠️ Audio extraction skipped: {result.stderr[:100]}")
+                return ""  # Return empty string instead of failing
             
             # Check if audio file exists and has content
             if not os.path.exists(audio_path) or os.path.getsize(audio_path) < 1000:
-                print("Audio file too small or missing")
+                print("⚠️ Audio file too small or missing, skipping speech detection")
                 return ""
             
             # Use OpenAI Whisper for speech recognition
@@ -264,18 +274,14 @@ class MLFusionModel:
             return 0.5  # Default probability
         
         try:
-            # Extract features in correct order
+            # Extract features in correct order (same as training: 6 features)
             feature_vector = np.array([[
                 features.get('audio_level', 0.0),
                 features.get('motion_level', 0.0),
                 features.get('scene_change', 0.0),
                 features.get('sentiment', 0.0),
                 features.get('excitement', 0.0),
-                features.get('hype_score', 0.0),
-                features.get('audio_threshold_exceeded', 0.0),
-                features.get('motion_threshold_exceeded', 0.0),
-                features.get('scene_threshold_exceeded', 0.0),
-                features.get('combined_rule_score', 0.0)
+                features.get('hype_score', 0.0)
             ]])
             
             # Scale features

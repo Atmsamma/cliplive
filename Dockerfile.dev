@@ -1,0 +1,53 @@
+# Development Dockerfile for Clip Live
+FROM node:20-alpine AS development
+
+# Install system dependencies including build tools for Python packages
+RUN apk add --no-cache \
+    ffmpeg \
+    python3 \
+    py3-pip \
+    py3-virtualenv \
+    curl \
+    bash \
+    git \
+    build-base \
+    gcc \
+    g++ \
+    musl-dev \
+    linux-headers \
+    python3-dev
+
+# Install streamlink for stream URL resolution
+RUN pip3 install --break-system-packages streamlink
+
+# Install uv for Python package management using --break-system-packages
+RUN pip3 install --break-system-packages uv
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+COPY pyproject.toml uv.lock ./
+
+# Install Node.js dependencies
+RUN npm install
+
+# Install Python dependencies
+RUN uv sync --frozen
+
+# Copy application source
+COPY . .
+
+# Create necessary directories
+RUN mkdir -p clips temp data
+
+# Set environment variables
+ENV NODE_ENV=development
+ENV PORT=5000
+
+# Expose ports
+EXPOSE 5000
+EXPOSE 5173
+
+# Development command (will be overridden by docker-compose)
+CMD ["npm", "run", "dev"]

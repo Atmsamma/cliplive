@@ -1,0 +1,67 @@
+# Clip Live Docker Setup
+
+# Development environment
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: cliplive-postgres-dev
+    environment:
+      POSTGRES_DB: cliplive_dev
+      POSTGRES_USER: cliplive
+      POSTGRES_PASSWORD: cliplive_dev_password
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    ports:
+      - "5433:5432"
+    networks:
+      - cliplive-dev-network
+
+  # Redis for session storage
+  redis:
+    image: redis:7-alpine
+    container_name: cliplive-redis-dev
+    ports:
+      - "6380:6379"
+    networks:
+      - cliplive-dev-network
+
+  # Development application with hot reload
+  app-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: cliplive-app-dev
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://cliplive:cliplive_dev_password@postgres:5432/cliplive_dev
+      - REDIS_URL=redis://redis:6379
+      - SESSION_SECRET=dev-session-secret-not-for-production
+      - PORT=5000
+      - VITE_API_URL=http://localhost:5000
+    ports:
+      - "5000:5000"
+      - "5173:5173"  # Vite dev server port
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/dist
+      - ./clips:/app/clips
+      - ./temp:/app/temp
+      - ./data:/app/data
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - cliplive-dev-network
+    command: npm run dev
+
+volumes:
+  postgres_dev_data:
+
+networks:
+  cliplive-dev-network:
+    driver: bridge

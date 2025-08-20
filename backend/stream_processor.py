@@ -217,14 +217,24 @@ class StreamBucket:
 
     def save_bucket_as_clip(self, clip_path: str, detection_time: float) -> bool:
         """Save the current bucket as a highlight clip using FFmpeg to ensure valid output."""
-        if not self.current_bucket_path or not os.path.exists(self.current_bucket_path):
-            print("❌ No bucket available to save as clip")
+        if not self.current_bucket_path:
+            print("❌ No current bucket path set")
+            return False
+            
+        if not os.path.exists(self.current_bucket_path):
+            print(f"❌ Bucket file not found: {self.current_bucket_path}")
             return False
 
         try:
+            # Check if bucket file has reasonable size
+            bucket_size = os.path.getsize(self.current_bucket_path)
+            if bucket_size < 50000:  # Less than 50KB probably isn't a valid video
+                print(f"❌ Bucket file too small ({bucket_size} bytes): {self.current_bucket_path}")
+                return False
+
             # Wait a moment to ensure the bucket file is completely written
             import time
-            time.sleep(1)
+            time.sleep(0.5)  # Reduced wait time
 
             # Verify the source bucket is valid before copying
             probe_cmd = [

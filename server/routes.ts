@@ -43,13 +43,14 @@ function startStreamProcessor(config: any): boolean {
     // Stop any existing processor
     stopStreamProcessor();
 
-    const pythonPath = 'python3';
+    // Use UV to run Python with all packages available
+    const uvCommand = 'uv';
     const scriptPath = path.join(process.cwd(), 'backend', 'stream_processor.py');
     const configJson = JSON.stringify(config);
 
     console.log(`Starting stream processor with config: ${configJson}`);
 
-    streamProcessor = spawn(pythonPath, [scriptPath, configJson], {
+    streamProcessor = spawn(uvCommand, ['run', 'python', scriptPath, configJson], {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: process.cwd(),
     });
@@ -233,6 +234,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/user', requireAuth, (req, res) => {
     res.json(req.user);
+  });
+
+  // Health check endpoint for Docker
+  app.get("/api/health", (req, res) => {
+    res.status(200).json({ 
+      status: "healthy", 
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime()
+    });
   });
 
   // Get processing status
@@ -622,6 +632,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('🔄 Using streamlink to resolve URL for display');
       
       return new Promise((resolve, reject) => {
+        let responsesent = false; // Flag to prevent multiple responses
+        
         const streamlinkProcess = spawn('streamlink', [
           activeSession.url,
           'best',
@@ -644,6 +656,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
 
         streamlinkProcess.on('close', (code) => {
+          if (responsesent) return;
+          responsesent = true;
+          
           if (code === 0 && streamUrl.trim()) {
             const cleanUrl = streamUrl.trim();
             console.log(`✅ Streamlink resolved URL for display: ${cleanUrl.substring(0, 80)}...`);
@@ -662,6 +677,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
 
         streamlinkProcess.on('error', (error) => {
+          if (responsesent) return;
+          responsesent = true;
+          
           console.error(`❌ Streamlink process error for display: ${error}`);
           res.status(500).json({ 
             error: 'Stream URL resolution process failed',
