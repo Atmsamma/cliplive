@@ -103,8 +103,7 @@ export default function StreamInputForm() {
 
   const stopMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("POST", "/api/stop", { sessionId }); // Pass sessionId to stop
-      return response.json();
+      return await apiRequest("/api/stop", "POST", { sessionId }); // Pass sessionId to stop
     },
     onSuccess: () => {
       toast({
