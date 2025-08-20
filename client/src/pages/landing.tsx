@@ -17,6 +17,9 @@ export default function Landing() {
   const { toast } = useToast();
   const liveProcessingSectionRef = useRef<HTMLElement>(null);
   const [wasProcessing, setWasProcessing] = useState(false);
+  const [currentSession, setCurrentSession] = useState<StreamSession | null>(null);
+  const [eventSource, setEventSource] = useState<EventSource | null>(null);
+
 
   const { data: status } = useQuery<ProcessingStatusType>({
     queryKey: ["/api/status"],
@@ -28,6 +31,28 @@ export default function Landing() {
     refetchInterval: 5000,
   });
 
+  // Initialize new session on component mount
+  useEffect(() => {
+    const initializeSession = async () => {
+      try {
+        console.log('🚀 Initializing new session on page load...');
+        const response = await fetch('/api/auto-start', {
+          method: 'GET',
+        });
+
+        if (response.ok) {
+          console.log('✅ New session initialized successfully');
+        } else {
+          console.warn('⚠️ Failed to initialize session:', response.status);
+        }
+      } catch (error) {
+        console.error('❌ Error initializing session:', error);
+      }
+    };
+
+    initializeSession();
+  }, []); // Empty dependency array ensures this runs only once on mount
+
   // Auto-scroll to Live Processing section when processing starts
   useEffect(() => {
     if (status?.isProcessing && !wasProcessing && liveProcessingSectionRef.current) {
@@ -38,6 +63,43 @@ export default function Landing() {
     }
     setWasProcessing(status?.isProcessing || false);
   }, [status?.isProcessing, wasProcessing]);
+
+  // SSE connection
+  useEffect(() => {
+    const newEventSource = new EventSource('/api/sse');
+    setEventSource(newEventSource);
+
+    return () => {
+      newEventSource.close();
+      setEventSource(null);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleSSEMessage = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        console.log('SSE Event:', data);
+
+        if (data.type === 'session-started') {
+          setCurrentSession(data.data);
+        } else if (data.type === 'session-stopped') {
+          setCurrentSession(null);
+        } else if (data.type === 'processing-status') {
+          // Status updates are handled by ProcessingStatus component
+        }
+      } catch (error) {
+        console.error('Error parsing SSE message:', error);
+      }
+    };
+
+    if (eventSource) {
+      eventSource.addEventListener('message', handleSSEMessage);
+      return () => {
+        eventSource.removeEventListener('message', handleSSEMessage);
+      };
+    }
+  }, [eventSource]);
 
   const handleSignIn = () => {
     window.location.href = "/signup";

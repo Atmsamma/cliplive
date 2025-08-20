@@ -240,6 +240,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(processingStatus);
   });
 
+  // Auto-start session when accessing root URL
+  app.get("/api/auto-start", async (req, res) => {
+    try {
+      // Stop any active sessions first
+      const activeSession = await storage.getActiveSession();
+      if (activeSession) {
+        await storage.updateSessionStatus(activeSession.id, false);
+        stopStreamProcessor();
+      }
+
+      // Clean up temp directory
+      try {
+        console.log('🧹 Auto-cleaning temp directory for new session...');
+        const tempDir = path.join(process.cwd(), 'temp');
+        if (fs.existsSync(tempDir)) {
+          const tempFiles = fs.readdirSync(tempDir);
+          tempFiles.forEach(file => {
+            const filePath = path.join(tempDir, file);
+            try {
+              fs.unlinkSync(filePath);
+              console.log(`✅ Auto-deleted temp file: ${file}`);
+            } catch (err) {
+              console.warn(`Could not delete temp file ${file}:`, err.message);
+            }
+          });
+        } else {
+          fs.mkdirSync(tempDir, { recursive: true });
+        }
+      } catch (cleanupError) {
+        console.error('Error auto-cleaning temp directory:', cleanupError);
+      }
+
+      // Reset processing status completely
+      processingStatus = {
+        isProcessing: false,
+        framesProcessed: 0,
+        streamUptime: "00:00:00",
+        audioLevel: 0,
+        motionLevel: 0,
+        sceneChange: 0,
+      };
+      sessionStartTime = null;
+
+      // Broadcast reset status
+      broadcastSSE({
+        type: 'session-stopped',
+        data: { message: 'New session initialized' },
+      });
+
+      res.json({ success: true, message: 'New session ready' });
+    } catch (error) {
+      console.error('Error auto-initializing session:', error);
+      res.status(500).json({ error: 'Failed to initialize new session' });
+    }
+  });
+
 
 
   // Start stream capture
