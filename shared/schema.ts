@@ -4,6 +4,7 @@ import { z } from "zod";
 
 export const clips = pgTable("clips", {
   id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id),
   filename: text("filename").notNull(),
   originalUrl: text("original_url").notNull(),
   duration: integer("duration").notNull(), // in seconds
@@ -12,8 +13,16 @@ export const clips = pgTable("clips", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  replitUserId: text("replit_user_id").notNull().unique(),
+  username: text("username").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const streamSessions = pgTable("stream_sessions", {
   id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id),
   url: text("url").notNull(),
   isActive: boolean("is_active").default(false).notNull(),
   audioThreshold: integer("audio_threshold").default(6).notNull(),
@@ -21,6 +30,11 @@ export const streamSessions = pgTable("stream_sessions", {
   clipLength: integer("clip_length").default(20).notNull(),
   startedAt: timestamp("started_at").defaultNow().notNull(),
   stoppedAt: timestamp("stopped_at"),
+});
+
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+  createdAt: true,
 });
 
 export const insertClipSchema = createInsertSchema(clips).omit({
@@ -34,6 +48,8 @@ export const insertStreamSessionSchema = createInsertSchema(streamSessions).omit
   stoppedAt: true,
 });
 
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type User = typeof users.$inferSelect;
 export type InsertClip = z.infer<typeof insertClipSchema>;
 export type Clip = typeof clips.$inferSelect;
 export type InsertStreamSession = z.infer<typeof insertStreamSessionSchema>;

@@ -1,11 +1,16 @@
-import type { Express, Response as ExpressResponse } from "express";
+import type { Express, Response as ExpressResponse, Request } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertStreamSessionSchema, insertClipSchema, type ProcessingStatus, type SSEEvent, type StreamSession } from "@shared/schema";
+import { insertStreamSessionSchema, insertClipSchema, insertUserSchema, type ProcessingStatus, type SSEEvent, type StreamSession, type User } from "@shared/schema";
 import { z } from "zod";
 import fs from "fs";
 import path from "path";
 import { spawn, ChildProcess } from "child_process";
+
+// Extended Request type for authenticated routes
+interface AuthenticatedRequest extends Request {
+  user?: User;
+}
 
 // Processing state - ensure completely reset
 let processingStatus: ProcessingStatus = {
@@ -23,6 +28,33 @@ const sseClients = new Set<ExpressResponse>();
 // Python stream processor
 let streamProcessor: ChildProcess | null = null;
 let sessionStartTime: Date | null = null;
+
+// Authentication middleware
+async function authenticateUser(req: AuthenticatedRequest, res: ExpressResponse, next: Function) {
+  try {
+    const replitUserId = req.headers['x-replit-user-id'] as string;
+    const username = req.headers['x-replit-user-name'] as string;
+
+    if (!replitUserId || !username) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    // Get or create user
+    let user = await storage.getUserByReplitId(replitUserId);
+    if (!user) {
+      user = await storage.createUser({
+        replitUserId,
+        username,
+      });
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    console.error('Authentication error:', error);
+    res.status(500).json({ error: 'Authentication failed' });
+  }
+}</async>
 
 function broadcastSSE(event: SSEEvent) {
   const data = `data: ${JSON.stringify(event)}\n\n`;
@@ -151,6 +183,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  // Get user profile
+  app.get("/api/user", authenticateUser, (req: AuthenticatedRequest, res) => {
+    res.json(req.user);
+  });
+
   // Get processing status
   app.get("/api/status", (req, res) => {
     res.json(processingStatus);
@@ -159,12 +196,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
 
   // Start stream capture
-  app.post('/api/start', async (req, res) => {
+  app.post('/api/start', authenticateUser, async (req: AuthenticatedRequest, res) => {
     try {
       const validatedData = insertStreamSessionSchema.parse(req.body);
 
-      // Stop any active sessions
-      const activeSession = await storage.getActiveSession();
+      // Stop any active sessions for this user
+      const activeSession = await storage.getActiveSession(req.user!.id);
       if (activeSession) {
         await storage.updateSessionStatus(activeSession.id, false);
         stopStreamProcessor();
@@ -199,6 +236,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create new session
       const session = await storage.createStreamSession({
         ...validatedData,
+        userId: req.user!.id,
         isActive: true,
       });
 
@@ -243,9 +281,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Stop stream capture
-  app.post('/api/stop', async (req, res) => {
+  app.post('/api/stop', authenticateUser, async (req: AuthenticatedRequest, res) => {
     try {
-      const activeSession = await storage.getActiveSession();
+      const activeSession = await storage.getActiveSession(req.user!.id);
       if (!activeSession) {
         return res.status(400).json({ error: 'No active session' });
       }
@@ -343,9 +381,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get clips
-  app.get("/api/clips", async (req, res) => {
+  app.get("/api/clips", authenticateUser, async (req: AuthenticatedRequest, res) => {
     try {
-      const clips = await storage.getClips();
+      const clips = await storage.getClips(req.user!.id);
       res.json(clips || []);
     } catch (error) {
       console.error('Error fetching clips:', error);
@@ -356,21 +394,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
 
   // Get single clip
-  app.get('/api/clips/:id', async (req, res) => {
+  app.get('/api/clips/:id', authenticateUser, async (req: AuthenticatedRequest, res) => {
     const id = parseInt(req.params.id);
     const clip = await storage.getClip(id);
-    if (!clip) {
+    if (!clip || clip.userId !== req.user!.id) {
       return res.status(404).json({ error: 'Clip not found' });
     }
     res.json(clip);
   });
 
   // Delete clip
-  app.delete('/api/clips/:id', async (req, res) => {
+  app.delete('/api/clips/:id', authenticateUser, async (req: AuthenticatedRequest, res) => {
     try {
       const id = parseInt(req.params.id);
       const clip = await storage.getClip(id);
-      if (!clip) {
+      if (!clip || clip.userId !== req.user!.id) {
         return res.status(404).json({ error: 'Clip not found' });
       }
 
@@ -423,9 +461,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Download all clips as ZIP
-  app.get('/api/download-all', async (req, res) => {
+  app.get('/api/download-all', authenticateUser, async (req: AuthenticatedRequest, res) => {
     try {
-      const clips = await storage.getClips();
+      const clips = await storage.getClips(req.user!.id);
       if (clips.length === 0) {
         return res.status(400).json({ error: 'No clips to download' });
       }
@@ -492,9 +530,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get resolved stream URL for display (decoupled from processing)
-  app.get('/api/stream-url', async (req, res) => {
+  app.get('/api/stream-url', authenticateUser, async (req: AuthenticatedRequest, res) => {
     try {
-      const activeSession = await storage.getActiveSession();
+      const activeSession = await storage.getActiveSession(req.user!.id);
       if (!activeSession) {
         console.log('❌ No active session found for stream URL request');
         return res.status(404).json({ error: 'No active session found' });
