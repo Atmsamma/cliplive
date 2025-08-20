@@ -240,12 +240,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(processingStatus);
   });
 
-  // Auto-start session when accessing root URL
+  // Auto-start session when accessing root URL - always creates new session for each tab/browser
   app.get("/api/auto-start", async (req, res) => {
     try {
-      // Stop any active sessions first
+      // Always stop any active sessions first to ensure new session for each tab/browser
       const activeSession = await storage.getActiveSession();
       if (activeSession) {
+        console.log('🔄 Stopping active session to create new session for new tab/browser...');
         await storage.updateSessionStatus(activeSession.id, false);
         stopStreamProcessor();
       }
@@ -272,7 +273,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error('Error auto-cleaning temp directory:', cleanupError);
       }
 
-      // Reset processing status completely
+      // Reset processing status completely for new session
       processingStatus = {
         isProcessing: false,
         framesProcessed: 0,
@@ -283,13 +284,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       sessionStartTime = null;
 
-      // Broadcast reset status
+      // Broadcast reset status to all connected clients
       broadcastSSE({
         type: 'session-stopped',
-        data: { message: 'New session initialized' },
+        data: { message: 'New session initialized for new tab/browser' },
       });
 
-      res.json({ success: true, message: 'New session ready' });
+      console.log('✅ New session ready for new tab/browser access');
+      res.json({ success: true, message: 'New session ready', newSession: true });
     } catch (error) {
       console.error('Error auto-initializing session:', error);
       res.status(500).json({ error: 'Failed to initialize new session' });
