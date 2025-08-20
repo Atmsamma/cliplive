@@ -1,19 +1,28 @@
-import { useEffect } from "react";
+import { useEffect, useState } from 'react';
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import type { SSEEvent } from "@shared/schema";
 
-export function useSSE(url: string) {
+export function useSSE(sessionId?: string) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [isConnected, setIsConnected] = useState(false);
+  const [lastEvent, setLastEvent] = useState<SSEEvent | null>(null);
 
   useEffect(() => {
+    const url = sessionId ? `/api/events?sessionId=${sessionId}` : '/api/events';
     const eventSource = new EventSource(url);
+
+    eventSource.onopen = () => {
+      console.log(`SSE connected for session: ${sessionId || 'default'}`);
+      setIsConnected(true);
+    };
 
     eventSource.onmessage = (event) => {
       try {
         const sseEvent: SSEEvent = JSON.parse(event.data);
-        
+        setLastEvent(sseEvent);
+
         switch (sseEvent.type) {
           case 'clip-generated':
             toast({
@@ -22,11 +31,11 @@ export function useSSE(url: string) {
             });
             queryClient.invalidateQueries({ queryKey: ["/api/clips"] });
             break;
-            
+
           case 'processing-status':
             queryClient.setQueryData(["/api/status"], sseEvent.data);
             break;
-            
+
           case 'session-started':
             toast({
               title: "Stream Capture Started",
@@ -34,7 +43,7 @@ export function useSSE(url: string) {
             });
             queryClient.invalidateQueries({ queryKey: ["/api/status"] });
             break;
-            
+
           case 'session-stopped':
             toast({
               title: "Stream Capture Stopped",
@@ -42,7 +51,7 @@ export function useSSE(url: string) {
             });
             queryClient.invalidateQueries({ queryKey: ["/api/status"] });
             break;
-            
+
           case 'stream-ended':
             toast({
               title: "Stream Has Ended",
@@ -60,7 +69,7 @@ export function useSSE(url: string) {
             });
             queryClient.invalidateQueries({ queryKey: ["/api/status"] });
             break;
-            
+
           case 'error':
             toast({
               title: "Error",
@@ -75,11 +84,14 @@ export function useSSE(url: string) {
     };
 
     eventSource.onerror = (error) => {
-      console.error("SSE connection error:", error);
+      console.log('SSE connection error:', error);
+      setIsConnected(false);
     };
 
     return () => {
       eventSource.close();
     };
-  }, [url, queryClient, toast]);
+  }, [sessionId, queryClient, toast]);
+
+  return { isConnected, lastEvent };
 }

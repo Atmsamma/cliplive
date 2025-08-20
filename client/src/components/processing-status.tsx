@@ -1,20 +1,41 @@
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
 import { useSSE } from "@/hooks/use-sse";
-import type { ProcessingStatus } from "@shared/schema";
+import { Activity, Clock, Volume2, Camera, Zap } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
+import type { ProcessingStatus as ProcessingStatusType } from "@shared/schema";
 import LivePlayer from "./live-player";
 import PlatformIframePlayer from "./platform-iframe-player";
 import { useState, useEffect } from 'react';
 
-export default function ProcessingStatus() {
-  const { data: status } = useQuery<ProcessingStatus>({
-    queryKey: ["/api/status"],
+interface ProcessingStatusProps {
+  sessionId: string | null;
+}
+
+export default function ProcessingStatus({ sessionId }: ProcessingStatusProps) {
+  const { lastEvent } = useSSE(sessionId || undefined);
+
+  const { data: status } = useQuery<ProcessingStatusType>({
+    queryKey: ["/api/status", sessionId],
+    queryFn: async () => {
+      if (!sessionId) return null;
+      const response = await apiRequest("GET", `/api/status?sessionId=${sessionId}`);
+      return response.json();
+    },
+    enabled: !!sessionId,
     refetchInterval: 1000,
   });
 
   // Get resolved stream URL for active session (decoupled from processing)
   const { data: streamData, error: streamError } = useQuery<{ resolvedStreamUrl: string }>({
-    queryKey: ["/api/stream-url"],
+    queryKey: ["/api/stream-url", sessionId],
+    queryFn: async () => {
+      if (!sessionId) return null;
+      const response = await apiRequest("GET", `/api/stream-url?sessionId=${sessionId}`);
+      return response.json();
+    },
     refetchInterval: 60000, // Refresh every 60 seconds to handle token expiration
     refetchOnWindowFocus: true,
     enabled: !!status?.currentSession, // Only fetch when session is active
@@ -27,16 +48,16 @@ export default function ProcessingStatus() {
   const [displayStreamError, setDisplayStreamError] = useState<string | null>(null);
 
   // Listen for SSE updates
-  useSSE("/api/events");
+  // useSSE("/api/events"); // This is now handled by useSSE(sessionId || undefined)
 
   // Fetch stream URL when processing starts
   useEffect(() => {
     if (status?.isProcessing && !streamUrl && !isLoadingStreamUrl) {
       setIsLoadingStreamUrl(true);
 
-      console.log('Fetching stream URL...');
+      console.log('Fetching stream URL for session:', sessionId);
 
-      fetch('/api/stream-url')
+      fetch(`/api/stream-url?sessionId=${sessionId}`)
         .then(res => {
           console.log('Stream URL response status:', res.status);
           if (!res.ok) {
@@ -63,7 +84,7 @@ export default function ProcessingStatus() {
           setIsLoadingStreamUrl(false);
         });
     }
-  }, [status?.isProcessing, streamUrl, isLoadingStreamUrl]);
+  }, [status?.isProcessing, streamUrl, isLoadingStreamUrl, sessionId]);
 
 
   return (

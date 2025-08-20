@@ -52,12 +52,22 @@ const streamConfigSchema = z.object({
 
 type StreamConfig = z.infer<typeof streamConfigSchema>;
 
-export default function StreamInputForm() {
+interface StreamInputFormProps {
+  sessionId: string | null;
+}
+
+export default function StreamInputForm({ sessionId }: StreamInputFormProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const { data: status } = useQuery({
-    queryKey: ["/api/status"],
+    queryKey: ["/api/status", sessionId],
+    queryFn: async () => {
+      if (!sessionId) return null;
+      const response = await apiRequest("GET", `/api/status?sessionId=${sessionId}`);
+      return response.json();
+    },
+    enabled: !!sessionId,
     refetchInterval: 1000,
   });
 
@@ -79,12 +89,34 @@ export default function StreamInputForm() {
         title: "Stream Capture Started",
         description: "Now monitoring stream for highlights",
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/status", sessionId] });
     },
     onError: () => {
       toast({
         title: "Error",
         description: "Failed to start stream capture",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const stopMutation = useMutation({
+    mutationFn: async () => {
+      if (!sessionId) throw new Error('No session ID');
+      const response = await apiRequest("POST", "/api/stop", { sessionId });
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Stream Capture Stopped",
+        description: "Stream monitoring has been stopped",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/status", sessionId] });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to stop stream capture",
         variant: "destructive",
       });
     },

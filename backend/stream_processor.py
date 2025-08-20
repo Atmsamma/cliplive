@@ -1548,6 +1548,7 @@ class StreamProcessor:
                     'streamEnded': self.stream_ended,
                     'consecutiveFailures': self.consecutive_failures,
                     'lastSuccessfulCapture': self.last_successful_capture,
+                    'sessionId': getattr(self, 'session_id', 'default'),
                     # Include adaptive detection status if available
                     'calibrationProgress': latest_metrics.get('calibration_progress', 0.0),
                     'isCalibrating': latest_metrics.get('is_calibrating', False),
@@ -1573,7 +1574,12 @@ class StreamProcessor:
     def send_metrics_to_backend(self, metrics):
         """Send metrics to the backend API"""
         try:
-            response = requests.post('http://localhost:5000/api/internal/metrics', json=metrics)
+            # Include session ID in metrics
+            metrics_with_session = {
+                **metrics,
+                'sessionId': getattr(self, 'session_id', 'default')
+            }
+            response = requests.post('http://0.0.0.0:5000/api/internal/metrics', json=metrics_with_session)
             if response.status_code != 200:
                 print(f"Failed to send metrics: {response.status_code}")
         except Exception as e:
