@@ -9,6 +9,10 @@ import StreamInputForm from "@/components/stream-input-form";
 import ProcessingStatus from "@/components/processing-status";
 import ClipList from "@/components/clip-list";
 
+// Dummy functions and variables to satisfy the compiler if they were used in the changes
+const formatSize = (size: number) => `${(size / 1024).toFixed(2)} KB`;
+const totalSize = 1024 * 1024; // Example total size
+
 export default function Landing() {
   const { toast } = useToast();
 
@@ -34,7 +38,7 @@ export default function Landing() {
   const clipsArray = Array.isArray(clips) ? clips : [];
 
   return (
-    <div className="min-h-screen bg-slate-900">
+    <div className="h-screen bg-slate-900 overflow-y-auto snap-y snap-mandatory">
       {/* Header */}
       <header className="bg-slate-800 border-b border-slate-600 px-6 py-4 sticky top-0 z-10">
         <div className="flex items-center justify-between">
@@ -55,7 +59,7 @@ export default function Landing() {
       {/* Main Content - Vertical Scrolling Sections */}
       <main className="w-full">
         {/* Section 1: Stream Configuration */}
-        <section className="min-h-screen flex items-center justify-center p-6">
+        <section className="h-screen flex items-center justify-center p-6 snap-start">
           <div className="w-full max-w-2xl">
             <div className="text-center mb-8">
               <h2 className="text-3xl font-bold text-slate-50 mb-4">Configure Your Stream</h2>
@@ -66,7 +70,7 @@ export default function Landing() {
         </section>
 
         {/* Section 2: Processing Status */}
-        <section className="min-h-screen flex items-center justify-center p-6">
+        <section className="h-screen flex items-center justify-center p-6 snap-start">
           <div className="w-full max-w-4xl">
             <div className="text-center mb-8">
               <h2 className="text-3xl font-bold text-slate-50 mb-4">Live Processing</h2>
@@ -77,7 +81,7 @@ export default function Landing() {
         </section>
 
         {/* Section 3: Clip Library */}
-        <section className="min-h-screen flex items-center justify-center p-6">
+        <section className="h-screen flex items-center justify-center p-6 snap-start">
           <div className="w-full max-w-6xl">
             <div className="text-center mb-8">
               <h2 className="text-3xl font-bold text-slate-50 mb-4">Your Captured Clips</h2>
