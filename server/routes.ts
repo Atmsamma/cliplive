@@ -54,7 +54,7 @@ async function authenticateUser(req: AuthenticatedRequest, res: ExpressResponse,
     console.error('Authentication error:', error);
     res.status(500).json({ error: 'Authentication failed' });
   }
-}</async>
+}
 
 function broadcastSSE(event: SSEEvent) {
   const data = `data: ${JSON.stringify(event)}\n\n`;
