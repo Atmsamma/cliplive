@@ -209,16 +209,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
-  app.get('/api/auth/google', passport.authenticate('google', {
-    scope: ['profile', 'email']
-  }));
+  // Google OAuth routes (only if credentials are configured)
+  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    app.get('/api/auth/google', passport.authenticate('google', {
+      scope: ['profile', 'email']
+    }));
 
-  app.get('/api/auth/google/callback', 
-    passport.authenticate('google', { failureRedirect: '/signin' }),
-    (req, res) => {
-      res.redirect('/capture');
-    }
-  );
+    app.get('/api/auth/google/callback', 
+      passport.authenticate('google', { failureRedirect: '/signin' }),
+      (req, res) => {
+        res.redirect('/capture');
+      }
+    );
+  } else {
+    app.get('/api/auth/google', (req, res) => {
+      res.status(501).json({ error: 'Google OAuth not configured' });
+    });
+    
+    app.get('/api/auth/google/callback', (req, res) => {
+      res.status(501).json({ error: 'Google OAuth not configured' });
+    });
+  }
 
   app.get('/api/user', requireAuth, (req, res) => {
     res.json(req.user);
