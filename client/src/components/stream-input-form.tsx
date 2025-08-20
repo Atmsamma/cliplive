@@ -12,32 +12,31 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Link, Play, Square } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { useSSE } from "@/hooks/use-sse";
 
 // URL validation function for supported streaming platforms
 const isValidStreamUrl = (url: string): boolean => {
   try {
     const urlObj = new URL(url);
     const hostname = urlObj.hostname.toLowerCase();
-
+    
     // YouTube validation
     if (hostname === 'www.youtube.com' || hostname === 'youtube.com' || hostname === 'youtu.be') {
       if (hostname === 'youtu.be') return true;
       return urlObj.pathname === '/watch' && urlObj.searchParams.has('v');
     }
-
+    
     // Twitch validation
     if (hostname === 'www.twitch.tv' || hostname === 'twitch.tv') {
       const pathParts = urlObj.pathname.split('/').filter(part => part.length > 0);
       return pathParts.length >= 1 && pathParts[0] !== '';
     }
-
+    
     // Kick validation
     if (hostname === 'www.kick.com' || hostname === 'kick.com') {
       const pathParts = urlObj.pathname.split('/').filter(part => part.length > 0);
       return pathParts.length >= 1 && pathParts[0] !== '';
     }
-
+    
     return false;
   } catch {
     return false;
@@ -53,25 +52,13 @@ const streamConfigSchema = z.object({
 
 type StreamConfig = z.infer<typeof streamConfigSchema>;
 
-// Define ProcessingStatus type if it's not defined elsewhere
-interface ProcessingStatus {
-  isProcessing: boolean;
-  currentStreamUrl: string | null;
-  sessionId: string;
-}
-
-
 export default function StreamInputForm() {
   const { toast } = useToast();
-  const { sessionId } = useSSE();
-  const [status, setStatus] = useState<ProcessingStatus | null>(null);
+  const queryClient = useQueryClient();
 
-  const { data: queryStatus } = useQuery<ProcessingStatus>({
+  const { data: status } = useQuery({
     queryKey: ["/api/status"],
     refetchInterval: 1000,
-    onSuccess: (data) => {
-      setStatus(data);
-    }
   });
 
   const form = useForm<StreamConfig>({
@@ -83,8 +70,10 @@ export default function StreamInputForm() {
   });
 
   const startMutation = useMutation({
-    mutationFn: (data: z.infer<typeof streamConfigSchema>) =>
-      apiRequest("/api/start", "POST", { ...data, sessionId }),
+    mutationFn: async (data: StreamConfig) => {
+      const response = await apiRequest("POST", "/api/start", data);
+      return response.json();
+    },
     onSuccess: () => {
       toast({
         title: "Stream Capture Started",
@@ -103,7 +92,8 @@ export default function StreamInputForm() {
 
   const stopMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest("/api/stop", "POST", { sessionId }); // Pass sessionId to stop
+      const response = await apiRequest("POST", "/api/stop");
+      return response.json();
     },
     onSuccess: () => {
       toast({

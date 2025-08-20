@@ -20,41 +20,22 @@ let processingStatus: ProcessingStatus = {
   sceneChange: 0,
 };
 
-// SSE clients with session tracking
-const sseClients = new Map<string, ExpressResponse>();
-
-// Generate unique session ID for each client
-function generateSessionId(): string {
-  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-}
+// SSE clients
+const sseClients = new Set<ExpressResponse>();
 
 // Python stream processor
 let streamProcessor: ChildProcess | null = null;
 let sessionStartTime: Date | null = null;
 
-function broadcastSSE(event: SSEEvent, targetSessionId?: string) {
+function broadcastSSE(event: SSEEvent) {
   const data = `data: ${JSON.stringify(event)}\n\n`;
-  
-  if (targetSessionId) {
-    // Send to specific session
-    const client = sseClients.get(targetSessionId);
-    if (client) {
-      try {
-        client.write(data);
-      } catch (error) {
-        sseClients.delete(targetSessionId);
-      }
+  sseClients.forEach(client => {
+    try {
+      client.write(data);
+    } catch (error) {
+      sseClients.delete(client);
     }
-  } else {
-    // Broadcast to all sessions
-    sseClients.forEach((client, sessionId) => {
-      try {
-        client.write(data);
-      } catch (error) {
-        sseClients.delete(sessionId);
-      }
-    });
-  }
+  });
 }
 
 function startStreamProcessor(config: any): boolean {
@@ -167,8 +148,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Server-Sent Events endpoint
   app.get('/api/events', (req, res) => {
-    const sessionId = req.query.sessionId as string || generateSessionId();
-    
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -177,21 +156,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       'Access-Control-Allow-Headers': 'Cache-Control',
     });
 
-    sseClients.set(sessionId, res);
+    sseClients.add(res);
 
-    // Send initial status with session ID
-    res.write(`data: ${JSON.stringify({
-      type: 'session-connected',
-      data: { sessionId, processingStatus },
-    })}\n\n`);
-
+    // Send initial status
     res.write(`data: ${JSON.stringify({
       type: 'processing-status',
       data: processingStatus,
     })}\n\n`);
 
     req.on('close', () => {
-      sseClients.delete(sessionId);
+      sseClients.delete(res);
     });
   });
 
@@ -271,18 +245,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Start stream capture
   app.post('/api/start', async (req, res) => {
     try {
-      const sessionId = req.body.sessionId || generateSessionId();
-      
       // Add userId from authenticated user to the request data, or use null for unauthenticated users
       const requestData = {
         ...req.body,
-        userId: req.user ? (req.user as any).id : null,
-        sessionId // Store session ID in database for tracking
+        userId: req.user ? (req.user as any).id : null
       };
       
       const validatedData = insertStreamSessionSchema.parse(requestData);
 
-      // Stop any active sessions (you can modify this to allow multiple concurrent sessions if needed)
+      // Stop any active sessions
       const activeSession = await storage.getActiveSession();
       if (activeSession) {
         await storage.updateSessionStatus(activeSession.id, false);
@@ -345,10 +316,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         broadcastSSE({
           type: 'session-started',
-          data: { ...session, sessionId },
-        }, sessionId);
+          data: session,
+        });
 
-        res.json({ ...session, sessionId });
+        res.json(session);
       } else {
         // Failed to start processor
         console.log('❌ Failed to start stream processor');

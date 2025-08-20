@@ -2,53 +2,84 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import type { SSEEvent } from "@shared/schema";
-import { useState } from "react";
-import type { ProcessingStatus, Clip } from "@/types";
 
-export function useSSE() {
-  const [status, setStatus] = useState<ProcessingStatus | null>(null);
-  const [clips, setClips] = useState<Clip[]>([]);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+export function useSSE(url: string) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   useEffect(() => {
-    // Generate session ID if not exists
-    const currentSessionId = sessionId || Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-    if (!sessionId) {
-      setSessionId(currentSessionId);
-    }
-
-    const eventSource = new EventSource(`/api/events?sessionId=${currentSessionId}`);
+    const eventSource = new EventSource(url);
 
     eventSource.onmessage = (event) => {
-      const data: SSEEvent = JSON.parse(event.data);
-
-      switch (data.type) {
-        case 'session-connected':
-          setSessionId(data.data.sessionId);
-          setStatus(data.data.processingStatus);
-          break;
-        case 'processing-status':
-          setStatus(data.data);
-          break;
-        case 'clip-generated':
-          setClips(prev => [data.data, ...prev]);
-          break;
-        case 'session-started':
-          setStatus(prev => ({ ...prev, isProcessing: true, currentSession: data.data }));
-          break;
-        case 'session-stopped':
-          setStatus(prev => ({ ...prev, isProcessing: false, currentSession: undefined }));
-          break;
-        case 'stream-ended':
-          setStatus(prev => ({ ...prev, isProcessing: false, streamEnded: true }));
-          break;
+      try {
+        const sseEvent: SSEEvent = JSON.parse(event.data);
+        
+        switch (sseEvent.type) {
+          case 'clip-generated':
+            toast({
+              title: "Highlight Captured!",
+              description: `New clip: ${sseEvent.data.filename}`,
+            });
+            queryClient.invalidateQueries({ queryKey: ["/api/clips"] });
+            break;
+            
+          case 'processing-status':
+            queryClient.setQueryData(["/api/status"], sseEvent.data);
+            break;
+            
+          case 'session-started':
+            toast({
+              title: "Stream Capture Started",
+              description: "Now monitoring for highlights",
+            });
+            queryClient.invalidateQueries({ queryKey: ["/api/status"] });
+            break;
+            
+          case 'session-stopped':
+            toast({
+              title: "Stream Capture Stopped",
+              description: "Processing has been stopped",
+            });
+            queryClient.invalidateQueries({ queryKey: ["/api/status"] });
+            break;
+            
+          case 'stream-ended':
+            toast({
+              title: "Stream Has Ended",
+              description: sseEvent.data.message || "The stream is no longer available",
+              variant: "destructive",
+            });
+            // Reset processing status to allow new stream capture
+            queryClient.setQueryData(["/api/status"], {
+              isProcessing: false,
+              framesProcessed: 0,
+              streamUptime: "00:00:00",
+              audioLevel: 0,
+              motionLevel: 0,
+              sceneChange: 0,
+            });
+            queryClient.invalidateQueries({ queryKey: ["/api/status"] });
+            break;
+            
+          case 'error':
+            toast({
+              title: "Error",
+              description: sseEvent.data.message || "An error occurred",
+              variant: "destructive",
+            });
+            break;
+        }
+      } catch (error) {
+        console.error("Failed to parse SSE event:", error);
       }
+    };
+
+    eventSource.onerror = (error) => {
+      console.error("SSE connection error:", error);
     };
 
     return () => {
       eventSource.close();
     };
-  }, [sessionId]);
-
-  return { status, clips, sessionId };
+  }, [url, queryClient, toast]);
 }
