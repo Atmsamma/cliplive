@@ -59,7 +59,7 @@ export default function Landing() {
             className="bg-blue-500 hover:bg-blue-600 text-white"
           >
             <LogIn size={16} className="mr-2" />
-            Get Started
+            Sign Up
           </Button>
         </div>
       </header>
