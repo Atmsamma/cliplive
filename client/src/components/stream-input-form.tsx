@@ -122,27 +122,6 @@ export default function StreamInputForm({ sessionId }: StreamInputFormProps) {
     },
   });
 
-  const stopMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiRequest("POST", "/api/stop");
-      return response.json();
-    },
-    onSuccess: () => {
-      toast({
-        title: "Stream Capture Stopped",
-        description: "Processing has been stopped",
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/status"] });
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to stop stream capture",
-        variant: "destructive",
-      });
-    },
-  });
-
   const onSubmit = (data: StreamConfig) => {
     if (status?.isProcessing) {
       stopMutation.mutate();
