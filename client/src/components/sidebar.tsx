@@ -1,11 +1,11 @@
 import { Link, useLocation } from "wouter";
-import { Video, Library, Activity } from "lucide-react";
+import { Play, Library, Activity } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Monitor, Video, Settings, Home, User } from "lucide-react";
+import { Monitor, Settings, Home, User } from "lucide-react";
 import type { User as UserType } from "@shared/schema";
 
 export default function Sidebar() {
@@ -25,7 +25,7 @@ export default function Sidebar() {
     {
       name: "Stream Capture",
       path: "/capture",
-      icon: Video,
+      icon: Play,
     },
     {
       name: "Clip Library",

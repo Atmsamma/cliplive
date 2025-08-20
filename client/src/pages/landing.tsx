@@ -18,8 +18,15 @@ export default function Landing() {
   const liveProcessingSectionRef = useRef<HTMLElement>(null);
   const [wasProcessing, setWasProcessing] = useState(false);
 
+  // Mock user query
+  const mockUserId = sessionStorage.getItem('mockUserId');
+  const mockUsername = sessionStorage.getItem('mockUsername');
+
   const { data: user, error: userError } = useQuery<UserType>({
     queryKey: ["/api/user"],
+    // Simulate authentication by checking for mock user data
+    staleTime: Infinity, // Keep this data fresh
+    initialData: mockUserId && mockUsername ? { id: mockUserId, username: mockUsername } : undefined,
     retry: false,
   });
 
@@ -38,7 +45,7 @@ export default function Landing() {
   // Auto-scroll to Live Processing section when processing starts
   useEffect(() => {
     if (status?.isProcessing && !wasProcessing && liveProcessingSectionRef.current) {
-      liveProcessingSectionRef.current.scrollIntoView({ 
+      liveProcessingSectionRef.current.scrollIntoView({
         behavior: 'smooth',
         block: 'start'
       });
@@ -47,7 +54,17 @@ export default function Landing() {
   }, [status?.isProcessing, wasProcessing]);
 
   const handleSignIn = () => {
-    window.location.href = "/capture";
+    // Set mock authentication headers for development
+    // In production, this would be proper OAuth/JWT
+    const mockUserId = `user_${Date.now()}`;
+    const mockUsername = `streamer_${Math.random().toString(36).substr(2, 8)}`;
+
+    // Store in sessionStorage for this session
+    sessionStorage.setItem('mockUserId', mockUserId);
+    sessionStorage.setItem('mockUsername', mockUsername);
+
+    // Navigate to main app
+    window.location.href = '/stream-capture';
   };
 
   const clipsArray = Array.isArray(clips) ? clips : [];

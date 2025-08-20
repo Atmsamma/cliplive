@@ -12,9 +12,13 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
+  // Get mock authentication from sessionStorage
+  const mockUserId = sessionStorage.getItem('mockUserId') || `user_${Date.now()}`;
+  const mockUsername = sessionStorage.getItem('mockUsername') || `streamer_${Math.random().toString(36).substr(2, 8)}`;
+
   const res = await fetch(url, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
+    headers: data ? { "Content-Type": "application/json", "x-replit-user-id": mockUserId, "x-replit-user-name": mockUsername } : { "x-replit-user-id": mockUserId, "x-replit-user-name": mockUsername },
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
