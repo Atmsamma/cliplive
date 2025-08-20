@@ -26,6 +26,7 @@ export const clips = pgTable("clips", {
 export const streamSessions = pgTable("stream_sessions", {
   id: serial("id").primaryKey(),
   userId: integer("user_id"), // Nullable to support unauthenticated users
+  sessionId: text("session_id"), // Client session identifier
   url: text("url").notNull(),
   isActive: boolean("is_active").default(false).notNull(),
   audioThreshold: integer("audio_threshold").default(6).notNull(),
