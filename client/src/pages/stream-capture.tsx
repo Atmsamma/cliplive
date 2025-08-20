@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import StreamInputForm from "@/components/stream-input-form";
 import ProcessingStatus from "@/components/processing-status";
@@ -11,30 +11,9 @@ import type { ProcessingStatus as ProcessingStatusType, Clip } from "@shared/sch
 
 export default function StreamCapture() {
   const { toast } = useToast();
-  const [sessionId, setSessionId] = useState<string | null>(null);
-
-  // Initialize new session on page load
-  useEffect(() => {
-    const newSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    setSessionId(newSessionId);
-    console.log('🚀 Initializing new session on page load:', newSessionId);
-    
-    // Store session ID for this tab
-    sessionStorage.setItem('streamSessionId', newSessionId);
-    
-    return () => {
-      console.log('✅ New session initialized successfully');
-    };
-  }, []);
 
   const { data: status } = useQuery<ProcessingStatusType>({
-    queryKey: ["/api/status", sessionId],
-    queryFn: async () => {
-      if (!sessionId) return null;
-      const response = await apiRequest("GET", `/api/status?sessionId=${sessionId}`);
-      return response.json();
-    },
-    enabled: !!sessionId,
+    queryKey: ["/api/status"],
     refetchInterval: 1000,
   });
 
@@ -109,8 +88,8 @@ export default function StreamCapture() {
       <main className="flex-1 overflow-auto p-6">
         {/* Clip Configuration and Processing Status Side by Side */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <StreamInputForm sessionId={sessionId} />
-          <ProcessingStatus sessionId={sessionId} />
+          <StreamInputForm />
+          <ProcessingStatus />
         </div>
 
         {/* Recent Clips */}

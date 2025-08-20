@@ -13,21 +13,13 @@ export const streamService = {
     return response.json();
   },
 
-  async stopCapture(sessionId?: string) {
-    const body = sessionId ? { sessionId } : {};
-    const response = await apiRequest("POST", "/api/stop", body);
+  async stopCapture() {
+    const response = await apiRequest("POST", "/api/stop");
     return response.json();
   },
 
-  async getStatus(sessionId?: string) {
-    const url = sessionId ? `/api/status?sessionId=${sessionId}` : "/api/status";
-    const response = await apiRequest("GET", url);
-    return response.json();
-  },
-
-  async getStreamUrl(sessionId?: string) {
-    const url = sessionId ? `/api/stream-url?sessionId=${sessionId}` : "/api/stream-url";
-    const response = await apiRequest("GET", url);
+  async getStatus() {
+    const response = await apiRequest("GET", "/api/status");
     return response.json();
   },
 

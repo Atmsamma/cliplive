@@ -52,22 +52,12 @@ const streamConfigSchema = z.object({
 
 type StreamConfig = z.infer<typeof streamConfigSchema>;
 
-interface StreamInputFormProps {
-  sessionId: string | null;
-}
-
-export default function StreamInputForm({ sessionId }: StreamInputFormProps) {
+export default function StreamInputForm() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const { data: status } = useQuery({
-    queryKey: ["/api/status", sessionId],
-    queryFn: async () => {
-      if (!sessionId) return null;
-      const response = await apiRequest("GET", `/api/status?sessionId=${sessionId}`);
-      return response.json();
-    },
-    enabled: !!sessionId,
+    queryKey: ["/api/status"],
     refetchInterval: 1000,
   });
 
@@ -89,7 +79,7 @@ export default function StreamInputForm({ sessionId }: StreamInputFormProps) {
         title: "Stream Capture Started",
         description: "Now monitoring stream for highlights",
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/status", sessionId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/status"] });
     },
     onError: () => {
       toast({
@@ -102,16 +92,15 @@ export default function StreamInputForm({ sessionId }: StreamInputFormProps) {
 
   const stopMutation = useMutation({
     mutationFn: async () => {
-      if (!sessionId) throw new Error('No session ID');
-      const response = await apiRequest("POST", "/api/stop", { sessionId });
+      const response = await apiRequest("POST", "/api/stop");
       return response.json();
     },
     onSuccess: () => {
       toast({
         title: "Stream Capture Stopped",
-        description: "Stream monitoring has been stopped",
+        description: "Processing has been stopped",
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/status", sessionId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/status"] });
     },
     onError: () => {
       toast({
