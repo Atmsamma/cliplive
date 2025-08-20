@@ -8,12 +8,16 @@ import NotFound from "@/pages/not-found";
 import StreamCapture from "@/pages/stream-capture";
 import ClipLibrary from "@/pages/clip-library";
 import Landing from "@/pages/landing";
+import SignUp from "@/pages/signup";
+import SignIn from "@/pages/signin";
 import Sidebar from "@/components/sidebar";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Landing} />
+      <Route path="/signup" component={SignUp} />
+      <Route path="/signin" component={SignIn} />
       <Route path="/capture">
         <div className="flex h-screen bg-slate-900">
           <Sidebar />

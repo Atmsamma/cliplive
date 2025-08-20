@@ -40,12 +40,7 @@ export default function Landing() {
   }, [status?.isProcessing, wasProcessing]);
 
   const handleSignIn = () => {
-    // Simple authentication simulation - in real app this would be proper auth
-    window.location.href = "/capture";
-    toast({
-      title: "Signed In",
-      description: "Welcome to Clip Live!",
-    });
+    window.location.href = "/signup";
   };
 
   const clipsArray = Array.isArray(clips) ? clips : [];
@@ -64,7 +59,7 @@ export default function Landing() {
             className="bg-blue-500 hover:bg-blue-600 text-white"
           >
             <LogIn size={16} className="mr-2" />
-            Sign In
+            Get Started
           </Button>
         </div>
       </header>

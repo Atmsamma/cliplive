@@ -1,7 +1,10 @@
 import type { Express, Response as ExpressResponse } from "express";
 import { createServer, type Server } from "http";
+import session from "express-session";
+import passport, { requireAuth } from "./auth";
+import bcrypt from "bcryptjs";
 import { storage } from "./storage";
-import { insertStreamSessionSchema, insertClipSchema, type ProcessingStatus, type SSEEvent, type StreamSession } from "@shared/schema";
+import { insertStreamSessionSchema, insertClipSchema, insertUserSchema, type ProcessingStatus, type SSEEvent, type StreamSession } from "@shared/schema";
 import { z } from "zod";
 import fs from "fs";
 import path from "path";
@@ -94,6 +97,21 @@ function stopStreamProcessor() {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Configure session middleware
+  app.use(session({
+    secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: false, // Set to true in production with HTTPS
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    }
+  }));
+
+  // Initialize passport
+  app.use(passport.initialize());
+  app.use(passport.session());
+
   // Ensure clips directory exists
   const clipsDir = path.join(process.cwd(), 'clips');
   if (!fs.existsSync(clipsDir)) {
@@ -151,6 +169,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  // Authentication routes
+  app.post('/api/auth/signup', async (req, res) => {
+    try {
+      const { name, email, password } = req.body;
+
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(email);
+      if (existingUser) {
+        return res.status(400).json({ error: 'User already exists with this email' });
+      }
+
+      // Hash password
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      // Create user
+      const user = await storage.createUser({
+        name,
+        email,
+        password: hashedPassword
+      });
+
+      res.json({ message: 'User created successfully', userId: user.id });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to create user' });
+    }
+  });
+
+  app.post('/api/auth/signin', passport.authenticate('local'), (req, res) => {
+    res.json({ message: 'Signed in successfully', user: req.user });
+  });
+
+  app.post('/api/auth/signout', (req, res) => {
+    req.logout((err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to sign out' });
+      }
+      res.json({ message: 'Signed out successfully' });
+    });
+  });
+
+  app.get('/api/auth/google', passport.authenticate('google', {
+    scope: ['profile', 'email']
+  }));
+
+  app.get('/api/auth/google/callback', 
+    passport.authenticate('google', { failureRedirect: '/signin' }),
+    (req, res) => {
+      res.redirect('/capture');
+    }
+  );
+
+  app.get('/api/user', requireAuth, (req, res) => {
+    res.json(req.user);
+  });
+
   // Get processing status
   app.get("/api/status", (req, res) => {
     res.json(processingStatus);
@@ -159,7 +232,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
 
   // Start stream capture
-  app.post('/api/start', async (req, res) => {
+  app.post('/api/start', requireAuth, async (req, res) => {
     try {
       const validatedData = insertStreamSessionSchema.parse(req.body);
 
@@ -243,7 +316,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Stop stream capture
-  app.post('/api/stop', async (req, res) => {
+  app.post('/api/stop', requireAuth, async (req, res) => {
     try {
       const activeSession = await storage.getActiveSession();
       if (!activeSession) {
@@ -343,7 +416,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get clips
-  app.get("/api/clips", async (req, res) => {
+  app.get("/api/clips", requireAuth, async (req, res) => {
     try {
       const clips = await storage.getClips();
       res.json(clips || []);

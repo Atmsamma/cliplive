@@ -1,4 +1,4 @@
-import { clips, streamSessions, type Clip, type InsertClip, type StreamSession, type InsertStreamSession } from "@shared/schema";
+import { users, clips, streamSessions, insertUserSchema, insertClipSchema, insertStreamSessionSchema, type User, type Clip, type StreamSession, type InsertUser, type InsertClip, type InsertStreamSession } from "@shared/schema";
 
 export interface IStorage {
   // Clips
@@ -12,19 +12,29 @@ export interface IStorage {
   getActiveSession(): Promise<StreamSession | undefined>;
   updateSessionStatus(id: number, isActive: boolean): Promise<StreamSession | undefined>;
   getStreamSessions(): Promise<StreamSession[]>;
+
+  // Users
+  createUser(data: InsertUser): Promise<User>;
+  getUserByEmail(email: string): Promise<User | null>;
+  getUserById(id: number): Promise<User | null>;
+  getUserByGoogleId(googleId: string): Promise<User | null>;
 }
 
 export class MemStorage implements IStorage {
   private clips: Map<number, Clip>;
   private streamSessions: Map<number, StreamSession>;
+  private users: Map<number, User>;
   private currentClipId: number;
   private currentSessionId: number;
+  private currentUserId: number;
 
   constructor() {
     this.clips = new Map();
     this.streamSessions = new Map();
+    this.users = new Map();
     this.currentClipId = 1;
     this.currentSessionId = 1;
+    this.currentUserId = 1;
   }
 
   // Clips
@@ -90,6 +100,36 @@ export class MemStorage implements IStorage {
     return Array.from(this.streamSessions.values()).sort(
       (a, b) => b.startedAt.getTime() - a.startedAt.getTime()
     );
+  }
+
+  // Users
+  async createUser(data: InsertUser): Promise<User> {
+    const id = this.currentUserId++;
+    const user: User = {
+      ...data,
+      id,
+      createdAt: new Date(),
+    };
+    this.users.set(id, user);
+    return user;
+  }
+
+  async getUserByEmail(email: string): Promise<User | null> {
+    const user = Array.from(this.users.values()).find(
+      user => user.email === email
+    );
+    return user || null;
+  }
+
+  async getUserById(id: number): Promise<User | null> {
+    return this.users.get(id) || null;
+  }
+
+  async getUserByGoogleId(googleId: string): Promise<User | null> {
+    const user = Array.from(this.users.values()).find(
+      user => user.googleId === googleId
+    );
+    return user || null;
   }
 }
 
