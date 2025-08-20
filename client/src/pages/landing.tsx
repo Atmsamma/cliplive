@@ -31,7 +31,7 @@ export default function Landing() {
     window.location.href = "/capture";
     toast({
       title: "Signed In",
-      description: "Welcome to Stream Clipper!",
+      description: "Welcome to Clip Live!",
     });
   };
 
@@ -43,7 +43,7 @@ export default function Landing() {
       <header className="bg-slate-800 border-b border-slate-600 px-6 py-4 sticky top-0 z-10">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-50">Stream Clipper</h1>
+            <h1 className="text-2xl font-bold text-slate-50">Clip Live</h1>
             <p className="text-slate-400 text-sm">Real-time stream monitoring and highlight capture</p>
           </div>
           <Button
