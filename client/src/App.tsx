@@ -25,7 +25,9 @@ function AuthenticatedRoute({ component: Component, ...props }: any) {
   }
 
   if (!user) {
-    return <SignIn />;
+    // Redirect to sign in page instead of rendering it here
+    window.location.href = '/signin';
+    return null;
   }
 
   return <Component {...props} />;
