@@ -243,12 +243,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
 
   // Start stream capture
-  app.post('/api/start', requireAuth, async (req, res) => {
+  app.post('/api/start', async (req, res) => {
     try {
-      // Add userId from authenticated user to the request data
+      // Add userId from authenticated user to the request data, or use null for unauthenticated users
       const requestData = {
         ...req.body,
-        userId: (req.user as any).id
+        userId: req.user ? (req.user as any).id : null
       };
       
       const validatedData = insertStreamSessionSchema.parse(requestData);
@@ -333,7 +333,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Stop stream capture
-  app.post('/api/stop', requireAuth, async (req, res) => {
+  app.post('/api/stop', async (req, res) => {
     try {
       const activeSession = await storage.getActiveSession();
       if (!activeSession) {
@@ -433,7 +433,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get clips
-  app.get("/api/clips", requireAuth, async (req, res) => {
+  app.get("/api/clips", async (req, res) => {
     try {
       const clips = await storage.getClips();
       res.json(clips || []);
