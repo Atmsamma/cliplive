@@ -31,26 +31,9 @@ export default function Landing() {
     refetchInterval: 5000,
   });
 
-  // Initialize new session on component mount
+  // Ready to create sessions when needed - no auto-initialization
   useEffect(() => {
-    const initializeSession = async () => {
-      try {
-        console.log('🚀 Initializing new session on page load...');
-        const response = await fetch('/api/auto-start', {
-          method: 'GET',
-        });
-
-        if (response.ok) {
-          console.log('✅ New session initialized successfully');
-        } else {
-          console.warn('⚠️ Failed to initialize session:', response.status);
-        }
-      } catch (error) {
-        console.error('❌ Error initializing session:', error);
-      }
-    };
-
-    initializeSession();
+    console.log('🌟 Landing page ready - multiple concurrent sessions supported');
   }, []); // Empty dependency array ensures this runs only once on mount
 
   // Auto-scroll to Live Processing section when processing starts

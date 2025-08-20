@@ -48,26 +48,9 @@ export default function StreamCapture() {
     return `${mb.toFixed(1)} MB`;
   };
 
-  // Initialize new session on component mount
+  // Ready to create sessions when needed - no auto-initialization
   useEffect(() => {
-    const initializeSession = async () => {
-      try {
-        console.log('🚀 Initializing new session on capture page load...');
-        const response = await fetch('/api/auto-start', {
-          method: 'GET',
-        });
-
-        if (response.ok) {
-          console.log('✅ New session initialized successfully');
-        } else {
-          console.warn('⚠️ Failed to initialize session:', response.status);
-        }
-      } catch (error) {
-        console.error('❌ Error initializing session:', error);
-      }
-    };
-
-    initializeSession();
+    console.log('🌟 Stream capture page ready - multiple concurrent sessions supported');
   }, []); // Empty dependency array ensures this runs only once on mount
 
   return (
