@@ -38,16 +38,18 @@ function Router() {
       <Route path="/signup" component={SignUp} />
       <Route path="/signin" component={SignIn} />
       <Route path="/capture">
-        <div className="flex h-screen bg-slate-900">
-          <Sidebar />
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <Switch>
-              <Route path="/capture" component={StreamCapture} />
-              <Route path="/capture/clips" component={ClipLibrary} />
-              <Route component={NotFound} />
-            </Switch>
+        <AuthenticatedRoute component={() => (
+          <div className="flex h-screen bg-slate-900">
+            <Sidebar />
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <Switch>
+                <Route path="/capture" component={StreamCapture} />
+                <Route path="/capture/clips" component={ClipLibrary} />
+                <Route component={NotFound} />
+              </Switch>
+            </div>
           </div>
-        </div>
+        )} />
       </Route>
       <Route component={NotFound} />
     </Switch>
