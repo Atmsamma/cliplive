@@ -1,4 +1,3 @@
-
 import { Switch, Route } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -11,6 +10,26 @@ import Landing from "@/pages/landing";
 import SignUp from "@/pages/signup";
 import SignIn from "@/pages/signin";
 import Sidebar from "@/components/sidebar";
+import { useQuery } from "@tanstack/react-query";
+
+function AuthenticatedRoute({ component: Component, ...props }: any) {
+  const { data: user, isLoading } = useQuery({
+    queryKey: ["/api/user"],
+    retry: false,
+  });
+
+  if (isLoading) {
+    return <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+      <div className="text-slate-400">Loading...</div>
+    </div>;
+  }
+
+  if (!user) {
+    return <SignIn />;
+  }
+
+  return <Component {...props} />;
+}
 
 function Router() {
   return (
