@@ -4,144 +4,95 @@ import session from "express-session";
 import passport, { requireAuth } from "./auth";
 import bcrypt from "bcryptjs";
 import { storage } from "./storage";
-import { insertClipSchema, insertUserSchema, createSessionSchema, startSessionSchema, type ProcessingStatus, type SSEEvent, type SessionStatus } from "@shared/schema";
+import { insertStreamSessionSchema, insertClipSchema, insertUserSchema, type ProcessingStatus, type SSEEvent, type StreamSession } from "@shared/schema";
 import { z } from "zod";
 import fs from "fs";
 import path from "path";
 import { spawn, ChildProcess } from "child_process";
-import { v4 as uuidv4 } from 'uuid';
 
-// Session-based state management
-const sessionProcesses = new Map<string, ChildProcess>();
-const sessionSSEClients = new Map<string, Set<ExpressResponse>>();
-const sessionStartTimes = new Map<string, Date>();
+// Processing state - ensure completely reset
+let processingStatus: ProcessingStatus = {
+  isProcessing: false,
+  framesProcessed: 0,
+  streamUptime: "00:00:00",
+  audioLevel: 0,
+  motionLevel: 0,
+  sceneChange: 0,
+};
 
-// Configuration limits
-const MAX_CONCURRENT_SESSIONS = 3;
-const SESSION_CLEANUP_INTERVAL = 30 * 60 * 1000; // 30 minutes
-const SESSION_MAX_IDLE_HOURS = 2;
+// SSE clients
+const sseClients = new Set<ExpressResponse>();
 
-function broadcastSessionSSE(sessionId: string, event: SSEEvent) {
-  const clients = sessionSSEClients.get(sessionId);
-  if (!clients) return;
+// Python stream processor
+let streamProcessor: ChildProcess | null = null;
+let sessionStartTime: Date | null = null;
 
+function broadcastSSE(event: SSEEvent) {
   const data = `data: ${JSON.stringify(event)}\n\n`;
-  clients.forEach(client => {
+  sseClients.forEach(client => {
     try {
       client.write(data);
     } catch (error) {
-      clients.delete(client);
+      sseClients.delete(client);
     }
   });
 }
 
-function startSessionProcessor(sessionId: string, config: any): boolean {
+function startStreamProcessor(config: any): boolean {
   try {
-    // Stop any existing processor for this session
-    stopSessionProcessor(sessionId);
+    // Stop any existing processor
+    stopStreamProcessor();
 
     const pythonPath = 'python3';
     const scriptPath = path.join(process.cwd(), 'backend', 'stream_processor.py');
-    const configWithSession = { ...config, sessionId };
-    const configJson = JSON.stringify(configWithSession);
+    const configJson = JSON.stringify(config);
 
-    console.log(`Starting processor for session ${sessionId}: ${configJson}`);
+    console.log(`Starting stream processor with config: ${configJson}`);
 
-    const processor = spawn(pythonPath, [scriptPath, configJson], {
+    streamProcessor = spawn(pythonPath, [scriptPath, configJson], {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: process.cwd(),
     });
 
-    if (processor.stdout) {
-      processor.stdout.on('data', (data) => {
-        console.log(`[StreamProcessor-${sessionId}]: ${data.toString().trim()}`);
+    if (streamProcessor.stdout) {
+      streamProcessor.stdout.on('data', (data) => {
+        console.log(`[StreamProcessor]: ${data.toString().trim()}`);
       });
     }
 
-    if (processor.stderr) {
-      processor.stderr.on('data', (data) => {
-        console.error(`[StreamProcessor-${sessionId} Error]: ${data.toString().trim()}`);
+    if (streamProcessor.stderr) {
+      streamProcessor.stderr.on('data', (data) => {
+        console.error(`[StreamProcessor Error]: ${data.toString().trim()}`);
       });
     }
 
-    processor.on('exit', (code) => {
-      console.log(`Session ${sessionId} processor exited with code: ${code}`);
-      sessionProcesses.delete(sessionId);
-      storage.updateSessionStatus(sessionId, { 
-        status: 'stopped', 
-        isProcessing: false,
-        processId: undefined 
-      });
-      broadcastSessionSSE(sessionId, {
-        type: 'session-stopped',
-        data: { sessionId, message: 'Stream processor stopped', code },
-      });
+    streamProcessor.on('exit', (code) => {
+      console.log(`Stream processor exited with code: ${code}`);
+      if (processingStatus.isProcessing) {
+        processingStatus.isProcessing = false;
+        broadcastSSE({
+          type: 'session-stopped',
+          data: { message: 'Stream processor stopped unexpectedly' },
+        });
+      }
     });
 
-    processor.on('error', (error) => {
-      console.error(`Session ${sessionId} processor error: ${error}`);
-      sessionProcesses.delete(sessionId);
-      storage.updateSessionStatus(sessionId, { 
-        status: 'stopped', 
-        isProcessing: false,
-        lastError: error.message 
-      });
+    streamProcessor.on('error', (error) => {
+      console.error(`Stream processor error: ${error}`);
     });
 
-    sessionProcesses.set(sessionId, processor);
     return true;
   } catch (error) {
-    console.error(`Failed to start processor for session ${sessionId}: ${error}`);
+    console.error(`Failed to start stream processor: ${error}`);
     return false;
   }
 }
 
-function stopSessionProcessor(sessionId: string) {
-  const processor = sessionProcesses.get(sessionId);
-  if (processor) {
-    console.log(`Stopping processor for session ${sessionId}...`);
-    processor.kill('SIGTERM');
-    sessionProcesses.delete(sessionId);
-  }
-}
-
-function ensureSessionDirectory(sessionId: string) {
-  const sessionDir = path.join(process.cwd(), 'clips', sessionId);
-  if (!fs.existsSync(sessionDir)) {
-    fs.mkdirSync(sessionDir, { recursive: true });
-  }
-
-  const thumbnailsDir = path.join(sessionDir, 'thumbnails');
-  if (!fs.existsSync(thumbnailsDir)) {
-    fs.mkdirSync(thumbnailsDir, { recursive: true });
-  }
-
-  return sessionDir;
-}
-
-async function cleanupExpiredSessions() {
-  try {
-    const expiredSessions = await storage.cleanupExpiredSessions(SESSION_MAX_IDLE_HOURS);
-
-    for (const sessionId of expiredSessions) {
-      // Stop any running processes
-      stopSessionProcessor(sessionId);
-
-      // Clean up SSE clients
-      sessionSSEClients.delete(sessionId);
-      sessionStartTimes.delete(sessionId);
-
-      // Optionally clean up session files
-      const sessionDir = path.join(process.cwd(), 'clips', sessionId);
-      if (fs.existsSync(sessionDir)) {
-        console.log(`Cleaning up expired session directory: ${sessionId}`);
-        // Uncomment to delete files: fs.rmSync(sessionDir, { recursive: true, force: true });
-      }
-
-      console.log(`Cleaned up expired session: ${sessionId}`);
-    }
-  } catch (error) {
-    console.error('Error cleaning up expired sessions:', error);
+function stopStreamProcessor() {
+  if (streamProcessor) {
+    console.log('Stopping stream processor...');
+    streamProcessor.kill('SIGTERM');
+    streamProcessor = null;
   }
 }
 
@@ -152,11 +103,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: false,
-      maxAge: 24 * 60 * 60 * 1000
+      secure: false, // Set to true in production with HTTPS
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
     }
   }));
 
+  // Initialize passport
   app.use(passport.initialize());
   app.use(passport.session());
 
@@ -166,189 +118,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     fs.mkdirSync(clipsDir, { recursive: true });
   }
 
-  // Start cleanup interval
-  setInterval(cleanupExpiredSessions, SESSION_CLEANUP_INTERVAL);
+  // Clean up any orphaned clip files and thumbnails on startup
+  try {
+    const existingFiles = fs.readdirSync(clipsDir).filter(file => file.endsWith('.mp4'));
+    console.log(`Found ${existingFiles.length} existing clip files, cleaning up...`);
 
-  // Session Management Routes
-  app.post('/api/sessions', async (req, res) => {
-    try {
-      const currentSessions = await storage.getAllSessions();
-      const runningSessions = currentSessions.filter(s => s.status === 'running').length;
+    // For development, remove old files to start fresh
+    existingFiles.forEach(file => {
+      const filePath = path.join(clipsDir, file);
+      fs.unlinkSync(filePath);
+    });
 
-      if (runningSessions >= MAX_CONCURRENT_SESSIONS) {
-        return res.status(429).json({ 
-          error: 'Maximum concurrent sessions reached',
-          maxSessions: MAX_CONCURRENT_SESSIONS,
-          currentSessions: runningSessions
-        });
-      }
+    // Also clean up thumbnails
+    const thumbnailsDir = path.join(clipsDir, 'thumbnails');
+    if (fs.existsSync(thumbnailsDir)) {
+      const existingThumbnails = fs.readdirSync(thumbnailsDir).filter(file => file.endsWith('.jpg'));
+      console.log(`Found ${existingThumbnails.length} existing thumbnail files, cleaning up...`);
 
-      const { sessionId } = await storage.createSession();
-      ensureSessionDirectory(sessionId);
-
-      res.json({ sessionId });
-    } catch (error) {
-      console.error('Error creating session:', error);
-      res.status(500).json({ error: 'Failed to create session' });
-    }
-  });
-
-  app.get('/api/sessions/:sessionId/status', async (req, res) => {
-    try {
-      const { sessionId } = req.params;
-      const status = await storage.getSessionStatus(sessionId);
-
-      if (!status) {
-        return res.status(404).json({ error: 'Session not found' });
-      }
-
-      res.json(status);
-    } catch (error) {
-      console.error('Error getting session status:', error);
-      res.status(500).json({ error: 'Failed to get session status' });
-    }
-  });
-
-  app.post('/api/sessions/:sessionId/start', async (req, res) => {
-    try {
-      const { sessionId } = req.params;
-      const validatedData = startSessionSchema.parse(req.body);
-
-      const session = await storage.getSessionStatus(sessionId);
-      if (!session) {
-        return res.status(404).json({ error: 'Session not found' });
-      }
-
-      if (session.status === 'running') {
-        return res.status(400).json({ error: 'Session already running' });
-      }
-
-      // Update session status
-      await storage.updateSessionStatus(sessionId, {
-        status: 'starting',
-        streamUrl: validatedData.streamUrl,
-        isProcessing: true,
-        framesProcessed: 0,
-        clipsGenerated: 0,
+      existingThumbnails.forEach(thumbnail => {
+        const thumbnailPath = path.join(thumbnailsDir, thumbnail);
+        fs.unlinkSync(thumbnailPath);
       });
-
-      // Start processor
-      const processorConfig = {
-        url: validatedData.streamUrl,
-        audioThreshold: validatedData.audioThreshold,
-        motionThreshold: validatedData.motionThreshold,
-        clipLength: validatedData.clipLength,
-        sessionId,
-        outputDir: path.join('clips', sessionId),
-      };
-
-      const started = startSessionProcessor(sessionId, processorConfig);
-
-      if (started) {
-        sessionStartTimes.set(sessionId, new Date());
-
-        await storage.updateSessionStatus(sessionId, {
-          status: 'running',
-          processId: sessionProcesses.get(sessionId)?.pid,
-        });
-
-        broadcastSessionSSE(sessionId, {
-          type: 'session-started',
-          data: { sessionId, streamUrl: validatedData.streamUrl },
-        });
-
-        res.json({ success: true, sessionId });
-      } else {
-        await storage.updateSessionStatus(sessionId, {
-          status: 'stopped',
-          isProcessing: false,
-          lastError: 'Failed to start stream processor',
-        });
-        res.status(500).json({ error: 'Failed to start stream processor' });
-      }
-    } catch (error) {
-      console.error('Error starting session:', error);
-      res.status(400).json({ error: 'Invalid request data' });
     }
-  });
 
-  app.post('/api/sessions/:sessionId/stop', async (req, res) => {
-    try {
-      const { sessionId } = req.params;
+    console.log('✅ Clip directory and thumbnails cleaned');
+  } catch (error) {
+    console.error('Error cleaning clip directory:', error);
+  }
 
-      const session = await storage.getSessionStatus(sessionId);
-      if (!session) {
-        return res.status(404).json({ error: 'Session not found' });
-      }
-
-      stopSessionProcessor(sessionId);
-      sessionStartTimes.delete(sessionId);
-
-      await storage.updateSessionStatus(sessionId, {
-        status: 'stopped',
-        isProcessing: false,
-        processId: undefined,
-      });
-
-      broadcastSessionSSE(sessionId, {
-        type: 'session-stopped',
-        data: { sessionId },
-      });
-
-      res.json({ success: true, sessionId });
-    } catch (error) {
-      console.error('Error stopping session:', error);
-      res.status(500).json({ error: 'Failed to stop session' });
-    }
-  });
-
-  app.delete('/api/sessions/:sessionId', async (req, res) => {
-    try {
-      const { sessionId } = req.params;
-
-      // Stop processor if running
-      stopSessionProcessor(sessionId);
-      sessionStartTimes.delete(sessionId);
-      sessionSSEClients.delete(sessionId);
-
-      // Delete session from storage
-      const deleted = await storage.deleteSession(sessionId);
-
-      if (deleted) {
-        // Optionally delete session files
-        const deleteFiles = req.query.deleteFiles === 'true';
-        if (deleteFiles) {
-          const sessionDir = path.join(process.cwd(), 'clips', sessionId);
-          if (fs.existsSync(sessionDir)) {
-            fs.rmSync(sessionDir, { recursive: true, force: true });
-          }
-        }
-
-        res.json({ success: true, sessionId, filesDeleted: deleteFiles });
-      } else {
-        res.status(404).json({ error: 'Session not found' });
-      }
-    } catch (error) {
-      console.error('Error deleting session:', error);
-      res.status(500).json({ error: 'Failed to delete session' });
-    }
-  });
-
-  app.get('/api/sessions/:sessionId/clips', async (req, res) => {
-    try {
-      const { sessionId } = req.params;
-      const clips = await storage.getClips(sessionId);
-      res.json(clips);
-    } catch (error) {
-      console.error('Error fetching session clips:', error);
-      res.status(500).json({ error: 'Failed to fetch clips' });
-    }
-  });
-
-  // Session-scoped SSE
-  app.get('/api/sessions/:sessionId/events', (req, res) => {
-    const { sessionId } = req.params;
-
+  // Server-Sent Events endpoint
+  app.get('/api/events', (req, res) => {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -357,68 +156,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
       'Access-Control-Allow-Headers': 'Cache-Control',
     });
 
-    if (!sessionSSEClients.has(sessionId)) {
-      sessionSSEClients.set(sessionId, new Set());
-    }
-    sessionSSEClients.get(sessionId)!.add(res);
+    sseClients.add(res);
 
     // Send initial status
-    storage.getSessionStatus(sessionId).then(status => {
-      if (status) {
-        res.write(`data: ${JSON.stringify({
-          type: 'processing-status',
-          data: status,
-        })}\n\n`);
-      }
-    });
-
-    req.on('close', () => {
-      const clients = sessionSSEClients.get(sessionId);
-      if (clients) {
-        clients.delete(res);
-        if (clients.size === 0) {
-          sessionSSEClients.delete(sessionId);
-        }
-      }
-    });
-  });
-
-  // Legacy routes (maintain compatibility)
-  app.get('/api/events', (req, res) => {
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
-    });
-
     res.write(`data: ${JSON.stringify({
       type: 'processing-status',
-      data: { isProcessing: false, message: 'Use session-based endpoints' },
+      data: processingStatus,
     })}\n\n`);
 
-    req.on('close', () => {});
+    req.on('close', () => {
+      sseClients.delete(res);
+    });
   });
 
-  app.get("/api/status", async (req, res) => {
-    const sessionId = req.query.sessionId as string;
-    if (sessionId) {
-      const status = await storage.getSessionStatus(sessionId);
-      return res.json(status || { isProcessing: false });
-    }
-    res.json({ isProcessing: false, message: 'Use session-based endpoints' });
-  });
-
-  // Authentication routes (unchanged)
+  // Authentication routes
   app.post('/api/auth/signup', async (req, res) => {
     try {
       const { name, email, password } = req.body;
+
+      // Check if user already exists
       const existingUser = await storage.getUserByEmail(email);
       if (existingUser) {
         return res.status(400).json({ error: 'User already exists with this email' });
       }
+
+      // Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
-      const user = await storage.createUser({ name, email, password: hashedPassword });
+
+      // Create user
+      const user = await storage.createUser({
+        name,
+        email,
+        password: hashedPassword
+      });
+
       res.json({ message: 'User created successfully', userId: user.id });
     } catch (error) {
       res.status(500).json({ error: 'Failed to create user' });
@@ -438,16 +209,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  // Google OAuth routes (only if credentials are configured)
   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-    app.get('/api/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+    app.get('/api/auth/google', passport.authenticate('google', {
+      scope: ['profile', 'email']
+    }));
+
     app.get('/api/auth/google/callback', 
       passport.authenticate('google', { failureRedirect: '/signin' }),
-      (req, res) => { res.redirect('/capture'); }
+      (req, res) => {
+        res.redirect('/capture');
+      }
     );
   } else {
     app.get('/api/auth/google', (req, res) => {
       res.status(501).json({ error: 'Google OAuth not configured' });
     });
+    
     app.get('/api/auth/google/callback', (req, res) => {
       res.status(501).json({ error: 'Google OAuth not configured' });
     });
@@ -457,11 +235,207 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(req.user);
   });
 
-  // Clip routes (backwards compatible)
+  // Get processing status
+  app.get("/api/status", (req, res) => {
+    res.json(processingStatus);
+  });
+
+
+
+  // Start stream capture
+  app.post('/api/start', async (req, res) => {
+    try {
+      // Add userId from authenticated user to the request data, or use null for unauthenticated users
+      const requestData = {
+        ...req.body,
+        userId: req.user ? (req.user as any).id : null
+      };
+      
+      const validatedData = insertStreamSessionSchema.parse(requestData);
+
+      // Stop any active sessions
+      const activeSession = await storage.getActiveSession();
+      if (activeSession) {
+        await storage.updateSessionStatus(activeSession.id, false);
+        stopStreamProcessor();
+      }
+
+      // Clean up temp directory and old session artifacts before starting new session
+      try {
+        console.log('🧹 Cleaning temp directory before starting new session...');
+
+        const tempDir = path.join(process.cwd(), 'temp');
+        if (fs.existsSync(tempDir)) {
+          const tempFiles = fs.readdirSync(tempDir);
+          tempFiles.forEach(file => {
+            const filePath = path.join(tempDir, file);
+            try {
+              fs.unlinkSync(filePath);
+              console.log(`✅ Deleted temp file: ${file}`);
+            } catch (err) {
+              console.warn(`Could not delete temp file ${file}:`, err.message);
+            }
+          });
+        } else {
+          // Create temp directory if it doesn't exist
+          fs.mkdirSync(tempDir, { recursive: true });
+        }
+
+        console.log('✅ Temp directory cleaned for new session');
+      } catch (cleanupError) {
+        console.error('Error cleaning temp directory:', cleanupError);
+      }
+
+      // Create new session
+      const session = await storage.createStreamSession({
+        ...validatedData,
+        isActive: true,
+      });
+
+      // Start Python stream processor with real FFmpeg integration
+      const processorConfig = {
+        url: session.url,
+        audioThreshold: session.audioThreshold,
+        motionThreshold: session.motionThreshold,
+        clipLength: session.clipLength,
+        sessionId: session.id,
+      };
+
+      console.log('🚀 Starting stream processor with config:', processorConfig);
+      const started = startStreamProcessor(processorConfig);
+
+      if (started) {
+        // Update processing status
+        processingStatus.isProcessing = true;
+        processingStatus.framesProcessed = 0;
+        processingStatus.currentSession = session;
+        sessionStartTime = new Date();
+
+        console.log('✅ Stream processor started successfully');
+        console.log('📊 Current processing status:', processingStatus);
+
+        broadcastSSE({
+          type: 'session-started',
+          data: session,
+        });
+
+        res.json(session);
+      } else {
+        // Failed to start processor
+        console.log('❌ Failed to start stream processor');
+        await storage.updateSessionStatus(session.id, false);
+        res.status(500).json({ error: 'Failed to start stream processor' });
+      }
+    } catch (error) {
+      console.error('Error starting stream capture:', error);
+      res.status(400).json({ error: 'Invalid request data' });
+    }
+  });
+
+  // Stop stream capture
+  app.post('/api/stop', async (req, res) => {
+    try {
+      const activeSession = await storage.getActiveSession();
+      if (!activeSession) {
+        return res.status(400).json({ error: 'No active session' });
+      }
+
+      const updatedSession = await storage.updateSessionStatus(activeSession.id, false);
+
+      // Stop Python stream processor
+      stopStreamProcessor();
+
+      // Comprehensive cleanup of all session artifacts
+      try {
+        console.log('🧹 Starting comprehensive session cleanup...');
+
+        // 1. Clean up thumbnails from this session
+        const thumbnailsDir = path.join(process.cwd(), 'clips', 'thumbnails');
+        if (fs.existsSync(thumbnailsDir)) {
+          const thumbnails = fs.readdirSync(thumbnailsDir).filter(file => file.endsWith('.jpg'));
+          console.log(`Cleaning up ${thumbnails.length} thumbnail files...`);
+
+          thumbnails.forEach(thumbnail => {
+            const thumbnailPath = path.join(thumbnailsDir, thumbnail);
+            fs.unlinkSync(thumbnailPath);
+          });
+
+          console.log('✅ Thumbnails cleaned up successfully');
+        }
+
+        // 2. Clean up temporary files and current frame
+        const tempDir = path.join(process.cwd(), 'temp');
+        if (fs.existsSync(tempDir)) {
+          const tempFiles = fs.readdirSync(tempDir);
+          console.log(`Cleaning up ${tempFiles.length} temporary files...`);
+
+          tempFiles.forEach(file => {
+            const filePath = path.join(tempDir, file);
+            try {
+              fs.unlinkSync(filePath);
+            } catch (err) {
+              console.warn(`Could not delete temp file ${file}:`, err.message);
+            }
+          });
+
+          console.log('✅ Temporary files cleaned up successfully');
+        }
+
+        // 3. Clean up session-specific frames
+        const sessionFramePattern = new RegExp(`session_${activeSession.id}_frame\\.jpg`);
+        if (fs.existsSync(tempDir)) {
+          const sessionFrames = fs.readdirSync(tempDir).filter(file => sessionFramePattern.test(file));
+          sessionFrames.forEach(file => {
+            const filePath = path.join(tempDir, file);
+            try {
+              fs.unlinkSync(filePath);
+              console.log(`✅ Deleted session frame: ${file}`);
+            } catch (err) {
+              console.warn(`Could not delete session frame ${file}:`, err.message);
+            }
+          });
+        }
+
+        // 4. Clean up any stream processor artifacts (buckets, segments, etc.)
+        // These would be in /tmp/ directories created by the Python processor
+        console.log('✅ Stream processor will clean up its own temporary buckets and segments');
+
+        // 5. Reset processing metrics
+        processingStatus = {
+          isProcessing: false,
+          framesProcessed: 0,
+          streamUptime: "00:00:00",
+          audioLevel: 0,
+          motionLevel: 0,
+          sceneChange: 0,
+        };
+
+        console.log('✅ All session artifacts cleaned up successfully');
+
+      } catch (cleanupError) {
+        console.error('Error during session cleanup:', cleanupError);
+      }
+
+      // Update processing status
+      processingStatus.isProcessing = false;
+      processingStatus.currentSession = undefined;
+      sessionStartTime = null;
+
+      broadcastSSE({
+        type: 'session-stopped',
+        data: updatedSession,
+      });
+
+      res.json(updatedSession);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to stop session' });
+    }
+  });
+
+  // Get clips
   app.get("/api/clips", async (req, res) => {
     try {
-      const sessionId = req.query.sessionId as string;
-      const clips = await storage.getClips(sessionId);
+      const clips = await storage.getClips();
       res.json(clips || []);
     } catch (error) {
       console.error('Error fetching clips:', error);
@@ -469,6 +443,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+
+
+  // Get single clip
   app.get('/api/clips/:id', async (req, res) => {
     const id = parseInt(req.params.id);
     const clip = await storage.getClip(id);
@@ -478,6 +455,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(clip);
   });
 
+  // Delete clip
   app.delete('/api/clips/:id', async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -486,16 +464,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: 'Clip not found' });
       }
 
-      // Try session-scoped path first, then fallback to legacy
-      let filePath = path.join(clipsDir, 'session', clip.filename);
-      if (!fs.existsSync(filePath)) {
-        filePath = path.join(clipsDir, clip.filename);
-      }
-
+      // Delete file
+      const filePath = path.join(clipsDir, clip.filename);
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }
 
+      // Delete from storage
       await storage.deleteClip(id);
       res.json({ success: true });
     } catch (error) {
@@ -503,24 +478,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/clips/:sessionId/:filename", (req, res) => {
-    const { sessionId, filename } = req.params;
-    const filePath = path.join(process.cwd(), "clips", sessionId, filename);
-
-    if (fs.existsSync(filePath)) {
-      res.sendFile(filePath);
-    } else {
-      // Fallback to legacy path
-      const legacyPath = path.join(process.cwd(), "clips", filename);
-      if (fs.existsSync(legacyPath)) {
-        res.sendFile(legacyPath);
-      } else {
-        res.status(404).json({ error: "File not found" });
-      }
-    }
-  });
-
-  // Legacy clip serving (backwards compatibility)
   app.get("/clips/:filename", (req, res) => {
     const filename = req.params.filename;
     const filePath = path.join(process.cwd(), "clips", filename);
@@ -532,35 +489,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Internal API routes (updated for session support)
-  app.post('/api/clips', async (req, res) => {
+  app.get("/api/thumbnails/:filename", async (req, res) => {
     try {
-      const clipData = { ...req.body };
+      const filename = req.params.filename;
+      const thumbnailPath = path.join(process.cwd(), 'clips', 'thumbnails', filename.replace('.mp4', '.jpg'));
 
-      // Extract session ID from filename if present
-      const sessionMatch = clipData.filename?.match(/session_([^_]+)_/);
-      if (sessionMatch) {
-        clipData.sessionId = sessionMatch[1];
-      }
-
-      const validatedData = insertClipSchema.parse(clipData);
-      const clip = await storage.createClip(validatedData);
-
-      // Broadcast to specific session if available
-      if (clipData.sessionId) {
-        broadcastSessionSSE(clipData.sessionId, {
-          type: 'clip-generated',
-          data: clip,
-        });
-
-        // Update session clip count
-        const session = await storage.getSessionStatus(clipData.sessionId);
-        if (session) {
-          await storage.updateSessionStatus(clipData.sessionId, {
-            clipsGenerated: (session.clipsGenerated || 0) + 1,
-          });
+      if (fs.existsSync(thumbnailPath)) {
+        res.sendFile(thumbnailPath);
+      } else {
+        // Generate thumbnail if it doesn't exist
+        const clipPath = path.join(process.cwd(), 'clips', filename);
+        if (fs.existsSync(clipPath)) {
+          await generateThumbnail(clipPath, thumbnailPath);
+          res.sendFile(thumbnailPath);
+        } else {
+          res.status(404).json({ error: 'Clip not found' });
         }
       }
+    } catch (error) {
+      console.error('Error serving thumbnail:', error);
+      res.status(500).json({ error: 'Failed to serve thumbnail' });
+    }
+  });
+
+  // Download all clips as ZIP
+  app.get('/api/download-all', async (req, res) => {
+    try {
+      const clips = await storage.getClips();
+      if (clips.length === 0) {
+        return res.status(400).json({ error: 'No clips to download' });
+      }
+
+      // For now, just return the list of clips
+      // In a real implementation, you'd create a ZIP file
+      res.json({
+        message: 'ZIP download would be implemented here',
+        clips: clips.length,
+      });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to create download' });
+    }
+  });
+
+  // Internal API for Python processor to create clips
+  app.post('/api/clips', async (req, res) => {
+    try {
+      const validatedData = insertClipSchema.parse(req.body);
+      const clip = await storage.createClip(validatedData);
+
+      // Broadcast SSE event about new clip
+      broadcastSSE({
+        type: 'clip-generated',
+        data: clip,
+      });
 
       res.json(clip);
     } catch (error) {
@@ -569,29 +550,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Internal API for Python processor to send metrics updates
   app.post('/api/internal/metrics', async (req, res) => {
     try {
+      // Update processing status with data from Python processor
       const metricsData = req.body;
-      const sessionId = metricsData.sessionId;
 
-      if (sessionId) {
-        // Update session-specific metrics
-        const startTime = sessionStartTimes.get(sessionId);
-        if (startTime && metricsData.isProcessing) {
-          const uptime = Date.now() - startTime.getTime();
-          const hours = Math.floor(uptime / (1000 * 60 * 60));
-          const minutes = Math.floor((uptime % (1000 * 60 * 60)) / (1000 * 60));
-          const seconds = Math.floor((uptime % (1000 * 60)) / 1000);
-          metricsData.streamUptime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-        }
-
-        await storage.updateSessionStatus(sessionId, metricsData);
-
-        broadcastSessionSSE(sessionId, {
-          type: 'processing-status',
-          data: metricsData,
-        });
+      // Update uptime if session is active
+      if (sessionStartTime && metricsData.isProcessing) {
+        const uptime = Date.now() - sessionStartTime.getTime();
+        const hours = Math.floor(uptime / (1000 * 60 * 60));
+        const minutes = Math.floor((uptime % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((uptime % (1000 * 60)) / 1000);
+        metricsData.streamUptime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
       }
+
+      // Update global processing status
+      processingStatus = { ...processingStatus, ...metricsData };
+
+      // Broadcast updated metrics via SSE
+      broadcastSSE({
+        type: 'processing-status',
+        data: processingStatus,
+      });
 
       res.json({ success: true });
     } catch (error) {
@@ -600,6 +581,172 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get resolved stream URL for display (decoupled from processing)
+  app.get('/api/stream-url', async (req, res) => {
+    try {
+      const activeSession = await storage.getActiveSession();
+      if (!activeSession) {
+        console.log('❌ No active session found for stream URL request');
+        return res.status(404).json({ error: 'No active session found' });
+      }
+
+      console.log(`🔗 Resolving stream URL for display: ${activeSession.url}`);
+
+      // Extract channel name from URL for Ad Gatekeeper
+      let resolvedStreamUrl = null;
+      let channel_name = null;
+
+      if (activeSession.url.includes('twitch.tv/')) {
+        try {
+          const urlParts = activeSession.url.split('twitch.tv/');
+          if (urlParts.length > 1) {
+            channel_name = urlParts[1].split('/')[0].split('?')[0];
+            console.log(`📺 Extracted channel name: ${channel_name}`);
+          }
+        } catch (error) {
+          console.log('Error parsing Twitch channel name:', error);
+        }
+      }
+
+      // Use Ad Gatekeeper if available and we have a channel name
+      if (channel_name) {
+        try {
+          // For now, skip Ad Gatekeeper in TypeScript context and go directly to streamlink
+          console.log('⚠️ Skipping Ad Gatekeeper (Python module), using streamlink directly');
+        } catch (error) {
+          console.log('⚠️ Ad Gatekeeper error for display, using streamlink fallback:', error.message);
+        }
+      }
+
+      // Fallback to streamlink if Ad Gatekeeper fails
+      console.log('🔄 Using streamlink to resolve URL for display');
+      
+      return new Promise((resolve, reject) => {
+        const streamlinkProcess = spawn('streamlink', [
+          activeSession.url,
+          'best',
+          '--stream-url',
+          '--retry-streams', '2',
+          '--retry-max', '3'
+        ], {
+          timeout: 30000
+        });
+
+        let streamUrl = '';
+        let errorOutput = '';
+
+        streamlinkProcess.stdout.on('data', (data) => {
+          streamUrl += data.toString();
+        });
+
+        streamlinkProcess.stderr.on('data', (data) => {
+          errorOutput += data.toString();
+        });
+
+        streamlinkProcess.on('close', (code) => {
+          if (code === 0 && streamUrl.trim()) {
+            const cleanUrl = streamUrl.trim();
+            console.log(`✅ Streamlink resolved URL for display: ${cleanUrl.substring(0, 80)}...`);
+            res.json({ resolvedStreamUrl: cleanUrl });
+            resolve(null);
+          } else {
+            console.error(`❌ Streamlink failed for display (code: ${code})`);
+            console.error(`❌ Streamlink stderr: ${errorOutput}`);
+            res.status(500).json({ 
+              error: 'Failed to resolve stream URL for display',
+              details: `Streamlink exit code: ${code}`,
+              stderr: errorOutput.substring(0, 200)
+            });
+            resolve(null);
+          }
+        });
+
+        streamlinkProcess.on('error', (error) => {
+          console.error(`❌ Streamlink process error for display: ${error}`);
+          res.status(500).json({ 
+            error: 'Stream URL resolution process failed',
+            details: error.message 
+          });
+          resolve(null);
+        });
+      });
+
+    } catch (error) {
+      console.error('❌ Error getting stream URL for display:', error);
+      res.status(500).json({ 
+        error: 'Failed to get stream URL',
+        details: error.message 
+      });
+    }
+  });
+
+  // Internal stream ended notification endpoint
+  app.post('/api/internal/stream-ended', async (req, res) => {
+    const { url, endTime, totalClips, totalDuration, lastSuccessfulCapture } = req.body;
+
+    console.log(`Stream ended notification: ${url} after ${totalDuration}s with ${totalClips} clips`);
+
+    // Stop the stream processor to ensure clean shutdown
+    stopStreamProcessor();
+
+    // Update active session status in database
+    try {
+      const activeSession = await storage.getActiveSession();
+      if (activeSession) {
+        await storage.updateSessionStatus(activeSession.id, false);
+      }
+    } catch (error) {
+      console.error('Error updating session status on stream end:', error);
+    }
+
+    // Reset processing status completely
+    processingStatus = {
+      isProcessing: false,
+      framesProcessed: 0,
+      streamUptime: "00:00:00",
+      audioLevel: 0,
+      motionLevel: 0,
+      sceneChange: 0,
+    };
+    sessionStartTime = null;
+
+    // Notify all connected clients
+    broadcastSSE({
+      type: 'stream-ended',
+      data: {
+        message: `Stream has ended after ${Math.round(totalDuration / 60)} minutes`,
+        url,
+        totalClips,
+        totalDuration: Math.round(totalDuration),
+        endTime: new Date(endTime * 1000).toISOString(),
+      },
+    });
+
+    // Also broadcast the reset status
+    broadcastSSE({
+      type: 'processing-status',
+      data: processingStatus,
+    });
+
+    res.json({ success: true });
+  });
+
+  
+
+
   const httpServer = createServer(app);
   return httpServer;
+}
+
+// Dummy function for thumbnail generation if not defined elsewhere
+async function generateThumbnail(clipPath: string, thumbnailPath: string) {
+  console.log(`Generating thumbnail for ${clipPath} at ${thumbnailPath}`);
+  // In a real application, you would use a library like ffmpeg-static or similar
+  // to generate a thumbnail from the video file.
+  // For now, we'll just create a placeholder file.
+  try {
+    fs.writeFileSync(thumbnailPath, 'dummy thumbnail content');
+  } catch (error) {
+    console.error('Failed to create dummy thumbnail:', error);
+  }
 }
