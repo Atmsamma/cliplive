@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +15,8 @@ const totalSize = 1024 * 1024; // Example total size
 
 export default function Landing() {
   const { toast } = useToast();
+  const liveProcessingSectionRef = useRef<HTMLElement>(null);
+  const [wasProcessing, setWasProcessing] = useState(false);
 
   const { data: status } = useQuery<ProcessingStatusType>({
     queryKey: ["/api/status"],
@@ -25,6 +27,17 @@ export default function Landing() {
     queryKey: ["/api/clips"],
     refetchInterval: 5000,
   });
+
+  // Auto-scroll to Live Processing section when processing starts
+  useEffect(() => {
+    if (status?.isProcessing && !wasProcessing && liveProcessingSectionRef.current) {
+      liveProcessingSectionRef.current.scrollIntoView({ 
+        behavior: 'smooth',
+        block: 'start'
+      });
+    }
+    setWasProcessing(status?.isProcessing || false);
+  }, [status?.isProcessing, wasProcessing]);
 
   const handleSignIn = () => {
     // Simple authentication simulation - in real app this would be proper auth
@@ -70,7 +83,7 @@ export default function Landing() {
         </section>
 
         {/* Section 2: Processing Status */}
-        <section className="h-screen flex items-center justify-center p-6 snap-start">
+        <section ref={liveProcessingSectionRef} className="h-screen flex items-center justify-center p-6 snap-start">
           <div className="w-full max-w-4xl">
             <div className="text-center mb-8">
               <h2 className="text-3xl font-bold text-slate-50 mb-4">Live Processing</h2>
