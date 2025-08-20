@@ -23,9 +23,9 @@ let processingStatus: ProcessingStatus = {
 // SSE clients
 const sseClients = new Set<ExpressResponse>();
 
-// Multiple Python stream processors - keyed by session ID
-const streamProcessors = new Map<number, ChildProcess>();
-const sessionStartTimes = new Map<number, Date>();
+// Python stream processor
+let streamProcessor: ChildProcess | null = null;
+let sessionStartTime: Date | null = null;
 
 function broadcastSSE(event: SSEEvent) {
   const data = `data: ${JSON.stringify(event)}\n\n`;
@@ -40,53 +40,46 @@ function broadcastSSE(event: SSEEvent) {
 
 function startStreamProcessor(config: any): boolean {
   try {
-    const sessionId = config.sessionId;
-    
-    // Stop any existing processor for this session
-    stopStreamProcessor(sessionId);
+    // Stop any existing processor
+    stopStreamProcessor();
 
     const pythonPath = 'python3';
     const scriptPath = path.join(process.cwd(), 'backend', 'stream_processor.py');
     const configJson = JSON.stringify(config);
 
-    console.log(`Starting stream processor for session ${sessionId} with config: ${configJson}`);
+    console.log(`Starting stream processor with config: ${configJson}`);
 
-    const processor = spawn(pythonPath, [scriptPath, configJson], {
+    streamProcessor = spawn(pythonPath, [scriptPath, configJson], {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: process.cwd(),
     });
 
-    if (processor.stdout) {
-      processor.stdout.on('data', (data) => {
-        console.log(`[StreamProcessor-${sessionId}]: ${data.toString().trim()}`);
+    if (streamProcessor.stdout) {
+      streamProcessor.stdout.on('data', (data) => {
+        console.log(`[StreamProcessor]: ${data.toString().trim()}`);
       });
     }
 
-    if (processor.stderr) {
-      processor.stderr.on('data', (data) => {
-        console.error(`[StreamProcessor-${sessionId} Error]: ${data.toString().trim()}`);
+    if (streamProcessor.stderr) {
+      streamProcessor.stderr.on('data', (data) => {
+        console.error(`[StreamProcessor Error]: ${data.toString().trim()}`);
       });
     }
 
-    processor.on('exit', (code) => {
-      console.log(`Stream processor ${sessionId} exited with code: ${code}`);
-      streamProcessors.delete(sessionId);
-      sessionStartTimes.delete(sessionId);
-      
-      broadcastSSE({
-        type: 'session-stopped',
-        data: { message: `Stream processor ${sessionId} stopped`, sessionId },
-      });
+    streamProcessor.on('exit', (code) => {
+      console.log(`Stream processor exited with code: ${code}`);
+      if (processingStatus.isProcessing) {
+        processingStatus.isProcessing = false;
+        broadcastSSE({
+          type: 'session-stopped',
+          data: { message: 'Stream processor stopped unexpectedly' },
+        });
+      }
     });
 
-    processor.on('error', (error) => {
-      console.error(`Stream processor ${sessionId} error: ${error}`);
-      streamProcessors.delete(sessionId);
-      sessionStartTimes.delete(sessionId);
+    streamProcessor.on('error', (error) => {
+      console.error(`Stream processor error: ${error}`);
     });
-
-    streamProcessors.set(sessionId, processor);
-    sessionStartTimes.set(sessionId, new Date());
 
     return true;
   } catch (error) {
@@ -95,24 +88,11 @@ function startStreamProcessor(config: any): boolean {
   }
 }
 
-function stopStreamProcessor(sessionId?: number) {
-  if (sessionId) {
-    // Stop specific session processor
-    const processor = streamProcessors.get(sessionId);
-    if (processor) {
-      console.log(`Stopping stream processor for session ${sessionId}...`);
-      processor.kill('SIGTERM');
-      streamProcessors.delete(sessionId);
-      sessionStartTimes.delete(sessionId);
-    }
-  } else {
-    // Stop all processors (legacy support)
-    console.log('Stopping all stream processors...');
-    streamProcessors.forEach((processor, id) => {
-      processor.kill('SIGTERM');
-    });
-    streamProcessors.clear();
-    sessionStartTimes.clear();
+function stopStreamProcessor() {
+  if (streamProcessor) {
+    console.log('Stopping stream processor...');
+    streamProcessor.kill('SIGTERM');
+    streamProcessor = null;
   }
 }
 
@@ -260,17 +240,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(processingStatus);
   });
 
-  // Initialize endpoint - no longer stops existing sessions, allows multiple concurrent sessions
-  app.get("/api/auto-start", async (req, res) => {
-    try {
-      console.log('🚀 Client connected - ready to start new session if needed');
-      res.json({ success: true, message: 'Ready for new session' });
-    } catch (error) {
-      console.error('Error initializing client:', error);
-      res.status(500).json({ error: 'Failed to initialize client' });
-    }
-  });
-
 
 
   // Start stream capture
@@ -284,8 +253,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const validatedData = insertStreamSessionSchema.parse(requestData);
 
-      // Don't stop other sessions - allow multiple concurrent sessions
-      console.log('🚀 Starting new concurrent session...');
+      // Stop any active sessions
+      const activeSession = await storage.getActiveSession();
+      if (activeSession) {
+        await storage.updateSessionStatus(activeSession.id, false);
+        stopStreamProcessor();
+      }
 
       // Clean up temp directory and old session artifacts before starting new session
       try {
@@ -362,19 +335,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Stop stream capture
   app.post('/api/stop', async (req, res) => {
     try {
-      const { sessionId } = req.body;
-      
-      if (!sessionId) {
-        return res.status(400).json({ error: 'Session ID required' });
+      const activeSession = await storage.getActiveSession();
+      if (!activeSession) {
+        return res.status(400).json({ error: 'No active session' });
       }
 
-      const updatedSession = await storage.updateSessionStatus(sessionId, false);
-      if (!updatedSession) {
-        return res.status(404).json({ error: 'Session not found' });
-      }
+      const updatedSession = await storage.updateSessionStatus(activeSession.id, false);
 
-      // Stop specific Python stream processor
-      stopStreamProcessor(sessionId);
+      // Stop Python stream processor
+      stopStreamProcessor();
 
       // Comprehensive cleanup of all session artifacts
       try {

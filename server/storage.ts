@@ -82,10 +82,6 @@ export class MemStorage implements IStorage {
     );
   }
 
-  async getSessionById(id: number): Promise<StreamSession | undefined> {
-    return this.streamSessions.get(id);
-  }
-
   async updateSessionStatus(id: number, isActive: boolean): Promise<StreamSession | undefined> {
     const session = this.streamSessions.get(id);
     if (session) {

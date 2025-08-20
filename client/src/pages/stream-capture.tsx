@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import StreamInputForm from "@/components/stream-input-form";
 import ProcessingStatus from "@/components/processing-status";
@@ -47,11 +47,6 @@ export default function StreamCapture() {
     const mb = bytes / (1024 * 1024);
     return `${mb.toFixed(1)} MB`;
   };
-
-  // Ready to create sessions when needed - no auto-initialization
-  useEffect(() => {
-    console.log('🌟 Stream capture page ready - multiple concurrent sessions supported');
-  }, []); // Empty dependency array ensures this runs only once on mount
 
   return (
     <>
