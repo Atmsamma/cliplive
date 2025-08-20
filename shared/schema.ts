@@ -14,7 +14,7 @@ export const users = pgTable("users", {
 
 export const clips = pgTable("clips", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
+  userId: integer("user_id"), // Nullable to support unauthenticated users
   filename: text("filename").notNull(),
   originalUrl: text("original_url").notNull(),
   duration: integer("duration").notNull(), // in seconds
@@ -25,7 +25,7 @@ export const clips = pgTable("clips", {
 
 export const streamSessions = pgTable("stream_sessions", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
+  userId: integer("user_id"), // Nullable to support unauthenticated users
   url: text("url").notNull(),
   isActive: boolean("is_active").default(false).notNull(),
   audioThreshold: integer("audio_threshold").default(6).notNull(),
