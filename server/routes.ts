@@ -245,7 +245,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Start stream capture
   app.post('/api/start', requireAuth, async (req, res) => {
     try {
-      const validatedData = insertStreamSessionSchema.parse(req.body);
+      // Add userId from authenticated user to the request data
+      const requestData = {
+        ...req.body,
+        userId: (req.user as any).id
+      };
+      
+      const validatedData = insertStreamSessionSchema.parse(requestData);
 
       // Stop any active sessions
       const activeSession = await storage.getActiveSession();
