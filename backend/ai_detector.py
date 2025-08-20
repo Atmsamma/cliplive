@@ -264,14 +264,18 @@ class MLFusionModel:
             return 0.5  # Default probability
         
         try:
-            # Extract features in correct order (only 6 features to match scaler)
+            # Extract features in correct order
             feature_vector = np.array([[
                 features.get('audio_level', 0.0),
                 features.get('motion_level', 0.0),
                 features.get('scene_change', 0.0),
                 features.get('sentiment', 0.0),
                 features.get('excitement', 0.0),
-                features.get('hype_score', 0.0)
+                features.get('hype_score', 0.0),
+                features.get('audio_threshold_exceeded', 0.0),
+                features.get('motion_threshold_exceeded', 0.0),
+                features.get('scene_threshold_exceeded', 0.0),
+                features.get('combined_rule_score', 0.0)
             ]])
             
             # Scale features

@@ -17,9 +17,9 @@ export default function ProcessingStatus() {
     queryKey: ["/api/stream-url"],
     refetchInterval: 60000, // Refresh every 60 seconds to handle token expiration
     refetchOnWindowFocus: true,
-    enabled: !!status?.currentSession && !!status?.isProcessing, // Only fetch when session is active and processing
-    retry: 1, // Reduce retries to prevent spam
-    retryDelay: 10000,
+    enabled: !!status?.currentSession, // Only fetch when session is active
+    retry: 3,
+    retryDelay: 5000,
   });
 
   const [streamUrl, setStreamUrl] = useState<string | null>(null);

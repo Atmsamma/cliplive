@@ -1,31 +1,21 @@
 import { Link, useLocation } from "wouter";
-import { Play, Library, Activity } from "lucide-react";
+import { Video, Library, Activity } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Monitor, Settings, Home, User } from "lucide-react";
-import type { User as UserType } from "@shared/schema";
 
 export default function Sidebar() {
   const [location] = useLocation();
-  const [collapsed, setCollapsed] = useState(false);
 
   const { data: status } = useQuery({
     queryKey: ["/api/status"],
     refetchInterval: 1000,
   });
 
-  const { data: user } = useQuery<UserType>({
-    queryKey: ["/api/user"],
-  });
-
   const navItems = [
     {
       name: "Stream Capture",
       path: "/capture",
-      icon: Play,
+      icon: Video,
     },
     {
       name: "Clip Library",
@@ -47,12 +37,6 @@ export default function Sidebar() {
             <p className="text-xs text-slate-400">Real-Time Highlights</p>
           </div>
         </div>
-        {user && (
-          <div className="flex items-center gap-2 mt-2 text-sm text-slate-400">
-            <User size={14} />
-            <span>{user.username}</span>
-          </div>
-        )}
       </div>
 
       {/* Navigation */}

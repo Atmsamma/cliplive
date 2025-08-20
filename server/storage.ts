@@ -1,21 +1,15 @@
-import { eq, desc, and } from "drizzle-orm";
-import { clips, streamSessions, users, type InsertClip, type InsertStreamSession, type InsertUser, type Clip, type StreamSession, type User } from "@shared/schema";
+import { clips, streamSessions, type Clip, type InsertClip, type StreamSession, type InsertStreamSession } from "@shared/schema";
 
 export interface IStorage {
-  // Users
-  createUser(user: InsertUser): Promise<User>;
-  getUserByReplitId(replitUserId: string): Promise<User | undefined>;
-  getUser(id: number): Promise<User | undefined>;
-
   // Clips
   createClip(clip: InsertClip): Promise<Clip>;
-  getClips(userId?: number): Promise<Clip[]>;
+  getClips(): Promise<Clip[]>;
   getClip(id: number): Promise<Clip | undefined>;
   deleteClip(id: number): Promise<boolean>;
 
   // Stream Sessions
   createStreamSession(session: InsertStreamSession): Promise<StreamSession>;
-  getActiveSession(userId?: number): Promise<StreamSession | undefined>;
+  getActiveSession(): Promise<StreamSession | undefined>;
   updateSessionStatus(id: number, isActive: boolean): Promise<StreamSession | undefined>;
   getStreamSessions(): Promise<StreamSession[]>;
 }
@@ -23,41 +17,14 @@ export interface IStorage {
 export class MemStorage implements IStorage {
   private clips: Map<number, Clip>;
   private streamSessions: Map<number, StreamSession>;
-  private users: Map<number, User>;
-  private usersByReplitId: Map<string, User>;
   private currentClipId: number;
   private currentSessionId: number;
-  private currentUserId: number;
 
   constructor() {
     this.clips = new Map();
     this.streamSessions = new Map();
-    this.users = new Map();
-    this.usersByReplitId = new Map();
     this.currentClipId = 1;
     this.currentSessionId = 1;
-    this.currentUserId = 1;
-  }
-
-  // Users
-  async createUser(user: InsertUser): Promise<User> {
-    const id = this.currentUserId++;
-    const newUser: User = {
-      ...user,
-      id,
-      createdAt: new Date(),
-    };
-    this.users.set(id, newUser);
-    this.usersByReplitId.set(user.replitUserId, newUser);
-    return newUser;
-  }
-
-  async getUserByReplitId(replitUserId: string): Promise<User | undefined> {
-    return this.usersByReplitId.get(replitUserId);
-  }
-
-  async getUser(id: number): Promise<User | undefined> {
-    return this.users.get(id);
   }
 
   // Clips
@@ -72,12 +39,7 @@ export class MemStorage implements IStorage {
     return clip;
   }
 
-  async getClips(userId?: number): Promise<Clip[]> {
-    if (userId) {
-      return Array.from(this.clips.values())
-        .filter(clip => clip.userId === userId)
-        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-    }
+  async getClips(): Promise<Clip[]> {
     return Array.from(this.clips.values()).sort(
       (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
     );
@@ -104,12 +66,7 @@ export class MemStorage implements IStorage {
     return session;
   }
 
-  async getActiveSession(userId?: number): Promise<StreamSession | undefined> {
-    if (userId) {
-      return Array.from(this.streamSessions.values())
-        .filter(session => session.isActive && session.userId === userId)
-        .find(session => session.isActive);
-    }
+  async getActiveSession(): Promise<StreamSession | undefined> {
     return Array.from(this.streamSessions.values()).find(
       session => session.isActive
     );
@@ -136,8 +93,4 @@ export class MemStorage implements IStorage {
   }
 }
 
-// TODO: Implement SQLiteStorage later when needed for production
-// For now, using MemStorage for development
-
-// Using MemStorage for development - can be switched to PostgreSQL later
 export const storage = new MemStorage();
