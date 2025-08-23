@@ -5,6 +5,7 @@ import type { ProcessingStatus } from "@shared/schema";
 import LivePlayer from "./live-player";
 import PlatformIframePlayer from "./platform-iframe-player";
 import { useState, useEffect } from 'react';
+import { apiRequest } from "@/lib/queryClient";
 
 export default function ProcessingStatus() {
   const { data: status } = useQuery<ProcessingStatus>({
@@ -34,34 +35,29 @@ export default function ProcessingStatus() {
     if (status?.isProcessing && !streamUrl && !isLoadingStreamUrl) {
       setIsLoadingStreamUrl(true);
 
-      console.log('Fetching stream URL...');
-
-      fetch('/api/stream-url')
-        .then(res => {
-          console.log('Stream URL response status:', res.status);
-          if (!res.ok) {
-            throw new Error(`HTTP ${res.status}`);
-          }
-          return res.json();
-        })
-        .then(data => {
-          console.log('Stream URL data:', data);
+      const fetchStreamUrl = async () => {
+        try {
+          const response = await apiRequest("GET", "/api/stream-url");
+          const data = await response.json();
+          
           if (data.resolvedStreamUrl) {
-            console.log('Setting stream URL:', data.resolvedStreamUrl.substring(0, 80) + '...');
+            if (process.env.NODE_ENV === 'development') {
+              console.log('Setting stream URL:', data.resolvedStreamUrl.substring(0, 80) + '...');
+            }
             setStreamUrl(data.resolvedStreamUrl);
             setDisplayStreamError(null);
           } else {
-            console.error('No resolved stream URL in response:', data);
             setDisplayStreamError('No stream URL received from server');
           }
-        })
-        .catch(err => {
+        } catch (err) {
           console.error('Failed to fetch stream URL:', err);
-          setDisplayStreamError(`Failed to load stream: ${err.message}`);
-        })
-        .finally(() => {
+          setDisplayStreamError(`Failed to load stream: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        } finally {
           setIsLoadingStreamUrl(false);
-        });
+        }
+      };
+
+      fetchStreamUrl();
     }
   }, [status?.isProcessing, streamUrl, isLoadingStreamUrl]);
 

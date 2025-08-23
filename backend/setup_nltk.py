@@ -3,6 +3,9 @@
 
 import nltk
 import os
+from logging_utils import setup_logger
+
+logger = setup_logger(__name__)
 
 def setup_nltk():
     """Download required NLTK data."""
@@ -17,10 +20,10 @@ def setup_nltk():
         nltk.download('stopwords', quiet=True)
         nltk.download('vader_lexicon', quiet=True)
         
-        print("NLTK data downloaded successfully")
+        logger.info("NLTK data downloaded successfully")
         return True
     except Exception as e:
-        print(f"NLTK setup error: {e}")
+        logger.error(f"NLTK setup error: {e}")
         return False
 
 if __name__ == "__main__":

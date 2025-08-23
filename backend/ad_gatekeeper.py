@@ -10,6 +10,9 @@ import time
 import urllib.request
 import urllib.error
 from typing import Optional
+from logging_utils import setup_logger
+
+logger = setup_logger(__name__)
 
 # Regex pattern to detect ad markers in m3u8 playlists
 AD_RE = re.compile(r"(twitch-stitched-ad|twitch-ad-quartile|EXT-X-DISCONTINUITY)", re.IGNORECASE)
@@ -87,7 +90,7 @@ class AdGatekeeper:
         Returns:
             Clean HLS URL or None if unable to get clean stream
         """
-        print(f"🛡️ Ad Gatekeeper: Starting clean URL acquisition for {channel} ({quality})")
+        logger.info(f"Ad Gatekeeper: Starting clean URL acquisition for {channel} ({quality})")
 
         retries = 0
         while retries < self.max_retries:
@@ -95,7 +98,7 @@ class AdGatekeeper:
                 # Get stream URL from streamlink
                 url = self.streamlink_url(channel, quality)
                 if not url:
-                    print(f"⚠️ Ad Gatekeeper: No stream URL received (attempt {retries + 1}/{self.max_retries})")
+                    logger.warning(f"Ad Gatekeeper: No stream URL received (attempt {retries + 1}/{self.max_retries})")
                     retries += 1
                     time.sleep(self.check_interval_sec)
                     continue
@@ -103,28 +106,28 @@ class AdGatekeeper:
                 # Fetch playlist content
                 playlist_content = self.fetch_playlist(url)
                 if not playlist_content:
-                    print(f"⚠️ Ad Gatekeeper: Failed to fetch playlist (attempt {retries + 1}/{self.max_retries})")
+                    logger.warning(f"Ad Gatekeeper: Failed to fetch playlist (attempt {retries + 1}/{self.max_retries})")
                     retries += 1
                     time.sleep(self.check_interval_sec)
                     continue
 
                 # Check for ad markers
                 if self.has_ads(playlist_content):
-                    print(f"🚫 Ad Gatekeeper: Ad markers detected, retrying (attempt {retries + 1}/{self.max_retries})")
+                    logger.debug(f"Ad Gatekeeper: Ad markers detected, retrying (attempt {retries + 1}/{self.max_retries})")
                     retries += 1
                     time.sleep(self.check_interval_sec)
                     continue
 
                 # Clean URL found!
-                print(f"✅ Ad Gatekeeper: Clean URL acquired after {retries + 1} attempts")
+                logger.info(f"Ad Gatekeeper: Clean URL acquired after {retries + 1} attempts")
                 return url
 
             except Exception as e:
-                print(f"❌ Ad Gatekeeper: Error during attempt {retries + 1}: {e}")
+                logger.error(f"Ad Gatekeeper: Error during attempt {retries + 1}: {e}")
                 retries += 1
                 time.sleep(self.check_interval_sec)
 
-        print(f"❌ Ad Gatekeeper: Failed to get clean URL after {self.max_retries} attempts")
+        logger.error(f"Ad Gatekeeper: Failed to get clean URL after {self.max_retries} attempts")
         return None
 
     def validate_url_continuously(self, channel: str, quality: str = "best", duration_sec: int = 60) -> bool:
@@ -140,7 +143,7 @@ class AdGatekeeper:
         Returns:
             True if stream remained clean for the duration
         """
-        print(f"🔍 Ad Gatekeeper: Starting continuous validation for {duration_sec}s")
+        logger.info(f"Ad Gatekeeper: Starting continuous validation for {duration_sec}s")
 
         start_time = time.time()
         checks = 0
@@ -148,18 +151,18 @@ class AdGatekeeper:
         while (time.time() - start_time) < duration_sec:
             url = self.streamlink_url(channel, quality)
             if not url:
-                print(f"⚠️ Ad Gatekeeper: Stream unavailable during validation")
+                logger.warning("Ad Gatekeeper: Stream unavailable during validation")
                 return False
 
             playlist_content = self.fetch_playlist(url)
             if not playlist_content or self.has_ads(playlist_content):
-                print(f"🚫 Ad Gatekeeper: Ads detected during validation")
+                logger.warning("Ad Gatekeeper: Ads detected during validation")
                 return False
 
             checks += 1
             time.sleep(self.check_interval_sec)
 
-        print(f"✅ Ad Gatekeeper: Stream remained clean for {duration_sec}s ({checks} checks)")
+        logger.info(f"Ad Gatekeeper: Stream remained clean for {duration_sec}s ({checks} checks)")
         return True
 
 def main():
