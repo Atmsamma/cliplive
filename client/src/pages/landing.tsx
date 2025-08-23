@@ -82,7 +82,7 @@ export default function Landing() {
           <div className="w-full max-w-4xl">
             <div className="text-center mb-8">
               <h2 className="text-3xl font-bold text-slate-50 mb-4">Live Processing</h2>
-              <p className="text-slate-400">Processing each moment looking for highlights</p>
+              <p className="text-slate-400">Monitor your stream processing in real-time</p>
             </div>
             <ProcessingStatus />
           </div>

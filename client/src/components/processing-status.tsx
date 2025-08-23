@@ -69,6 +69,9 @@ export default function ProcessingStatus() {
           {/* Status Header */}
           <div className="text-center mb-4">
             <div className="text-2xl font-bold mb-1">
+              <span className="text-red-400">
+                Ready to Clip Live
+              </span>
             </div>
             <div className="text-sm text-slate-400">
               {status?.streamUptime || "00:00:00"}

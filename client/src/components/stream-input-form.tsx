@@ -12,7 +12,6 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Link, Play, Square } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import type { ProcessingStatus } from "@shared/schema";
 
 // URL validation function for supported streaming platforms
 const isValidStreamUrl = (url: string): boolean => {
@@ -22,19 +21,8 @@ const isValidStreamUrl = (url: string): boolean => {
     
     // YouTube validation
     if (hostname === 'www.youtube.com' || hostname === 'youtube.com' || hostname === 'youtu.be') {
-      if (hostname === 'youtu.be') return true; // short form always accepted
-      const pathParts = urlObj.pathname.split('/').filter(Boolean); // removes empty segments
-      // Accept:
-      //  - /live (channel live page)
-      //  - /live/<videoId>
-      if (pathParts[0] === 'live') {
-        if (pathParts.length === 1) return true;
-        if (pathParts.length === 2) {
-          // Basic video id shape check (YouTube ids are 11 chars, but allow broader pattern)
-            return /^[a-zA-Z0-9_-]{5,}$/.test(pathParts[1]);
-        }
-      }
-      return false;
+      if (hostname === 'youtu.be') return true;
+      return urlObj.pathname === '/watch' && urlObj.searchParams.has('v');
     }
     
     // Twitch validation
@@ -68,7 +56,7 @@ export default function StreamInputForm() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: status } = useQuery<ProcessingStatus>({
+  const { data: status } = useQuery({
     queryKey: ["/api/status"],
     refetchInterval: 1000,
   });
