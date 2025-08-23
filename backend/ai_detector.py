@@ -24,23 +24,27 @@ from sklearn.metrics import classification_report
 import nltk
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
+from logging_utils import setup_logger
+
+logger = setup_logger(__name__)
+
 class SpeechExtractor:
     """Extract speech from audio streams using FFmpeg."""
     
     def __init__(self):
         self.temp_dir = tempfile.mkdtemp()
-        print("🎤 Speech extractor initialized")
+        logger.debug("Speech extractor initialized")
     
     def extract_audio_text(self, video_path: str) -> str:
         """Extract text from video audio using FFmpeg + OpenAI Whisper."""
         try:
             # Check if input video exists and is readable
             if not os.path.exists(video_path):
-                print(f"❌ Video file not found: {video_path}")
+                logger.error(f"Video file not found: {video_path}")
                 return ""
             
             if os.path.getsize(video_path) < 1000:
-                print(f"❌ Video file too small: {video_path}")
+                logger.error(f"Video file too small: {video_path}")
                 return ""
             
             # Extract audio from video
@@ -53,46 +57,43 @@ class SpeechExtractor:
             
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
             if result.returncode != 0:
-                print(f"⚠️ Audio extraction skipped: {result.stderr[:100]}")
+                logger.warning(f"Audio extraction skipped: {result.stderr[:100]}")
                 return ""  # Return empty string instead of failing
             
             # Check if audio file exists and has content
             if not os.path.exists(audio_path) or os.path.getsize(audio_path) < 1000:
-                print("⚠️ Audio file too small or missing, skipping speech detection")
+                logger.warning("Audio file too small or missing, skipping speech detection")
                 return ""
             
             # Use OpenAI Whisper for speech recognition
             try:
-                import whisper
+                from whisper_singleton import WhisperSingleton
                 
-                # Load Whisper model (base model is good balance of speed/accuracy)
-                if not hasattr(self, 'whisper_model'):
-                    print("🔄 Loading Whisper model (one-time setup)...")
-                    self.whisper_model = whisper.load_model("base")
-                    print("✅ Whisper model loaded")
+                whisper_instance = WhisperSingleton()
+                model = whisper_instance.get_model()
                 
                 # Transcribe audio
-                result = self.whisper_model.transcribe(audio_path)
+                result = model.transcribe(audio_path)
                 transcribed_text = result["text"].strip()
                 
                 if transcribed_text:
-                    print(f"🎤 Transcribed: '{transcribed_text[:100]}...'")
+                    logger.debug(f"Transcribed: '{transcribed_text[:100]}...'")
                     return transcribed_text
                 else:
-                    print("🔇 No speech detected")
+                    logger.debug("No speech detected")
                     return ""
                 
             except ImportError:
-                print("❌ CRITICAL: Whisper not installed - cannot process real speech")
-                print("❌ Install with: pip install openai-whisper")
+                logger.error("CRITICAL: Whisper not installed - cannot process real speech")
+                logger.error("Install with: pip install openai-whisper")
                 return ""
             except Exception as whisper_error:
-                print(f"❌ CRITICAL: Whisper transcription failed: {whisper_error}")
-                print("❌ Cannot fall back to mock data - real speech required")
+                logger.error(f"CRITICAL: Whisper transcription failed: {whisper_error}")
+                logger.error("Cannot fall back to mock data - real speech required")
                 return ""
             
         except Exception as e:
-            print(f"Speech extraction error: {e}")
+            logger.error(f"Speech extraction error: {e}")
             return ""
     
     
@@ -129,7 +130,7 @@ class SemanticAnalyzer:
             'thats actually': 1.8, 'im done': 1.5, 'im dead': 1.7
         }
         
-        print("🧠 Semantic analyzer initialized with excitement keywords")
+        logger.debug("Semantic analyzer initialized with excitement keywords")
     
     def analyze_text(self, text: str) -> Dict[str, float]:
         """Analyze text for excitement indicators."""
@@ -185,7 +186,7 @@ class MLFusionModel:
         # Load existing model or create new one
         self.load_model()
         
-        print(f"🤖 ML fusion model initialized: {model_path}")
+        logger.debug(f"ML fusion model initialized: {model_path}")
     
     def load_model(self):
         """Load existing model or create a new one."""
@@ -195,55 +196,38 @@ class MLFusionModel:
                     model_data = pickle.load(f)
                     self.model = model_data['model']
                     self.scaler = model_data['scaler']
-                print("✅ Loaded existing ML model")
+                logger.debug("Loaded existing ML model")
             else:
                 self.create_initial_model()
         except Exception as e:
-            print(f"Model loading error: {e}")
+            logger.error(f"Model loading error: {e}")
             self.create_initial_model()
     
     def create_initial_model(self):
         """Create initial model with synthetic training data."""
-        print("🔄 Creating initial ML model with synthetic data...")
+        logger.debug("Creating initial ML model with synthetic data...")
         
-        # Generate synthetic training data
+        # Generate synthetic training data using vectorized operations
         np.random.seed(42)
         n_samples = 1000
         
-        # Create synthetic features
-        data = []
-        labels = []
+        feature_means = np.array([0.3, 0.2, 0.1, 0.0, 0.4, 0.5])
+        feature_stds = np.array([0.2, 0.15, 0.1, 0.3, 0.2, 0.3])
         
-        for i in range(n_samples):
-            # Generate features
-            audio_level = np.random.normal(0.3, 0.2)
-            motion_level = np.random.normal(0.2, 0.15)
-            scene_change = np.random.normal(0.1, 0.1)
-            sentiment = np.random.normal(0.0, 0.3)
-            excitement = np.random.normal(0.4, 0.2)
-            hype_score = np.random.normal(0.5, 0.3)
-            
-            # Create label based on feature combination
-            excitement_score = (
-                audio_level * 0.3 +
-                motion_level * 0.2 +
-                scene_change * 0.1 +
-                max(sentiment, 0) * 0.2 +
-                excitement * 0.15 +
-                hype_score * 0.05
-            )
-            
-            # Add some noise and threshold
-            excitement_score += np.random.normal(0, 0.1)
-            label = 1 if excitement_score > 0.5 else 0
-            
-            data.append([audio_level, motion_level, scene_change, 
-                        sentiment, excitement, hype_score])
-            labels.append(label)
+        # Generate all features at once
+        data = np.random.normal(feature_means, feature_stds, (n_samples, 6))
+        
+        feature_weights = np.array([0.3, 0.2, 0.1, 0.2, 0.15, 0.05])
+        excitement_scores = np.dot(data, feature_weights)
+        
+        data[:, 3] = np.maximum(data[:, 3], 0)  # sentiment column
+        
+        excitement_scores += np.random.normal(0, 0.1, n_samples)
+        labels = (excitement_scores > 0.5).astype(int)
         
         # Create and train model
-        X = np.array(data)
-        y = np.array(labels)
+        X = data
+        y = labels
         
         # Split data
         X_train, X_test, y_train, y_test = train_test_split(
@@ -263,7 +247,7 @@ class MLFusionModel:
         train_score = self.model.score(X_train_scaled, y_train)
         test_score = self.model.score(X_test_scaled, y_test)
         
-        print(f"📊 Model trained - Train accuracy: {train_score:.3f}, Test accuracy: {test_score:.3f}")
+        logger.info(f"Model trained - Train accuracy: {train_score:.3f}, Test accuracy: {test_score:.3f}")
         
         # Save model
         self.save_model()
@@ -293,7 +277,7 @@ class MLFusionModel:
             return float(prob)
             
         except Exception as e:
-            print(f"Prediction error: {e}")
+            logger.error(f"Prediction error: {e}")
             return 0.5
     
     def save_model(self):
@@ -308,17 +292,17 @@ class MLFusionModel:
             with open(self.model_path, 'wb') as f:
                 pickle.dump(model_data, f)
                 
-            print(f"💾 Model saved to {self.model_path}")
+            logger.debug(f"Model saved to {self.model_path}")
             
         except Exception as e:
-            print(f"Model save error: {e}")
+            logger.error(f"Model save error: {e}")
     
     def retrain_with_feedback(self, feedback_data: List[Dict]):
         """Retrain model with user feedback data."""
         if not feedback_data:
             return
         
-        print(f"🔄 Retraining model with {len(feedback_data)} feedback samples...")
+        logger.debug(f"Retraining model with {len(feedback_data)} feedback samples...")
         
         # Convert feedback to training data
         X_new = []
@@ -352,7 +336,7 @@ class MLFusionModel:
             # Save updated model
             self.save_model()
             
-            print("✅ Model retrained with user feedback")
+            logger.info("Model retrained with user feedback")
 
 class DataLogger:
     """Log feature data and model performance."""
@@ -374,7 +358,7 @@ class DataLogger:
             df = pd.DataFrame(columns=headers)
             df.to_csv(log_path, index=False)
         
-        print(f"📝 Data logger initialized: {log_path}")
+        logger.debug(f"Data logger initialized: {log_path}")
     
     def log_event(self, features: Dict[str, float], ml_prob: float, 
                   clip_triggered: bool, speech_text: str = ""):
@@ -398,7 +382,7 @@ class DataLogger:
             df.to_csv(self.log_path, mode='a', header=False, index=False)
             
         except Exception as e:
-            print(f"Logging error: {e}")
+            logger.error(f"Logging error: {e}")
 
 class AIHighlightDetector:
     """Main AI-powered highlight detection system."""
@@ -414,7 +398,7 @@ class AIHighlightDetector:
         self.consecutive_triggers = 2     # Require 2 consecutive high-probability detections
         self.trigger_history = []
         
-        print("🚀 AI Highlight Detector initialized!")
+        logger.info("AI Highlight Detector initialized!")
     
     def analyze_segment(self, video_path: str, audio_metrics: Dict[str, float]) -> Dict[str, Any]:
         """Analyze a video segment for highlights using AI."""
@@ -449,7 +433,7 @@ class AIHighlightDetector:
             }
             
         except Exception as e:
-            print(f"AI analysis error: {e}")
+            logger.error(f"AI analysis error: {e}")
             return {
                 'should_trigger': False,
                 'ml_probability': 0.0,
@@ -481,7 +465,7 @@ class AIHighlightDetector:
         }
         
         # For now, just log feedback (could batch for nightly retraining)
-        print(f"📊 User feedback: {'Kept' if user_kept else 'Deleted'} clip")
+        logger.debug(f"User feedback: {'Kept' if user_kept else 'Deleted'} clip")
         
         # In production, this would be batched and used for nightly retraining
         self.ml_model.retrain_with_feedback([feedback_sample])
@@ -502,6 +486,6 @@ if __name__ == "__main__":
     }
     
     result = detector.analyze_segment("test.mp4", test_metrics)
-    print(f"Test result: {result}")
+    logger.info(f"Test result: {result}")
     
     detector.cleanup()

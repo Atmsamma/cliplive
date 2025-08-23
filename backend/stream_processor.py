@@ -21,23 +21,27 @@ from collections import deque
 import statistics
 import numpy as np
 
+from logging_utils import setup_logger
+
+logger = setup_logger(__name__)
+
 # Import AI detector
 try:
     from ai_detector import AIHighlightDetector
     from setup_nltk import setup_nltk
     AI_AVAILABLE = True
-    print("🤖 AI detector available")
+    logger.info("AI detector available")
 except ImportError as e:
-    print(f"⚠️ AI detector not available: {e}")
+    logger.warning(f"AI detector not available: {e}")
     AI_AVAILABLE = False
 
 # Import Ad Gatekeeper
 try:
     from ad_gatekeeper import AdGatekeeper
     AD_GATEKEEPER_AVAILABLE = True
-    print("🛡️ Ad Gatekeeper available")
+    logger.info("Ad Gatekeeper available")
 except ImportError as e:
-    print(f"⚠️ Ad Gatekeeper not available: {e}")
+    logger.warning(f"Ad Gatekeeper not available: {e}")
     AD_GATEKEEPER_AVAILABLE = False
 
 class BaselineTracker:
@@ -75,7 +79,7 @@ class BaselineTracker:
         self.calibration_start = time.time()
         self.is_calibrating = True
         self.is_calibrated = False
-        print(f"🎯 Starting {self.calibration_seconds}s baseline calibration...")
+        logger.info(f"Starting {self.calibration_seconds}s baseline calibration...")
 
     def add_metrics(self, audio_level: float, motion_level: float, scene_change: float):
         """Add new metrics to baseline tracking."""
@@ -91,7 +95,7 @@ class BaselineTracker:
     def _finalize_calibration(self):
         """Calculate baseline statistics from collected data."""
         if len(self.audio_levels) < 10:  # Reduced minimum samples for faster calibration
-            print("⚠️  Insufficient data for calibration, extending period...")
+            logger.warning("Insufficient data for calibration, extending period...")
             return
 
         # Calculate baseline statistics with safety checks
@@ -123,20 +127,20 @@ class BaselineTracker:
             self.is_calibrating = False
             self.is_calibrated = True
 
-            print(f"✅ Baseline calibration complete!")
-            print(f"   Audio: {self.audio_baseline['mean']:.1f} ± {self.audio_baseline['std']:.1f}")
-            print(f"   Motion: {self.motion_baseline['mean']:.1f} ± {self.motion_baseline['std']:.1f}")
-            print(f"   Scene: {self.scene_baseline['mean']:.3f} ± {self.scene_baseline['std']:.3f}")
+            logger.info("Baseline calibration complete!")
+            logger.debug(f"   Audio: {self.audio_baseline['mean']:.1f} ± {self.audio_baseline['std']:.1f}")
+            logger.debug(f"   Motion: {self.motion_baseline['mean']:.1f} ± {self.motion_baseline['std']:.1f}")
+            logger.debug(f"   Scene: {self.scene_baseline['mean']:.3f} ± {self.scene_baseline['std']:.3f}")
 
         except Exception as e:
-            print(f"Error calculating baseline: {e}")
+            logger.error(f"Error calculating baseline: {e}")
             # Force enable with default values
             self.audio_baseline = {'mean': 50, 'std': 10}
             self.motion_baseline = {'mean': 30, 'std': 15}
             self.scene_baseline = {'mean': 0.1, 'std': 0.2}
             self.is_calibrating = False
             self.is_calibrated = True
-            print("⚠️  Using default baseline values")
+            logger.warning("Using default baseline values")
 
     def check_anomaly(self, audio_level: float, motion_level: float, scene_change: float) -> Optional[str]:
         """Check if current metrics represent an anomaly worth clipping."""

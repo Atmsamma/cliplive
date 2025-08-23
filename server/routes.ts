@@ -48,7 +48,9 @@ function startStreamProcessor(config: any): boolean {
     const scriptPath = path.join(process.cwd(), 'backend', 'stream_processor.py');
     const configJson = JSON.stringify(config);
 
-    console.log(`Starting stream processor with config: ${configJson}`);
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`Starting stream processor with config: ${configJson}`);
+    }
 
     streamProcessor = spawn(uvCommand, ['run', 'python', scriptPath, configJson], {
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -57,7 +59,9 @@ function startStreamProcessor(config: any): boolean {
 
     if (streamProcessor.stdout) {
       streamProcessor.stdout.on('data', (data) => {
-        console.log(`[StreamProcessor]: ${data.toString().trim()}`);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[StreamProcessor]: ${data.toString().trim()}`);
+        }
       });
     }
 
@@ -68,7 +72,9 @@ function startStreamProcessor(config: any): boolean {
     }
 
     streamProcessor.on('exit', (code) => {
-      console.log(`Stream processor exited with code: ${code}`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`Stream processor exited with code: ${code}`);
+      }
       if (processingStatus.isProcessing) {
         processingStatus.isProcessing = false;
         broadcastSSE({
@@ -91,7 +97,9 @@ function startStreamProcessor(config: any): boolean {
 
 function stopStreamProcessor() {
   if (streamProcessor) {
-    console.log('Stopping stream processor...');
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Stopping stream processor...');
+    }
     streamProcessor.kill('SIGTERM');
     streamProcessor = null;
   }
@@ -122,7 +130,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Clean up any orphaned clip files and thumbnails on startup
   try {
     const existingFiles = fs.readdirSync(clipsDir).filter(file => file.endsWith('.mp4'));
-    console.log(`Found ${existingFiles.length} existing clip files, cleaning up...`);
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`Found ${existingFiles.length} existing clip files, cleaning up...`);
+    }
 
     // For development, remove old files to start fresh
     existingFiles.forEach(file => {
@@ -134,7 +144,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const thumbnailsDir = path.join(clipsDir, 'thumbnails');
     if (fs.existsSync(thumbnailsDir)) {
       const existingThumbnails = fs.readdirSync(thumbnailsDir).filter(file => file.endsWith('.jpg'));
-      console.log(`Found ${existingThumbnails.length} existing thumbnail files, cleaning up...`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`Found ${existingThumbnails.length} existing thumbnail files, cleaning up...`);
+      }
 
       existingThumbnails.forEach(thumbnail => {
         const thumbnailPath = path.join(thumbnailsDir, thumbnail);
@@ -142,7 +154,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     }
 
-    console.log('✅ Clip directory and thumbnails cleaned');
+    if (process.env.NODE_ENV === 'development') {
+      console.log('✅ Clip directory and thumbnails cleaned');
+    }
   } catch (error) {
     console.error('Error cleaning clip directory:', error);
   }
@@ -272,7 +286,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Clean up temp directory and old session artifacts before starting new session
       try {
-        console.log('🧹 Cleaning temp directory before starting new session...');
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🧹 Cleaning temp directory before starting new session...');
+        }
 
         const tempDir = path.join(process.cwd(), 'temp');
         if (fs.existsSync(tempDir)) {
@@ -281,7 +297,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const filePath = path.join(tempDir, file);
             try {
               fs.unlinkSync(filePath);
-              console.log(`✅ Deleted temp file: ${file}`);
+              if (process.env.NODE_ENV === 'development') {
+                console.log(`✅ Deleted temp file: ${file}`);
+              }
             } catch (err) {
               console.warn(`Could not delete temp file ${file}:`, err.message);
             }
@@ -291,7 +309,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           fs.mkdirSync(tempDir, { recursive: true });
         }
 
-        console.log('✅ Temp directory cleaned for new session');
+        if (process.env.NODE_ENV === 'development') {
+          console.log('✅ Temp directory cleaned for new session');
+        }
       } catch (cleanupError) {
         console.error('Error cleaning temp directory:', cleanupError);
       }
@@ -311,7 +331,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sessionId: session.id,
       };
 
-      console.log('🚀 Starting stream processor with config:', processorConfig);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🚀 Starting stream processor with config:', processorConfig);
+      }
       const started = startStreamProcessor(processorConfig);
 
       if (started) {
