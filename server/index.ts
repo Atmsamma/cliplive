@@ -42,9 +42,13 @@ app.use((req, res, next) => {
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
-
-    res.status(status).json({ message });
-    throw err;
+    // Log error but don't rethrow to avoid crashing the dev server
+    try {
+      log(`error ${status}: ${message}`);
+    } catch {}
+    if (!res.headersSent) {
+      res.status(status).json({ message });
+    }
   });
 
   // In development: only API server (no frontend serving)
@@ -61,11 +65,7 @@ app.use((req, res, next) => {
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
   const port = 5000;
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
+  server.listen(port, '0.0.0.0', () => {
     log(`serving on port ${port}`);
   });
 })();

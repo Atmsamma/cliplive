@@ -106,8 +106,21 @@ export default function PlatformIframePlayer({ streamUrl, className = "" }: Plat
         return twitchMatch ? twitchMatch[1] : '';
       
       case 'youtube':
-        const youtubeMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/);
-        return youtubeMatch ? youtubeMatch[1] : '';
+        // Support formats:
+        //  - https://www.youtube.com/watch?v=VIDEOID
+        //  - https://youtu.be/VIDEOID
+        //  - https://www.youtube.com/live/VIDEOID
+        //  - https://www.youtube.com/embed/VIDEOID
+        //  - https://www.youtube.com/live (channel live page - no ID)
+        const watchMatch = url.match(/(?:youtube\.com\/watch\?v=)([^&\n?#]+)/);
+        if (watchMatch) return watchMatch[1];
+        const shortMatch = url.match(/youtu\.be\/([^&\n?#]+)/);
+        if (shortMatch) return shortMatch[1];
+        const liveIdMatch = url.match(/youtube\.com\/live\/([^\/?#]+)/);
+        if (liveIdMatch) return liveIdMatch[1];
+        const embedMatch = url.match(/youtube\.com\/embed\/([^\/?#]+)/);
+        if (embedMatch) return embedMatch[1];
+        return '';
       
       case 'kick':
         const kickMatch = url.match(/kick\.com\/([^\/\?]+)/);
@@ -127,15 +140,23 @@ export default function PlatformIframePlayer({ streamUrl, className = "" }: Plat
         return <TwitchEmbed channel={channelOrVideo} />;
 
       case 'youtube':
+        if (!channelOrVideo) {
+          return (
+            <div className="w-full h-full flex items-center justify-center text-sm text-slate-300 bg-black/60 rounded-lg">
+              Provide a specific YouTube video/live URL
+            </div>
+          );
+        }
+        const ytParams = new URLSearchParams({ autoplay: '1', mute: '1', playsinline: '1', rel: '0', modestbranding: '1' });
         return (
-          <iframe 
-            width="100%" 
-            height="100%" 
-            src={`https://www.youtube.com/embed/${channelOrVideo}`}
-            title="YouTube video player" 
-            frameBorder="0" 
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-            referrerPolicy="strict-origin-when-cross-origin" 
+          <iframe
+            width="100%"
+            height="100%"
+            src={`https://www.youtube.com/embed/${channelOrVideo}?${ytParams.toString()}`}
+            title="YouTube video player"
+            frameBorder="0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            referrerPolicy="strict-origin-when-cross-origin"
             allowFullScreen
             className="w-full h-full rounded-lg"
           />
