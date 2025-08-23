@@ -44,6 +44,9 @@ export default function SignIn() {
       const data = await response.json();
 
       if (response.ok) {
+        const sessionToken = data.sessionToken;
+        localStorage.setItem('sessionToken', sessionToken);
+        
         toast({
           title: "Success",
           description: "Signed in successfully!",

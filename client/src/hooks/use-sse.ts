@@ -8,7 +8,13 @@ export function useSSE(url: string) {
   const { toast } = useToast();
 
   useEffect(() => {
-    const eventSource = new EventSource(url);
+    const sessionToken = localStorage.getItem('sessionToken');
+    if (!sessionToken) {
+      console.warn('No session token found, SSE connection not established');
+      return;
+    }
+
+    const eventSource = new EventSource(`${url}?sessionToken=${sessionToken}`);
 
     eventSource.onmessage = (event) => {
       try {

@@ -9,99 +9,144 @@ import { z } from "zod";
 import fs from "fs";
 import path from "path";
 import { spawn, ChildProcess } from "child_process";
+import crypto from "crypto";
 
-// Processing state - ensure completely reset
-let processingStatus: ProcessingStatus = {
-  isProcessing: false,
-  framesProcessed: 0,
-  streamUptime: "00:00:00",
-  audioLevel: 0,
-  motionLevel: 0,
-  sceneChange: 0,
-};
+interface SessionData {
+  userId?: number;
+  sessionToken: string;
+  createdAt: Date;
+  lastActivity: Date;
+}
 
-// SSE clients
-const sseClients = new Set<ExpressResponse>();
+const activeSessions = new Map<string, SessionData>();
 
-// Python stream processor
-let streamProcessor: ChildProcess | null = null;
-let sessionStartTime: Date | null = null;
+// Generate session token
+function generateSessionToken(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
 
-function broadcastSSE(event: SSEEvent) {
+function sessionMiddleware(req: any, res: any, next: any) {
+  const token = req.headers['x-session-token'] || req.query.sessionToken;
+  if (token && activeSessions.has(token)) {
+    const session = activeSessions.get(token)!;
+    session.lastActivity = new Date();
+    req.sessionToken = token;
+    req.sessionData = session;
+  }
+  next();
+}
+
+interface SessionProcessingState {
+  processingStatus: ProcessingStatus;
+  streamProcessor: ChildProcess | null;
+  sessionStartTime: Date | null;
+  sseClients: Set<ExpressResponse>;
+}
+
+const sessionStates = new Map<string, SessionProcessingState>();
+
+function getSessionState(sessionToken: string): SessionProcessingState {
+  if (!sessionStates.has(sessionToken)) {
+    sessionStates.set(sessionToken, {
+      processingStatus: {
+        isProcessing: false,
+        framesProcessed: 0,
+        streamUptime: "00:00:00",
+        audioLevel: 0,
+        motionLevel: 0,
+        sceneChange: 0,
+      },
+      streamProcessor: null,
+      sessionStartTime: null,
+      sseClients: new Set<ExpressResponse>(),
+    });
+  }
+  return sessionStates.get(sessionToken)!;
+}
+
+function broadcastSSE(sessionToken: string, event: SSEEvent) {
+  const sessionState = getSessionState(sessionToken);
   const data = `data: ${JSON.stringify(event)}\n\n`;
-  sseClients.forEach(client => {
+  
+  sessionState.sseClients.forEach(client => {
     try {
       client.write(data);
     } catch (error) {
-      sseClients.delete(client);
+      sessionState.sseClients.delete(client);
     }
   });
 }
 
-function startStreamProcessor(config: any): boolean {
+function startStreamProcessor(sessionToken: string, config: any): boolean {
   try {
-    // Stop any existing processor
-    stopStreamProcessor();
+    const sessionState = getSessionState(sessionToken);
+    
+    // Stop any existing processor for this session
+    stopStreamProcessor(sessionToken);
 
     // Use UV to run Python with all packages available
     const uvCommand = 'uv';
     const scriptPath = path.join(process.cwd(), 'backend', 'stream_processor.py');
-    const configJson = JSON.stringify(config);
+    const configJson = JSON.stringify({
+      ...config,
+      sessionToken, // Pass session token to Python processor
+    });
 
     if (process.env.NODE_ENV === 'development') {
-      console.log(`Starting stream processor with config: ${configJson}`);
+      console.log(`Starting stream processor for session ${sessionToken} with config: ${configJson}`);
     }
 
-    streamProcessor = spawn(uvCommand, ['run', 'python', scriptPath, configJson], {
+    sessionState.streamProcessor = spawn(uvCommand, ['run', 'python', scriptPath, configJson], {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: process.cwd(),
     });
 
-    if (streamProcessor.stdout) {
-      streamProcessor.stdout.on('data', (data) => {
+    if (sessionState.streamProcessor.stdout) {
+      sessionState.streamProcessor.stdout.on('data', (data) => {
         if (process.env.NODE_ENV === 'development') {
-          console.log(`[StreamProcessor]: ${data.toString().trim()}`);
+          console.log(`[StreamProcessor-${sessionToken}]: ${data.toString().trim()}`);
         }
       });
     }
 
-    if (streamProcessor.stderr) {
-      streamProcessor.stderr.on('data', (data) => {
-        console.error(`[StreamProcessor Error]: ${data.toString().trim()}`);
+    if (sessionState.streamProcessor.stderr) {
+      sessionState.streamProcessor.stderr.on('data', (data) => {
+        console.error(`[StreamProcessor-${sessionToken} Error]: ${data.toString().trim()}`);
       });
     }
 
-    streamProcessor.on('exit', (code) => {
+    sessionState.streamProcessor.on('exit', (code) => {
       if (process.env.NODE_ENV === 'development') {
-        console.log(`Stream processor exited with code: ${code}`);
+        console.log(`Stream processor for session ${sessionToken} exited with code: ${code}`);
       }
-      if (processingStatus.isProcessing) {
-        processingStatus.isProcessing = false;
-        broadcastSSE({
+      if (sessionState.processingStatus.isProcessing) {
+        sessionState.processingStatus.isProcessing = false;
+        broadcastSSE(sessionToken, {
           type: 'session-stopped',
           data: { message: 'Stream processor stopped unexpectedly' },
         });
       }
     });
 
-    streamProcessor.on('error', (error) => {
-      console.error(`Stream processor error: ${error}`);
+    sessionState.streamProcessor.on('error', (error) => {
+      console.error(`Stream processor error for session ${sessionToken}: ${error}`);
     });
 
     return true;
   } catch (error) {
-    console.error(`Failed to start stream processor: ${error}`);
+    console.error(`Failed to start stream processor for session ${sessionToken}: ${error}`);
     return false;
   }
 }
 
-function stopStreamProcessor() {
-  if (streamProcessor) {
+function stopStreamProcessor(sessionToken: string) {
+  const sessionState = getSessionState(sessionToken);
+  if (sessionState.streamProcessor) {
     if (process.env.NODE_ENV === 'development') {
-      console.log('Stopping stream processor...');
+      console.log(`Stopping stream processor for session ${sessionToken}...`);
     }
-    streamProcessor.kill('SIGTERM');
-    streamProcessor = null;
+    sessionState.streamProcessor.kill('SIGTERM');
+    sessionState.streamProcessor = null;
   }
 }
 
@@ -161,8 +206,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     console.error('Error cleaning clip directory:', error);
   }
 
-  // Server-Sent Events endpoint
-  app.get('/api/events', (req, res) => {
+  // Server-Sent Events endpoint with session isolation
+  app.get('/api/events', sessionMiddleware, (req, res) => {
+    if (!req.sessionToken) {
+      return res.status(401).json({ error: 'Session token required' });
+    }
+    
+    const sessionState = getSessionState(req.sessionToken);
+    
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -171,51 +222,90 @@ export async function registerRoutes(app: Express): Promise<Server> {
       'Access-Control-Allow-Headers': 'Cache-Control',
     });
 
-    sseClients.add(res);
-
-    // Send initial status
+    sessionState.sseClients.add(res);
+    
+    // Send initial status for this session
     res.write(`data: ${JSON.stringify({
       type: 'processing-status',
-      data: processingStatus,
+      data: sessionState.processingStatus,
     })}\n\n`);
 
     req.on('close', () => {
-      sseClients.delete(res);
+      sessionState.sseClients.delete(res);
     });
   });
 
   // Authentication routes
   app.post('/api/auth/signup', async (req, res) => {
     try {
-      const { name, email, password } = req.body;
-
+      const validatedData = insertUserSchema.parse(req.body);
+      
       // Check if user already exists
-      const existingUser = await storage.getUserByEmail(email);
+      const existingUser = await storage.getUserByEmail(validatedData.email);
       if (existingUser) {
-        return res.status(400).json({ error: 'User already exists with this email' });
+        return res.status(400).json({ error: 'User already exists' });
       }
 
       // Hash password
-      const hashedPassword = await bcrypt.hash(password, 10);
-
+      const hashedPassword = await bcrypt.hash(validatedData.password!, 10);
+      
       // Create user
       const user = await storage.createUser({
-        name,
-        email,
-        password: hashedPassword
+        ...validatedData,
+        password: hashedPassword,
       });
 
-      res.json({ message: 'User created successfully', userId: user.id });
+      // Log the user in automatically and create session token
+      req.login(user, (err) => {
+        if (err) {
+          return res.status(500).json({ error: 'Failed to log in after signup' });
+        }
+        
+        const sessionToken = generateSessionToken();
+        activeSessions.set(sessionToken, {
+          userId: user.id,
+          sessionToken,
+          createdAt: new Date(),
+          lastActivity: new Date(),
+        });
+        
+        res.json({ 
+          message: 'User created and logged in successfully', 
+          user,
+          sessionToken 
+        });
+      });
     } catch (error) {
-      res.status(500).json({ error: 'Failed to create user' });
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: 'Invalid input', details: error.errors });
+      }
+      console.error('Signup error:', error);
+      res.status(500).json({ error: 'Internal server error' });
     }
   });
 
   app.post('/api/auth/signin', passport.authenticate('local'), (req, res) => {
-    res.json({ message: 'Signed in successfully', user: req.user });
+    const sessionToken = generateSessionToken();
+    activeSessions.set(sessionToken, {
+      userId: (req.user as any).id,
+      sessionToken,
+      createdAt: new Date(),
+      lastActivity: new Date(),
+    });
+    
+    res.json({ 
+      message: 'Signed in successfully', 
+      user: req.user,
+      sessionToken 
+    });
   });
 
-  app.post('/api/auth/signout', (req, res) => {
+  app.post('/api/auth/signout', sessionMiddleware, (req, res) => {
+    if (req.sessionToken) {
+      activeSessions.delete(req.sessionToken);
+      // Clean up session state
+      sessionStates.delete(req.sessionToken);
+    }
     req.logout((err) => {
       if (err) {
         return res.status(500).json({ error: 'Failed to sign out' });
@@ -259,16 +349,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
-  // Get processing status
-  app.get("/api/status", (req, res) => {
-    res.json(processingStatus);
+  app.get("/api/status", sessionMiddleware, (req, res) => {
+    if (!req.sessionToken) {
+      return res.status(401).json({ error: 'Session token required' });
+    }
+    
+    const sessionState = getSessionState(req.sessionToken);
+    res.json(sessionState.processingStatus);
   });
 
 
 
-  // Start stream capture
-  app.post('/api/start', async (req, res) => {
+  // Start stream capture with session isolation
+  app.post('/api/start', sessionMiddleware, requireAuth, async (req, res) => {
     try {
+      if (!req.sessionToken) {
+        return res.status(401).json({ error: 'Session token required' });
+      }
+
       // Add userId from authenticated user to the request data, or use null for unauthenticated users
       const requestData = {
         ...req.body,
@@ -277,11 +375,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const validatedData = insertStreamSessionSchema.parse(requestData);
 
-      // Stop any active sessions
-      const activeSession = await storage.getActiveSession();
+      // Stop any active session for this token
+      const activeSession = await storage.getActiveSessionByToken(req.sessionToken);
       if (activeSession) {
         await storage.updateSessionStatus(activeSession.id, false);
-        stopStreamProcessor();
+        stopStreamProcessor(req.sessionToken);
       }
 
       // Clean up temp directory and old session artifacts before starting new session
@@ -316,37 +414,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error('Error cleaning temp directory:', cleanupError);
       }
 
-      // Create new session
-      const session = await storage.createStreamSession({
+      // Create new session with token association
+      const session = await storage.createStreamSessionWithToken({
         ...validatedData,
         isActive: true,
-      });
+      }, req.sessionToken);
 
-      // Start Python stream processor with real FFmpeg integration
+      // Start Python stream processor with session context
       const processorConfig = {
         url: session.url,
         audioThreshold: session.audioThreshold,
         motionThreshold: session.motionThreshold,
         clipLength: session.clipLength,
         sessionId: session.id,
+        sessionToken: req.sessionToken, // Pass session token to Python
       };
 
       if (process.env.NODE_ENV === 'development') {
-        console.log('🚀 Starting stream processor with config:', processorConfig);
+        console.log(`🚀 Starting stream processor for session ${req.sessionToken} with config:`, processorConfig);
       }
-      const started = startStreamProcessor(processorConfig);
+      const started = startStreamProcessor(req.sessionToken, processorConfig);
 
       if (started) {
-        // Update processing status
-        processingStatus.isProcessing = true;
-        processingStatus.framesProcessed = 0;
-        processingStatus.currentSession = session;
-        sessionStartTime = new Date();
+        // Update session-specific processing status
+        const sessionState = getSessionState(req.sessionToken);
+        sessionState.processingStatus.isProcessing = true;
+        sessionState.processingStatus.framesProcessed = 0;
+        sessionState.processingStatus.currentSession = session;
+        sessionState.sessionStartTime = new Date();
 
-        console.log('✅ Stream processor started successfully');
-        console.log('📊 Current processing status:', processingStatus);
+        console.log(`✅ Stream processor started successfully for session ${req.sessionToken}`);
+        console.log('📊 Current processing status:', sessionState.processingStatus);
 
-        broadcastSSE({
+        broadcastSSE(req.sessionToken, {
           type: 'session-started',
           data: session,
         });
@@ -354,7 +454,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json(session);
       } else {
         // Failed to start processor
-        console.log('❌ Failed to start stream processor');
+        console.log(`❌ Failed to start stream processor for session ${req.sessionToken}`);
         await storage.updateSessionStatus(session.id, false);
         res.status(500).json({ error: 'Failed to start stream processor' });
       }
@@ -364,18 +464,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Stop stream capture
-  app.post('/api/stop', async (req, res) => {
+  // Stop stream capture with session context
+  app.post('/api/stop', sessionMiddleware, async (req, res) => {
     try {
-      const activeSession = await storage.getActiveSession();
+      if (!req.sessionToken) {
+        return res.status(401).json({ error: 'Session token required' });
+      }
+
+      const activeSession = await storage.getActiveSessionByToken(req.sessionToken);
       if (!activeSession) {
-        return res.status(400).json({ error: 'No active session' });
+        return res.status(400).json({ error: 'No active session for this token' });
       }
 
       const updatedSession = await storage.updateSessionStatus(activeSession.id, false);
 
-      // Stop Python stream processor
-      stopStreamProcessor();
+      // Stop Python stream processor for this session
+      stopStreamProcessor(req.sessionToken);
 
       // Comprehensive cleanup of all session artifacts
       try {
@@ -432,8 +536,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // These would be in /tmp/ directories created by the Python processor
         console.log('✅ Stream processor will clean up its own temporary buckets and segments');
 
-        // 5. Reset processing metrics
-        processingStatus = {
+        // 5. Reset session-specific processing metrics
+        const sessionState = getSessionState(req.sessionToken);
+        sessionState.processingStatus = {
           isProcessing: false,
           framesProcessed: 0,
           streamUptime: "00:00:00",
@@ -448,12 +553,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error('Error during session cleanup:', cleanupError);
       }
 
-      // Update processing status
-      processingStatus.isProcessing = false;
-      processingStatus.currentSession = undefined;
-      sessionStartTime = null;
+      // Update session-specific processing status
+      const sessionState = getSessionState(req.sessionToken);
+      sessionState.processingStatus.isProcessing = false;
+      sessionState.processingStatus.currentSession = undefined;
+      sessionState.sessionStartTime = null;
 
-      broadcastSSE({
+      broadcastSSE(req.sessionToken, {
         type: 'session-stopped',
         data: updatedSession,
       });
@@ -563,16 +669,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Internal API for Python processor to create clips
-  app.post('/api/clips', async (req, res) => {
+  // Internal API for Python processor to create clips with session context
+  app.post('/api/clips', sessionMiddleware, async (req, res) => {
     try {
+      if (!req.sessionToken) {
+        return res.status(401).json({ error: 'Session token required' });
+      }
+
       const validatedData = insertClipSchema.parse(req.body);
       const clip = await storage.createClip(validatedData);
 
-      // Broadcast SSE event about new clip
-      broadcastSSE({
-        type: 'clip-generated',
-        data: clip,
+      // Broadcast SSE event about new clip to all sessions (clips are global)
+      // For now, broadcast to all sessions since clips can be viewed by all users
+      sessionStates.forEach((_, sessionToken) => {
+        broadcastSSE(sessionToken, {
+          type: 'clip-generated',
+          data: clip,
+        });
       });
 
       res.json(clip);
@@ -582,28 +695,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Internal API for Python processor to send metrics updates
-  app.post('/api/internal/metrics', async (req, res) => {
+  // Internal API for Python processor to send metrics updates with session context
+  app.post('/api/internal/metrics', sessionMiddleware, async (req, res) => {
     try {
-      // Update processing status with data from Python processor
+      if (!req.sessionToken) {
+        return res.status(401).json({ error: 'Session token required' });
+      }
+      
+      const sessionState = getSessionState(req.sessionToken);
       const metricsData = req.body;
 
       // Update uptime if session is active
-      if (sessionStartTime && metricsData.isProcessing) {
-        const uptime = Date.now() - sessionStartTime.getTime();
+      if (sessionState.sessionStartTime && metricsData.isProcessing) {
+        const uptime = Date.now() - sessionState.sessionStartTime.getTime();
         const hours = Math.floor(uptime / (1000 * 60 * 60));
         const minutes = Math.floor((uptime % (1000 * 60 * 60)) / (1000 * 60));
         const seconds = Math.floor((uptime % (1000 * 60)) / 1000);
         metricsData.streamUptime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
       }
 
-      // Update global processing status
-      processingStatus = { ...processingStatus, ...metricsData };
+      // Update session-specific processing status
+      sessionState.processingStatus = { ...sessionState.processingStatus, ...metricsData };
 
-      // Broadcast updated metrics via SSE
-      broadcastSSE({
+      // Broadcast updated metrics via SSE to this session only
+      broadcastSSE(req.sessionToken, {
         type: 'processing-status',
-        data: processingStatus,
+        data: sessionState.processingStatus,
       });
 
       res.json({ success: true });
@@ -613,13 +730,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get resolved stream URL for display (decoupled from processing)
-  app.get('/api/stream-url', async (req, res) => {
+  // Get resolved stream URL for display with session context
+  app.get('/api/stream-url', sessionMiddleware, async (req, res) => {
     try {
-      const activeSession = await storage.getActiveSession();
+      if (!req.sessionToken) {
+        return res.status(401).json({ error: 'Session token required' });
+      }
+
+      const activeSession = await storage.getActiveSessionByToken(req.sessionToken);
       if (!activeSession) {
-        console.log('❌ No active session found for stream URL request');
-        return res.status(404).json({ error: 'No active session found' });
+        console.log(`❌ No active session found for session token ${req.sessionToken}`);
+        return res.status(404).json({ error: 'No active session found for this token' });
       }
 
       console.log(`🔗 Resolving stream URL for display: ${activeSession.url}`);
@@ -720,18 +841,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Internal stream ended notification endpoint
-  app.post('/api/internal/stream-ended', async (req, res) => {
+  // Internal stream ended notification endpoint with session context
+  app.post('/api/internal/stream-ended', sessionMiddleware, async (req, res) => {
     const { url, endTime, totalClips, totalDuration, lastSuccessfulCapture } = req.body;
 
-    console.log(`Stream ended notification: ${url} after ${totalDuration}s with ${totalClips} clips`);
+    if (!req.sessionToken) {
+      return res.status(401).json({ error: 'Session token required' });
+    }
 
-    // Stop the stream processor to ensure clean shutdown
-    stopStreamProcessor();
+    console.log(`Stream ended notification for session ${req.sessionToken}: ${url} after ${totalDuration}s with ${totalClips} clips`);
+
+    // Stop the stream processor for this session
+    stopStreamProcessor(req.sessionToken);
 
     // Update active session status in database
     try {
-      const activeSession = await storage.getActiveSession();
+      const activeSession = await storage.getActiveSessionByToken(req.sessionToken);
       if (activeSession) {
         await storage.updateSessionStatus(activeSession.id, false);
       }
@@ -739,8 +864,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error('Error updating session status on stream end:', error);
     }
 
-    // Reset processing status completely
-    processingStatus = {
+    // Reset session-specific processing status
+    const sessionState = getSessionState(req.sessionToken);
+    sessionState.processingStatus = {
       isProcessing: false,
       framesProcessed: 0,
       streamUptime: "00:00:00",
@@ -748,10 +874,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       motionLevel: 0,
       sceneChange: 0,
     };
-    sessionStartTime = null;
+    sessionState.sessionStartTime = null;
 
-    // Notify all connected clients
-    broadcastSSE({
+    // Notify connected clients for this session
+    broadcastSSE(req.sessionToken, {
       type: 'stream-ended',
       data: {
         message: `Stream has ended after ${Math.round(totalDuration / 60)} minutes`,
@@ -762,10 +888,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       },
     });
 
-    // Also broadcast the reset status
-    broadcastSSE({
+    // Also broadcast the reset status for this session
+    broadcastSSE(req.sessionToken, {
       type: 'processing-status',
-      data: processingStatus,
+      data: sessionState.processingStatus,
     });
 
     res.json({ success: true });
