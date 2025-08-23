@@ -27,6 +27,7 @@ export class MemStorage implements IStorage {
   private currentClipId: number;
   private currentSessionId: number;
   private currentUserId: number;
+  private sessionTokenToId: Map<string, number>;
 
   constructor() {
     this.clips = new Map();
@@ -35,6 +36,7 @@ export class MemStorage implements IStorage {
     this.currentClipId = 1;
     this.currentSessionId = 1;
     this.currentUserId = 1;
+    this.sessionTokenToId = new Map();
   }
 
   // Clips
@@ -80,6 +82,26 @@ export class MemStorage implements IStorage {
     return Array.from(this.streamSessions.values()).find(
       session => session.isActive
     );
+  }
+
+  async getActiveSessionsForUser(userId?: number): Promise<StreamSession[]> {
+    return Array.from(this.streamSessions.values()).filter(
+      session => session.isActive && (!userId || session.userId === userId)
+    );
+  }
+
+  async getActiveSessionByToken(sessionToken: string): Promise<StreamSession | undefined> {
+    const sessionId = this.sessionTokenToId.get(sessionToken);
+    if (!sessionId) return undefined;
+    
+    const session = this.streamSessions.get(sessionId);
+    return session?.isActive ? session : undefined;
+  }
+
+  async createStreamSessionWithToken(insertSession: InsertStreamSession, sessionToken: string): Promise<StreamSession> {
+    const session = await this.createStreamSession(insertSession);
+    this.sessionTokenToId.set(sessionToken, session.id);
+    return session;
   }
 
   async updateSessionStatus(id: number, isActive: boolean): Promise<StreamSession | undefined> {

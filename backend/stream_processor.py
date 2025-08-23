@@ -182,15 +182,20 @@ class BaselineTracker:
 class StreamBucket:
     """Bucket-based continuous video capture for smooth clipping."""
 
-    def __init__(self, clip_duration: int = 30):
+    def __init__(self, clip_duration: int = 30, session_temp_dir: str = None):
         """
-        Initialize stream bucket for continuous recording.
-
+        Initialize StreamBucket with session-specific temporary directory.
+        
         Args:
             clip_duration: Duration of clips to prepare in advance
+            session_temp_dir: Session-specific temporary directory path
         """
         self.clip_duration = clip_duration
-        self.temp_dir = tempfile.mkdtemp(prefix="stream_bucket_")
+        if session_temp_dir:
+            self.temp_dir = session_temp_dir
+        else:
+            self.temp_dir = tempfile.mkdtemp(prefix="stream_bucket_")
+        
         self.current_bucket_path = None
         self.current_bucket_start_time = None
         self.bucket_counter = 0
@@ -400,8 +405,8 @@ class StreamProcessor:
         print(f"AI Detection: {'Enabled' if self.ai_detector else 'Disabled'}")
         print(f"Ad Gatekeeper: {'Enabled' if self.ad_gatekeeper else 'Disabled'}")
 
-    def start_processing(self, url: str, audio_threshold: float, motion_threshold: float, clip_length: int, session_id: str = None):
-        """Start the stream processing with real FFmpeg integration."""
+    def start_processing(self, url: str, audio_threshold: float, motion_threshold: float, clip_length: int, session_id: str = None, session_token: str = None):
+        """Start the stream processing with session-specific isolation."""
         if self.is_running:
             print("⚠️ Stream processor is already running")
             return False
@@ -411,28 +416,35 @@ class StreamProcessor:
         self.motion_threshold = motion_threshold
         self.clip_length = clip_length
         self.session_id = session_id or 'default'
+        self.session_token = session_token or 'default'
         self.is_running = True
         self.consecutive_failures = 0
         self.last_successful_capture = time.time()
         self.start_time = time.time()
 
-        print(f"🚀 Starting stream processor for: {url}")
+        # Create session-specific temporary directory
+        self.session_temp_dir = os.path.join(os.getcwd(), 'temp', f'session_{self.session_token}')
+        os.makedirs(self.session_temp_dir, exist_ok=True)
+
+        print(f"🚀 Starting stream processor for session {self.session_token}: {url}")
         print(f"📊 Thresholds - Audio: {audio_threshold}, Motion: {motion_threshold}")
         print(f"⏱️ Clip length: {clip_length}s")
 
-        # Initialize stream bucket for continuous recording
-        self.stream_bucket = StreamBucket(clip_duration=self.clip_length)
+        # Initialize stream bucket with session-specific temp directory
+        self.stream_bucket = StreamBucket(
+            clip_duration=self.clip_length,
+            session_temp_dir=self.session_temp_dir
+        )
 
         # Start baseline calibration
         if self.use_adaptive_detection:
             self.baseline_tracker.start_calibration()
 
-        # Clean up any existing temp files first
+        # Clean up any existing session-specific temp files
         try:
-            temp_dir = os.path.join(os.getcwd(), 'temp')
-            if os.path.exists(temp_dir):
+            if os.path.exists(self.session_temp_dir):
                 import glob
-                old_frames = glob.glob(os.path.join(temp_dir, '*.jpg'))
+                old_frames = glob.glob(os.path.join(self.session_temp_dir, '*.jpg'))
                 for frame in old_frames:
                     try:
                         os.remove(frame)
@@ -1478,10 +1490,16 @@ class StreamProcessor:
                 'triggerReason': trigger_reason,
             }
 
+            headers = {
+                'Content-Type': 'application/json',
+                'X-Session-Token': self.session_token
+            }
+
             # Send to main server API
             response = requests.post(
                 'http://0.0.0.0:5000/api/clips',
                 json=clip_data,
+                headers=headers,
                 timeout=5
             )
 
@@ -1493,6 +1511,7 @@ class StreamProcessor:
                     print(f"Triggering thumbnail generation for: {filename}")
                     thumbnail_response = requests.get(
                         f'http://0.0.0.0:5000/api/thumbnails/{filename}',
+                        headers=headers,
                         timeout=15
                     )
                     if thumbnail_response.status_code == 200:
@@ -1518,10 +1537,16 @@ class StreamProcessor:
                 'lastSuccessfulCapture': self.last_successful_capture
             }
 
+            headers = {
+                'Content-Type': 'application/json',
+                'X-Session-Token': self.session_token
+            }
+
             # Send to main server API
             response = requests.post(
                 'http://0.0.0.0:5000/api/internal/stream-ended',
                 json=stream_end_data,
+                headers=headers,
                 timeout=5
             )
 
@@ -1570,9 +1595,14 @@ class StreamProcessor:
                 }
 
                 # Send to main server for SSE broadcast
+                headers = {
+                    'Content-Type': 'application/json',
+                    'X-Session-Token': self.session_token
+                }
                 response = requests.post(
                     'http://0.0.0.0:5000/api/internal/metrics',
                     json=status_data,
+                    headers=headers,
                     timeout=2
                 )
                 
@@ -1585,9 +1615,17 @@ class StreamProcessor:
             time.sleep(1) # Update metrics every second
 
     def send_metrics_to_backend(self, metrics):
-        """Send metrics to the backend API"""
+        """Send metrics to the backend API with session context"""
         try:
-            response = requests.post('http://localhost:5000/api/internal/metrics', json=metrics)
+            headers = {
+                'Content-Type': 'application/json',
+                'X-Session-Token': self.session_token
+            }
+            response = requests.post(
+                'http://localhost:5000/api/internal/metrics', 
+                json=metrics,
+                headers=headers
+            )
             if response.status_code != 200:
                 print(f"Failed to send metrics: {response.status_code}")
         except Exception as e:
@@ -1613,7 +1651,8 @@ def main():
             config.get('audioThreshold', 6),
             config.get('motionThreshold', 30),
             config.get('clipLength', 30),
-            config.get('sessionId') # Pass session_id if provided
+            config.get('sessionId'), # Pass session_id if provided
+            config.get('sessionToken') # Pass session_token if provided
         ):
             try:
                 while processor.is_running:
