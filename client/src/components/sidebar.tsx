@@ -5,9 +5,13 @@ import { cn } from "@/lib/utils";
 import { useSession } from "@/hooks/use-session";
 
 export default function Sidebar() {
+  const { clearSession } = useSession();
   const handleSignOut = () => {
+    // Remove session token and clear session state
     localStorage.removeItem('sessionToken');
-    window.location.href = '/';
+    clearSession();
+    // Use replace to prevent browser back navigation to protected pages
+    window.location.replace('/');
   };
   const [location] = useLocation();
   const { sessionId, isSessionReady } = useSession();

@@ -1,10 +1,22 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
+import { useEffect } from 'react';
+import { useSession } from '@/hooks/use-session';
+import { useLocation } from 'wouter';
 import SessionCard from '@/components/session-card';
 
 interface SessionSummary { session_id: string; status?: string; stream_url?: string; }
 
 export default function SessionsDashboard() {
+  // Require authentication
+  const { isSessionReady } = useSession();
+  const [location, setLocation] = useLocation();
+  // Redirect to /signin if not authenticated
+  useEffect(() => {
+    if (!isSessionReady) {
+      setLocation('/signin');
+    }
+  }, [isSessionReady, setLocation]);
   const qc = useQueryClient();
   const { data } = useQuery<{ sessions: SessionSummary[] }>({
     queryKey: ['sessions','list'],
