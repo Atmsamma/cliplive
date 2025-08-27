@@ -54,8 +54,9 @@ export default function ProcessingStatus({ sessionId: propSessionId }: Props) {
 
           {/* Stream Player / Preview */}
           <div className="bg-slate-700 rounded-lg aspect-video flex items-center justify-center relative overflow-hidden">
-            {session?.stream_url ? (
+            {session?.status === 'running' && session?.stream_url ? (
               <PlatformIframePlayer
+                key={session.stream_url}       // force a full remount per stream
                 streamUrl={session.stream_url}
                 className="w-full h-full"
               />
