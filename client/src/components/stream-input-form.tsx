@@ -243,7 +243,8 @@ export default function StreamInputForm({ sessionId: propSessionId, compact }: P
 
             <div className="flex space-x-3">
               <Button
-                type="submit"
+                type={session?.status === 'running' ? 'button' : 'submit'}
+                onClick={session?.status === 'running' ? () => stopMutation.mutate() : undefined}
                 className={
                   session?.status === 'running'
                     ? "bg-red-500 hover:bg-red-600 text-white"
