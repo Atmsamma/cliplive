@@ -92,7 +92,6 @@ export function registerSessionRoutes(app: Express) {
   // Stop stream for a session (auth-gated)
   app.post(
     "/api/sessions/:sid/stop",
-    requireAuth,
     async (req: Request, res: Response) => {
       const sessionId = getSessionId(req);
       if (!sessionId) {
