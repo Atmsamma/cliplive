@@ -23,14 +23,14 @@ function Router() {
       <Route path="/sessions">
         <SessionsDashboard />
       </Route>
-      <Route path="/capture">
+      <Route path="/dashboard">
         <RequireAuth>
           <div className="flex h-screen bg-slate-900">
             <Sidebar />
             <div className="flex-1 flex flex-col overflow-hidden">
               <Switch>
-                <Route path="/capture" component={StreamCapture} />
-                <Route path="/capture/clips" component={ClipLibrary} />
+                <Route path="/dashboard" component={StreamCapture} />
+                <Route path="/dashboard/clips" component={ClipLibrary} />
                 <Route component={NotFound} />
               </Switch>
             </div>

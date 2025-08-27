@@ -51,7 +51,7 @@ export default function SignIn() {
           title: "Success",
           description: "Signed in successfully!",
         });
-        setLocation("/capture");
+        setLocation("/dashboard");
       } else {
         toast({
           title: "Error",
