@@ -20,7 +20,7 @@ export interface SessionState {
 
 export class SessionManager {
   private sessions = new Map<string, SessionState>();
-  private readonly maxSessions = 3; // Limit for resource management
+  // private readonly maxSessions = 3; // Limit for resource management
   private readonly sessionTTL = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
   private cleanupInterval: NodeJS.Timeout;
 
@@ -32,10 +32,10 @@ export class SessionManager {
   }
 
   createSession(): string {
-    // Check session limit
-    if (this.sessions.size >= this.maxSessions) {
-      throw new Error(`Maximum ${this.maxSessions} sessions allowed. Please try again later.`);
-    }
+    // // Check session limit
+    // if (this.sessions.size >= this.maxSessions) {
+    //   throw new Error(`Maximum ${this.maxSessions} sessions allowed. Please try again later.`);
+    // }
 
     const sessionId = uuidv4();
     const outDir = path.join(process.cwd(), 'clips', sessionId);
