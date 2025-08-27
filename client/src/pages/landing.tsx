@@ -15,6 +15,8 @@ const formatSize = (size: number) => `${(size / 1024).toFixed(2)} KB`;
 const totalSize = 1024 * 1024; // Example total size
 
 export default function Landing() {
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const clipsSectionRef = useRef<HTMLElement>(null);
   const { toast } = useToast();
   const liveProcessingSectionRef = useRef<HTMLElement>(null);
   const [wasProcessing, setWasProcessing] = useState(false);
@@ -60,6 +62,17 @@ export default function Landing() {
   };
 
   const clipsArray = Array.isArray(clips) ? clips : [];
+  const [lastClipCount, setLastClipCount] = useState(clipsArray.length);
+
+  // Auto-scroll to Clips section when a new clip is generated
+  useEffect(() => {
+    if (clipsArray.length > lastClipCount && clipsSectionRef.current) {
+      setTimeout(() => {
+        clipsSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 100);
+    }
+    setLastClipCount(clipsArray.length);
+  }, [clipsArray.length, lastClipCount]);
 
   return (
   <div className="bg-slate-900 w-full">
@@ -79,7 +92,7 @@ export default function Landing() {
         </div>
       </header>
       <div className="h-screen w-full overflow-hidden">
-        <div className="h-full w-full overflow-y-scroll snap-y snap-mandatory hide-scrollbar">
+  <div ref={scrollContainerRef} className="h-full w-full overflow-y-scroll snap-y snap-mandatory hide-scrollbar">
         {/* Section 1: Stream Configuration */}
         <section className="min-h-screen flex items-center justify-center p-6 snap-start">
           <div className="w-full max-w-2xl">
@@ -87,7 +100,7 @@ export default function Landing() {
               <h2 className="text-3xl font-bold text-slate-50 mb-4">Configure Your Stream</h2>
               <p className="text-slate-400">Enter your stream URL and start capturing highlights automatically</p>
             </div>
-            <StreamInputForm />
+            <StreamInputForm liveProcessingSectionRef={liveProcessingSectionRef} scrollContainerRef={scrollContainerRef} />
           </div>
         </section>
         {/* Section 2: Processing Status */}
@@ -100,8 +113,8 @@ export default function Landing() {
             <ProcessingStatus />
           </div>
         </section>
-        {/* Section 3: Clip Library */}
-        <section className="min-h-screen flex items-center justify-center p-6 snap-start">
+  {/* Section 3: Clip Library */}
+  <section ref={clipsSectionRef} className="min-h-screen flex items-center justify-center p-6 snap-start">
           <div className="w-full max-w-6xl">
             <div className="text-center mb-8">
               <h2 className="text-3xl font-bold text-slate-50 mb-4">Your Captured Clips</h2>

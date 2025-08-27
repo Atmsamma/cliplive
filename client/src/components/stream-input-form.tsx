@@ -56,8 +56,9 @@ const streamConfigSchema = z.object({
 
 type StreamConfig = z.infer<typeof streamConfigSchema>;
 
-interface Props { sessionId?: string; compact?: boolean }
-export default function StreamInputForm({ sessionId: propSessionId, compact }: Props) {
+import type { RefObject } from "react";
+interface Props { sessionId?: string; compact?: boolean; liveProcessingSectionRef?: RefObject<HTMLElement>; scrollContainerRef?: RefObject<HTMLDivElement>; }
+export default function StreamInputForm({ sessionId: propSessionId, compact, liveProcessingSectionRef, scrollContainerRef }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { sessionId: ctxSessionId, isSessionReady, refreshSession } = useSession();
@@ -182,6 +183,12 @@ export default function StreamInputForm({ sessionId: propSessionId, compact }: P
       return;
     }
     startMutation.mutate(data);
+    // Snap to Live Processing section using scrollIntoView (centered, after short delay)
+    if (liveProcessingSectionRef?.current) {
+      setTimeout(() => {
+        liveProcessingSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 100);
+    }
   };
 
   return (
