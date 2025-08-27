@@ -62,8 +62,7 @@ export default function Landing() {
   const clipsArray = Array.isArray(clips) ? clips : [];
 
   return (
-    <div className="h-screen bg-slate-900 overflow-y-auto snap-y snap-mandatory">
-      {/* Header */}
+  <div className="bg-slate-900 w-full">
       <header className="bg-slate-800 border-b border-slate-600 px-6 py-4 sticky top-0 z-10">
         <div className="flex items-center justify-between">
           <div>
@@ -79,11 +78,10 @@ export default function Landing() {
           </Button>
         </div>
       </header>
-
-      {/* Main Content - Vertical Scrolling Sections */}
-      <main className="w-full">
+      <div className="h-screen w-full overflow-hidden">
+        <div className="h-full w-full overflow-y-scroll snap-y snap-mandatory hide-scrollbar">
         {/* Section 1: Stream Configuration */}
-        <section className="h-screen flex items-center justify-center p-6 snap-start">
+        <section className="min-h-screen flex items-center justify-center p-6 snap-start">
           <div className="w-full max-w-2xl">
             <div className="text-center mb-8">
               <h2 className="text-3xl font-bold text-slate-50 mb-4">Configure Your Stream</h2>
@@ -92,9 +90,8 @@ export default function Landing() {
             <StreamInputForm />
           </div>
         </section>
-
         {/* Section 2: Processing Status */}
-        <section ref={liveProcessingSectionRef} className="h-screen flex items-center justify-center p-6 snap-start">
+        <section ref={liveProcessingSectionRef} className="min-h-screen flex items-center justify-center p-6 snap-start">
           <div className="w-full max-w-4xl">
             <div className="text-center mb-8">
               <h2 className="text-3xl font-bold text-slate-50 mb-4">Live Processing</h2>
@@ -103,9 +100,8 @@ export default function Landing() {
             <ProcessingStatus />
           </div>
         </section>
-
         {/* Section 3: Clip Library */}
-        <section className="h-screen flex items-center justify-center p-6 snap-start">
+        <section className="min-h-screen flex items-center justify-center p-6 snap-start">
           <div className="w-full max-w-6xl">
             <div className="text-center mb-8">
               <h2 className="text-3xl font-bold text-slate-50 mb-4">Your Captured Clips</h2>
@@ -126,7 +122,8 @@ export default function Landing() {
             </Card>
           </div>
         </section>
-      </main>
+      </div>
+        </div>
     </div>
   );
 }

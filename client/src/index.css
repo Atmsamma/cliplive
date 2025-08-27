@@ -1,3 +1,28 @@
+.hide-scrollbar {
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE 10+ */
+}
+.hide-scrollbar::-webkit-scrollbar {
+  width: 0px !important;
+  background: transparent !important;
+  display: none !important;
+}
+/* Hide vertical scrollbar for main scroll container */
+.hide-scrollbar {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE 10+ */
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+/* Enable vertical scroll snap for landing page sections */
+.snap-y {
+  scroll-snap-type: y mandatory;
+}
+
+.snap-start {
+  scroll-snap-align: start;
+}
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
