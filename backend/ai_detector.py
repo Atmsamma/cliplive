@@ -24,7 +24,7 @@ from sklearn.metrics import classification_report
 import nltk
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-from logging_utils import setup_logger
+from backend.logging_utils import setup_logger
 
 logger = setup_logger(__name__)
 

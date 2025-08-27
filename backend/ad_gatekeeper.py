@@ -10,7 +10,7 @@ import time
 import urllib.request
 import urllib.error
 from typing import Optional
-from logging_utils import setup_logger
+from backend.logging_utils import setup_logger
 
 logger = setup_logger(__name__)
 

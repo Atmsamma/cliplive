@@ -10,6 +10,7 @@ import fs from "fs";
 import path from "path";
 import { spawn, ChildProcess } from "child_process";
 import crypto from "crypto";
+import { registerSessionRoutes } from "./session-routes";
 
 interface SessionData {
   userId?: number;
@@ -151,6 +152,9 @@ function stopStreamProcessor(sessionToken: string) {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Register new session-based routes
+  registerSessionRoutes(app);
+
   // Configure session middleware
   app.use(session({
     secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
@@ -206,34 +210,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     console.error('Error cleaning clip directory:', error);
   }
 
-  // Server-Sent Events endpoint with session isolation
-  app.get('/api/events', sessionMiddleware, (req, res) => {
-    if (!req.sessionToken) {
-      return res.status(401).json({ error: 'Session token required' });
-    }
-    
-    const sessionState = getSessionState(req.sessionToken);
-    
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Cache-Control',
-    });
-
-    sessionState.sseClients.add(res);
-    
-    // Send initial status for this session
-    res.write(`data: ${JSON.stringify({
-      type: 'processing-status',
-      data: sessionState.processingStatus,
-    })}\n\n`);
-
-    req.on('close', () => {
-      sessionState.sseClients.delete(res);
-    });
-  });
+  // LEGACY ENDPOINT REMOVED - Use /api/sessions/{sessionId}/events instead
 
   // Authentication routes
   app.post('/api/auth/signup', async (req, res) => {
@@ -349,272 +326,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
-  app.get("/api/status", sessionMiddleware, (req, res) => {
-    if (!req.sessionToken) {
-      return res.status(401).json({ error: 'Session token required' });
-    }
-    
-    const sessionState = getSessionState(req.sessionToken);
-    res.json(sessionState.processingStatus);
-  });
+  // LEGACY ENDPOINT REMOVED - Use /api/sessions/{sessionId}/status instead
 
 
 
-  // Start stream capture with session isolation
-  app.post('/api/start', sessionMiddleware, requireAuth, async (req, res) => {
-    try {
-      if (!req.sessionToken) {
-        return res.status(401).json({ error: 'Session token required' });
-      }
+  // LEGACY ENDPOINT REMOVED - Use /api/sessions/{sessionId}/start instead
 
-      // Add userId from authenticated user to the request data, or use null for unauthenticated users
-      const requestData = {
-        ...req.body,
-        userId: req.user ? (req.user as any).id : null
-      };
-      
-      const validatedData = insertStreamSessionSchema.parse(requestData);
+  // LEGACY ENDPOINT REMOVED - Use /api/sessions/{sessionId}/stop instead
 
-      // Stop any active session for this token
-      const activeSession = await storage.getActiveSessionByToken(req.sessionToken);
-      if (activeSession) {
-        await storage.updateSessionStatus(activeSession.id, false);
-        stopStreamProcessor(req.sessionToken);
-      }
-
-      // Clean up temp directory and old session artifacts before starting new session
-      try {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('🧹 Cleaning temp directory before starting new session...');
-        }
-
-        const tempDir = path.join(process.cwd(), 'temp');
-        if (fs.existsSync(tempDir)) {
-          const tempFiles = fs.readdirSync(tempDir);
-          tempFiles.forEach(file => {
-            const filePath = path.join(tempDir, file);
-            try {
-              fs.unlinkSync(filePath);
-              if (process.env.NODE_ENV === 'development') {
-                console.log(`✅ Deleted temp file: ${file}`);
-              }
-            } catch (err) {
-              console.warn(`Could not delete temp file ${file}:`, err.message);
-            }
-          });
-        } else {
-          // Create temp directory if it doesn't exist
-          fs.mkdirSync(tempDir, { recursive: true });
-        }
-
-        if (process.env.NODE_ENV === 'development') {
-          console.log('✅ Temp directory cleaned for new session');
-        }
-      } catch (cleanupError) {
-        console.error('Error cleaning temp directory:', cleanupError);
-      }
-
-      // Create new session with token association
-      const session = await storage.createStreamSessionWithToken({
-        ...validatedData,
-        isActive: true,
-      }, req.sessionToken);
-
-      // Start Python stream processor with session context
-      const processorConfig = {
-        url: session.url,
-        audioThreshold: session.audioThreshold,
-        motionThreshold: session.motionThreshold,
-        clipLength: session.clipLength,
-        sessionId: session.id,
-        sessionToken: req.sessionToken, // Pass session token to Python
-      };
-
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`🚀 Starting stream processor for session ${req.sessionToken} with config:`, processorConfig);
-      }
-      const started = startStreamProcessor(req.sessionToken, processorConfig);
-
-      if (started) {
-        // Update session-specific processing status
-        const sessionState = getSessionState(req.sessionToken);
-        sessionState.processingStatus.isProcessing = true;
-        sessionState.processingStatus.framesProcessed = 0;
-        sessionState.processingStatus.currentSession = session;
-        sessionState.sessionStartTime = new Date();
-
-        console.log(`✅ Stream processor started successfully for session ${req.sessionToken}`);
-        console.log('📊 Current processing status:', sessionState.processingStatus);
-
-        broadcastSSE(req.sessionToken, {
-          type: 'session-started',
-          data: session,
-        });
-
-        res.json(session);
-      } else {
-        // Failed to start processor
-        console.log(`❌ Failed to start stream processor for session ${req.sessionToken}`);
-        await storage.updateSessionStatus(session.id, false);
-        res.status(500).json({ error: 'Failed to start stream processor' });
-      }
-    } catch (error) {
-      console.error('Error starting stream capture:', error);
-      res.status(400).json({ error: 'Invalid request data' });
-    }
-  });
-
-  // Stop stream capture with session context
-  app.post('/api/stop', sessionMiddleware, async (req, res) => {
-    try {
-      if (!req.sessionToken) {
-        return res.status(401).json({ error: 'Session token required' });
-      }
-
-      const activeSession = await storage.getActiveSessionByToken(req.sessionToken);
-      if (!activeSession) {
-        return res.status(400).json({ error: 'No active session for this token' });
-      }
-
-      const updatedSession = await storage.updateSessionStatus(activeSession.id, false);
-
-      // Stop Python stream processor for this session
-      stopStreamProcessor(req.sessionToken);
-
-      // Comprehensive cleanup of all session artifacts
-      try {
-        console.log('🧹 Starting comprehensive session cleanup...');
-
-        // 1. Clean up thumbnails from this session
-        const thumbnailsDir = path.join(process.cwd(), 'clips', 'thumbnails');
-        if (fs.existsSync(thumbnailsDir)) {
-          const thumbnails = fs.readdirSync(thumbnailsDir).filter(file => file.endsWith('.jpg'));
-          console.log(`Cleaning up ${thumbnails.length} thumbnail files...`);
-
-          thumbnails.forEach(thumbnail => {
-            const thumbnailPath = path.join(thumbnailsDir, thumbnail);
-            fs.unlinkSync(thumbnailPath);
-          });
-
-          console.log('✅ Thumbnails cleaned up successfully');
-        }
-
-        // 2. Clean up temporary files and current frame
-        const tempDir = path.join(process.cwd(), 'temp');
-        if (fs.existsSync(tempDir)) {
-          const tempFiles = fs.readdirSync(tempDir);
-          console.log(`Cleaning up ${tempFiles.length} temporary files...`);
-
-          tempFiles.forEach(file => {
-            const filePath = path.join(tempDir, file);
-            try {
-              fs.unlinkSync(filePath);
-            } catch (err) {
-              console.warn(`Could not delete temp file ${file}:`, err.message);
-            }
-          });
-
-          console.log('✅ Temporary files cleaned up successfully');
-        }
-
-        // 3. Clean up session-specific frames
-        const sessionFramePattern = new RegExp(`session_${activeSession.id}_frame\\.jpg`);
-        if (fs.existsSync(tempDir)) {
-          const sessionFrames = fs.readdirSync(tempDir).filter(file => sessionFramePattern.test(file));
-          sessionFrames.forEach(file => {
-            const filePath = path.join(tempDir, file);
-            try {
-              fs.unlinkSync(filePath);
-              console.log(`✅ Deleted session frame: ${file}`);
-            } catch (err) {
-              console.warn(`Could not delete session frame ${file}:`, err.message);
-            }
-          });
-        }
-
-        // 4. Clean up any stream processor artifacts (buckets, segments, etc.)
-        // These would be in /tmp/ directories created by the Python processor
-        console.log('✅ Stream processor will clean up its own temporary buckets and segments');
-
-        // 5. Reset session-specific processing metrics
-        const sessionState = getSessionState(req.sessionToken);
-        sessionState.processingStatus = {
-          isProcessing: false,
-          framesProcessed: 0,
-          streamUptime: "00:00:00",
-          audioLevel: 0,
-          motionLevel: 0,
-          sceneChange: 0,
-        };
-
-        console.log('✅ All session artifacts cleaned up successfully');
-
-      } catch (cleanupError) {
-        console.error('Error during session cleanup:', cleanupError);
-      }
-
-      // Update session-specific processing status
-      const sessionState = getSessionState(req.sessionToken);
-      sessionState.processingStatus.isProcessing = false;
-      sessionState.processingStatus.currentSession = undefined;
-      sessionState.sessionStartTime = null;
-
-      broadcastSSE(req.sessionToken, {
-        type: 'session-stopped',
-        data: updatedSession,
-      });
-
-      res.json(updatedSession);
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to stop session' });
-    }
-  });
-
-  // Get clips
-  app.get("/api/clips", async (req, res) => {
-    try {
-      const clips = await storage.getClips();
-      res.json(clips || []);
-    } catch (error) {
-      console.error('Error fetching clips:', error);
-      res.json([]);
-    }
-  });
+  // LEGACY ENDPOINT REMOVED - Use /api/sessions/{sessionId}/clips instead
 
 
 
-  // Get single clip
-  app.get('/api/clips/:id', async (req, res) => {
-    const id = parseInt(req.params.id);
-    const clip = await storage.getClip(id);
-    if (!clip) {
-      return res.status(404).json({ error: 'Clip not found' });
-    }
-    res.json(clip);
-  });
+  // LEGACY ENDPOINT REMOVED - Use /api/sessions/{sessionId}/clips/{id} instead
 
-  // Delete clip
-  app.delete('/api/clips/:id', async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const clip = await storage.getClip(id);
-      if (!clip) {
-        return res.status(404).json({ error: 'Clip not found' });
-      }
-
-      // Delete file
-      const filePath = path.join(clipsDir, clip.filename);
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-
-      // Delete from storage
-      await storage.deleteClip(id);
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to delete clip' });
-    }
-  });
+  // LEGACY ENDPOINT REMOVED - Use /api/sessions/{sessionId}/clips/{id} instead
 
   app.get("/clips/:filename", (req, res) => {
     const filename = req.params.filename;
@@ -669,31 +395,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Internal API for Python processor to create clips with session context
-  app.post('/api/clips', sessionMiddleware, async (req, res) => {
-    try {
-      if (!req.sessionToken) {
-        return res.status(401).json({ error: 'Session token required' });
-      }
-
-      const validatedData = insertClipSchema.parse(req.body);
-      const clip = await storage.createClip(validatedData);
-
-      // Broadcast SSE event about new clip to all sessions (clips are global)
-      // For now, broadcast to all sessions since clips can be viewed by all users
-      sessionStates.forEach((_, sessionToken) => {
-        broadcastSSE(sessionToken, {
-          type: 'clip-generated',
-          data: clip,
-        });
-      });
-
-      res.json(clip);
-    } catch (error) {
-      console.error('Error creating clip:', error);
-      res.status(400).json({ error: 'Invalid clip data' });
-    }
-  });
+  // LEGACY ENDPOINT REMOVED - Use /api/sessions/{sessionId}/clips instead
 
   // Internal API for Python processor to send metrics updates with session context
   app.post('/api/internal/metrics', sessionMiddleware, async (req, res) => {

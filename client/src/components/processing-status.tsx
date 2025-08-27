@@ -5,62 +5,42 @@ import type { ProcessingStatus } from "@shared/schema";
 import LivePlayer from "./live-player";
 import PlatformIframePlayer from "./platform-iframe-player";
 import { useState, useEffect } from 'react';
-import { apiRequest } from "@/lib/queryClient";
+import { useSession } from '@/hooks/use-session';
 
-export default function ProcessingStatus() {
-  const { data: status } = useQuery<ProcessingStatus>({
-    queryKey: ["/api/status"],
+interface Props { sessionId?: string }
+export default function ProcessingStatus({ sessionId: propSessionId }: Props) {
+  const { sessionId: ctxSessionId, isSessionReady: ctxReady } = useSession();
+  const sessionId = propSessionId || ctxSessionId;
+  const isSessionReady = !!sessionId && (propSessionId ? true : ctxReady);
+  
+  const { data: session } = useQuery({
+    queryKey: ['session', sessionId, 'status'],
+    queryFn: async () => {
+      if (!sessionId) throw new Error('No session ID available');
+      const response = await fetch(`/api/sessions/${sessionId}/status`);
+      if (!response.ok) throw new Error('Failed to fetch session status');
+      return response.json();
+    },
     refetchInterval: 1000,
-  });
-
-  // Get resolved stream URL for active session (decoupled from processing)
-  const { data: streamData, error: streamError } = useQuery<{ resolvedStreamUrl: string }>({
-    queryKey: ["/api/stream-url"],
-    refetchInterval: 60000, // Refresh every 60 seconds to handle token expiration
-    refetchOnWindowFocus: true,
-    enabled: !!status?.currentSession, // Only fetch when session is active
-    retry: 3,
-    retryDelay: 5000,
+    enabled: isSessionReady && !!sessionId,
   });
 
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [isLoadingStreamUrl, setIsLoadingStreamUrl] = useState<boolean>(false);
   const [displayStreamError, setDisplayStreamError] = useState<string | null>(null);
 
-  // Listen for SSE updates
-  useSSE("/api/events");
+  // Listen for SSE updates from session
+  useSSE(sessionId || '');
 
-  // Fetch stream URL when processing starts
+  // Clear stream URL when session changes
   useEffect(() => {
-    if (status?.isProcessing && !streamUrl && !isLoadingStreamUrl) {
-      setIsLoadingStreamUrl(true);
-
-      const fetchStreamUrl = async () => {
-        try {
-          const response = await apiRequest("GET", "/api/stream-url");
-          const data = await response.json();
-          
-          if (data.resolvedStreamUrl) {
-            if (process.env.NODE_ENV === 'development') {
-              console.log('Setting stream URL:', data.resolvedStreamUrl.substring(0, 80) + '...');
-            }
-            setStreamUrl(data.resolvedStreamUrl);
-            setDisplayStreamError(null);
-          } else {
-            setDisplayStreamError('No stream URL received from server');
-          }
-        } catch (err) {
-          console.error('Failed to fetch stream URL:', err);
-          setDisplayStreamError(`Failed to load stream: ${err instanceof Error ? err.message : 'Unknown error'}`);
-        } finally {
-          setIsLoadingStreamUrl(false);
-        }
-      };
-
-      fetchStreamUrl();
+    const isProcessing = session?.status === 'running';
+    if (!isProcessing) {
+      setStreamUrl(null);
+      setDisplayStreamError(null);
+      setIsLoadingStreamUrl(false);
     }
-  }, [status?.isProcessing, streamUrl, isLoadingStreamUrl]);
-
+  }, [session?.status]);
 
   return (
     <Card className="bg-slate-800 border-slate-600 mb-6">
@@ -74,15 +54,15 @@ export default function ProcessingStatus() {
               </span>
             </div>
             <div className="text-sm text-slate-400">
-              {status?.streamUptime || "00:00:00"}
+              {session?.stream_url ? "Active Session" : "00:00:00"}
             </div>
           </div>
 
           {/* Stream Player / Preview */}
           <div className="bg-slate-700 rounded-lg aspect-video flex items-center justify-center relative overflow-hidden">
-            {status?.currentSession?.url ? (
+            {session?.stream_url ? (
               <PlatformIframePlayer
-                streamUrl={status.currentSession.url}
+                streamUrl={session.stream_url}
                 className="w-full h-full"
               />
             ) : (
@@ -93,15 +73,15 @@ export default function ProcessingStatus() {
             )}
           </div>
 
-          {/* Processing Status - only show when actively processing without any connection issues */}
-          {status?.isProcessing && status?.framesProcessed > 0 && !status?.consecutiveFailures && !status?.streamEnded && (
+          {/* Processing Status - only show when actively processing */}
+          {session?.status === 'running' && (
             <div className="mt-4">
               <div className="text-center">
                 <div className="text-2xl font-bold text-slate-50 mb-1">
-                  {status.framesProcessed}
+                  Active
                 </div>
                 <div className="text-xs text-slate-400">
-                  frames processed
+                  session running
                 </div>
               </div>
             </div>

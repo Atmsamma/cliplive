@@ -3,18 +3,19 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import type { SSEEvent } from "@shared/schema";
 
-export function useSSE(url: string) {
+export function useSSE(sessionId: string) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
   useEffect(() => {
-    const sessionToken = localStorage.getItem('sessionToken');
-    if (!sessionToken) {
-      console.warn('No session token found, SSE connection not established');
+    if (!sessionId || sessionId === 'undefined' || sessionId === 'null') {
+      // Avoid creating EventSource with an invalid path
       return;
     }
 
-    const eventSource = new EventSource(`${url}?sessionToken=${sessionToken}`);
+  const eventSource = new EventSource(`/api/sessions/${sessionId}/events`);
+  // Tag for debugging multiple concurrent sessions
+  (eventSource as any)._sessionId = sessionId;
 
     eventSource.onmessage = (event) => {
       try {
@@ -26,37 +27,27 @@ export function useSSE(url: string) {
               title: "Highlight Captured!",
               description: `New clip: ${sseEvent.data.filename}`,
             });
-            queryClient.invalidateQueries({ queryKey: ["/api/clips"] });
+            queryClient.invalidateQueries({ queryKey: ["session", sessionId, "clips"] });
             break;
             
           case 'processing-status':
-            queryClient.setQueryData(["/api/status"], sseEvent.data);
+            queryClient.setQueryData(["session", sessionId, "status"], sseEvent.data);
             break;
             
           case 'session-started':
-            toast({
-              title: "Stream Capture Started",
-              description: "Now monitoring for highlights",
-            });
-            queryClient.invalidateQueries({ queryKey: ["/api/status"] });
+            console.log('[sse] session started');
+            queryClient.invalidateQueries({ queryKey: ["session", sessionId, "status"] });
             break;
             
           case 'session-stopped':
-            toast({
-              title: "Stream Capture Stopped",
-              description: "Processing has been stopped",
-            });
-            queryClient.invalidateQueries({ queryKey: ["/api/status"] });
+            console.log('[sse] session stopped');
+            queryClient.invalidateQueries({ queryKey: ["session", sessionId, "status"] });
             break;
             
           case 'stream-ended':
-            toast({
-              title: "Stream Has Ended",
-              description: sseEvent.data.message || "The stream is no longer available",
-              variant: "destructive",
-            });
+            console.warn('[sse] stream ended', sseEvent.data.message);
             // Reset processing status to allow new stream capture
-            queryClient.setQueryData(["/api/status"], {
+            queryClient.setQueryData(["session", sessionId, "status"], {
               isProcessing: false,
               framesProcessed: 0,
               streamUptime: "00:00:00",
@@ -64,15 +55,11 @@ export function useSSE(url: string) {
               motionLevel: 0,
               sceneChange: 0,
             });
-            queryClient.invalidateQueries({ queryKey: ["/api/status"] });
+            queryClient.invalidateQueries({ queryKey: ["session", sessionId, "status"] });
             break;
             
           case 'error':
-            toast({
-              title: "Error",
-              description: sseEvent.data.message || "An error occurred",
-              variant: "destructive",
-            });
+            console.error('[sse] error event', sseEvent.data.message || sseEvent.data);
             break;
         }
       } catch (error) {
@@ -85,7 +72,7 @@ export function useSSE(url: string) {
     };
 
     return () => {
-      eventSource.close();
+      try { eventSource.close(); } catch {}
     };
-  }, [url, queryClient, toast]);
+  }, [sessionId, queryClient, toast]);
 }

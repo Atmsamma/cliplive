@@ -21,7 +21,39 @@ from collections import deque
 import statistics
 import numpy as np
 
-from logging_utils import setup_logger
+"""Stream processor main module.
+
+Adjusts sys.path so it works whether executed as a module (python -m backend.stream_processor)
+or directly via its file path (python backend/stream_processor.py). When run directly the
+parent directory (project root) is not on sys.path, so 'from backend.logging_utils' fails.
+We defensively add the parent and provide a fallback import to avoid crashing early.
+"""
+
+# Ensure project root on sys.path when executed via relative file path
+_this_dir = os.path.dirname(os.path.abspath(__file__))
+_parent = os.path.abspath(os.path.join(_this_dir, os.pardir))
+if _parent not in sys.path:
+    sys.path.insert(0, _parent)
+
+try:  # Preferred (package context)
+    from backend.logging_utils import setup_logger  # type: ignore
+except Exception:
+    try:  # Fallback when run from inside backend/ directly
+        from logging_utils import setup_logger  # type: ignore
+    except Exception as _e:  # Final fallback: minimal stub
+        def setup_logger(name):  # noqa: D401
+            import logging
+            logging.basicConfig(level=logging.INFO)
+            return logging.getLogger(name)
+
+# Force UTF-8 stdout/stderr to avoid UnicodeEncodeError when printing emojis on Windows
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 logger = setup_logger(__name__)
 
@@ -224,21 +256,29 @@ class StreamBucket:
             'duration': self.clip_duration
         }
 
-    def save_bucket_as_clip(self, clip_path: str, detection_time: float) -> bool:
-        """Save the current bucket as a highlight clip using FFmpeg to ensure valid output."""
-        if not self.current_bucket_path:
-            print("❌ No current bucket path set")
+    def save_bucket_as_clip(self, clip_path: str, detection_time: float, source_bucket_path: str = None) -> bool:
+        """Save a completed bucket as a highlight clip using FFmpeg.
+
+        Args:
+            clip_path: Destination mp4 path.
+            detection_time: Time highlight detected (unused for now).
+            source_bucket_path: Explicit bucket file to use. Defaults to current bucket.
+        """
+        bucket_source = source_bucket_path or self.current_bucket_path
+
+        if not bucket_source:
+            print("❌ No bucket path provided")
             return False
-            
-        if not os.path.exists(self.current_bucket_path):
-            print(f"❌ Bucket file not found: {self.current_bucket_path}")
+
+        if not os.path.exists(bucket_source):
+            print(f"❌ Bucket file not found: {bucket_source}")
             return False
 
         try:
             # Check if bucket file has reasonable size
-            bucket_size = os.path.getsize(self.current_bucket_path)
+            bucket_size = os.path.getsize(bucket_source)
             if bucket_size < 50000:  # Less than 50KB probably isn't a valid video
-                print(f"❌ Bucket file too small ({bucket_size} bytes): {self.current_bucket_path}")
+                print(f"❌ Bucket file too small ({bucket_size} bytes): {bucket_source}")
                 return False
 
             # Wait a moment to ensure the bucket file is completely written
@@ -252,7 +292,7 @@ class StreamBucket:
                 '-select_streams', 'v:0',
                 '-show_entries', 'stream=duration',
                 '-of', 'csv=p=0',
-                self.current_bucket_path
+                bucket_source
             ]
 
             probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=5)
@@ -264,7 +304,7 @@ class StreamBucket:
             # Use FFmpeg to ensure a valid MP4 output with proper headers
             ffmpeg_cmd = [
                 'ffmpeg',
-                '-i', self.current_bucket_path,
+                '-i', bucket_source,
                 '-c', 'copy',  # Copy streams without re-encoding
                 '-movflags', '+faststart',  # Ensure proper MP4 structure
                 '-y',  # Overwrite output
@@ -346,25 +386,27 @@ class StreamProcessor:
 
         # Stream end detection
         self.consecutive_failures = 0
-        self.max_consecutive_failures = 5  # Consider stream ended after 5 consecutive failures
+        self.max_consecutive_failures = 5
         self.stream_ended = False
         self.last_successful_capture = None
 
-        # Detection thresholds (legacy - will be replaced by adaptive)
-        self.audio_threshold = config.get('audioThreshold', 6)  # dB
-        self.motion_threshold = config.get('motionThreshold', 30)  # percentage
-        self.scene_threshold = config.get('sceneThreshold', 0.3)  # Scene change threshold
+        # Detection thresholds
+        self.audio_threshold = config.get('audioThreshold', 6)
+        self.motion_threshold = config.get('motionThreshold', 30)
+        self.scene_threshold = config.get('sceneThreshold', 0.3)
         self.clip_length = config.get('clipLength', 30)
 
-        # Adaptive baseline detection with shorter calibration for testing
-        self.baseline_tracker = BaselineTracker(calibration_seconds=60)  # Reduced from 120s
+        # Completed bucket registry
+        self.completed_buckets: List[str] = []
+
+        # Adaptive baseline detection
+        self.baseline_tracker = BaselineTracker(calibration_seconds=60)
         self.use_adaptive_detection = config.get('useAdaptiveDetection', True)
 
         # Initialize AI detector if available
         self.ai_detector = None
         if AI_AVAILABLE:
             try:
-                # Setup NLTK data first
                 setup_nltk()
                 self.ai_detector = AIHighlightDetector()
                 print("🤖 AI-powered highlight detection enabled")
@@ -372,18 +414,17 @@ class StreamProcessor:
                 print(f"⚠️ AI detector initialization failed: {e}")
                 self.ai_detector = None
 
-        # Cooldown system to prevent duplicate clips
+        # Cooldown system
         self.last_clip_time = 0
-        self.clip_cooldown = self.clip_length  # Cooldown matches clip length to prevent overlap
+        self.clip_cooldown = self.clip_length
 
-        # Initialize metrics queue for communication between threads
+        # Metrics queue
         from queue import Queue
         self.metrics_queue = Queue()
 
-        # Initialize Ad Gatekeeper if available and enabled
+        # Ad Gatekeeper
         self.ad_gatekeeper = None
         self.use_ad_gatekeeper = config.get('useAdGatekeeper', True)
-
         if AD_GATEKEEPER_AVAILABLE and self.use_ad_gatekeeper:
             try:
                 self.ad_gatekeeper = AdGatekeeper()
@@ -394,10 +435,9 @@ class StreamProcessor:
         elif not self.use_ad_gatekeeper:
             print("🛡️ Ad Gatekeeper disabled by configuration")
 
-        # Ensure clips and temp directories exist
+        # Directories
         self.clips_dir = os.path.join(os.getcwd(), 'clips')
         os.makedirs(self.clips_dir, exist_ok=True)
-
         temp_dir = os.path.join(os.getcwd(), 'temp')
         os.makedirs(temp_dir, exist_ok=True)
 
@@ -411,22 +451,27 @@ class StreamProcessor:
             print("⚠️ Stream processor is already running")
             return False
 
+        # Store config
         self.url = url
         self.audio_threshold = audio_threshold
         self.motion_threshold = motion_threshold
         self.clip_length = clip_length
-        self.session_id = session_id or 'default'
-        self.session_token = session_token or 'default'
+
+        # Harmonize session id / token usage; prefer explicit session_id
+        chosen_session = session_id or session_token or 'default'
+        self.session_id = chosen_session
+        self.session_token = session_token or chosen_session
+
         self.is_running = True
         self.consecutive_failures = 0
         self.last_successful_capture = time.time()
         self.start_time = time.time()
 
         # Create session-specific temporary directory
-        self.session_temp_dir = os.path.join(os.getcwd(), 'temp', f'session_{self.session_token}')
+        self.session_temp_dir = os.path.join(os.getcwd(), 'temp', f'session_{self.session_id}')
         os.makedirs(self.session_temp_dir, exist_ok=True)
 
-        print(f"🚀 Starting stream processor for session {self.session_token}: {url}")
+        print(f"🚀 Starting stream processor for session {self.session_id}: {url}")
         print(f"📊 Thresholds - Audio: {audio_threshold}, Motion: {motion_threshold}")
         print(f"⏱️ Clip length: {clip_length}s")
 
@@ -535,6 +580,13 @@ class StreamProcessor:
                     self.consecutive_failures = 0
                     self.last_successful_capture = time.time()
                     bucket_counter += 1
+
+                    # Record completed bucket path
+                    if os.path.exists(bucket_path):
+                        self.completed_buckets.append(bucket_path)
+                        # Keep only last 3 buckets to bound memory
+                        if len(self.completed_buckets) > 3:
+                            self.completed_buckets = self.completed_buckets[-3:]
 
                     # Clean up old buckets to save space
                     self.stream_bucket.cleanup_old_buckets()
@@ -875,11 +927,17 @@ class StreamProcessor:
     def _create_highlight_clip(self, detection_time: float, trigger_reason: str):
         """Create a highlight clip by saving the current bucket."""
         try:
-            bucket_info = self.stream_bucket.get_current_bucket_info()
+            # Choose the most recently completed bucket (not the currently recording one)
+            source_bucket = None
+            if self.completed_buckets:
+                source_bucket = self.completed_buckets[-1]
+            else:
+                bucket_info = self.stream_bucket.get_current_bucket_info()
+                source_bucket = bucket_info['path'] if bucket_info else None
 
-            if not bucket_info:
-                print("No bucket available for clipping")
-                return
+            if not source_bucket or not os.path.exists(source_bucket):
+                print("No completed bucket available for clipping")
+                return False
 
             # Generate clip filename
             timestamp = datetime.fromtimestamp(detection_time)
@@ -887,11 +945,11 @@ class StreamProcessor:
             clip_path = os.path.join(self.clips_dir, clip_filename)
 
             print(f"🪣 Creating clip from bucket: {clip_filename} ({trigger_reason})")
-            print(f"   Bucket path: {bucket_info['path']}")
+            print(f"   Bucket path: {source_bucket}")
             print(f"   Bucket duration: {self.clip_length}s (no stitching needed!)")
 
             # Save the bucket as a clip - simple copy, no re-encoding!
-            success = self.stream_bucket.save_bucket_as_clip(clip_path, detection_time)
+            success = self.stream_bucket.save_bucket_as_clip(clip_path, detection_time, source_bucket_path=source_bucket)
 
             if success:
                 # Capture thumbnail from the saved clip
@@ -1243,14 +1301,35 @@ class StreamProcessor:
     def _capture_continuous_bucket(self, bucket_path: str) -> bool:
         """Capture a continuous video bucket of the full clip duration."""
         try:
-            # Check if streamlink is installed
-            streamlink_check = subprocess.run(['which', 'streamlink'], capture_output=True, text=True)
-            if streamlink_check.returncode != 0:
-                print("❌ CRITICAL: streamlink not found. Attempting to install...")
-                install_result = subprocess.run(['pip', 'install', 'streamlink'], capture_output=True, text=True)
+            # Ensure bucket directory exists before capture
+            os.makedirs(os.path.dirname(bucket_path), exist_ok=True)
+
+            # Cross-platform streamlink availability check
+            streamlink_cmd = 'streamlink'
+            if os.name == 'nt':
+                # Prefer venv Scripts path if available
+                possible = [
+                    os.path.join(os.getcwd(), '.venv', 'Scripts', 'streamlink.exe'),
+                    os.path.join(os.getcwd(), '.venv', 'Scripts', 'streamlink'),
+                    'streamlink'
+                ]
+                for p in possible:
+                    if os.path.isfile(p) or p == 'streamlink':
+                        streamlink_cmd = p
+                        break
+            # Try invoking --version to verify
+            try:
+                ver = subprocess.run([streamlink_cmd, '--version'], capture_output=True, text=True, timeout=10)
+                if ver.returncode != 0:
+                    raise RuntimeError(ver.stderr or 'unknown error')
+            except Exception as e:
+                print(f"❌ CRITICAL: streamlink not available ({e}); attempting pip install")
+                pip_exe = sys.executable
+                install_result = subprocess.run([pip_exe, '-m', 'pip', 'install', 'streamlink'], capture_output=True, text=True, timeout=120)
                 if install_result.returncode != 0:
-                    print(f"❌ CRITICAL: Failed to install streamlink: {install_result.stderr}")
+                    print(f"❌ CRITICAL: Failed to install streamlink: {install_result.stderr[:200]}")
                     return False
+                streamlink_cmd = 'streamlink'
                 print("✅ streamlink installed successfully")
 
             # Extract channel name from URL for Ad Gatekeeper
@@ -1278,7 +1357,7 @@ class StreamProcessor:
                 # Fallback to direct streamlink (legacy behavior)
                 print(f"⚠️ Ad Gatekeeper not available, using direct streamlink for bucket")
                 url_cmd = [
-                    'streamlink',
+                    streamlink_cmd,
                     self.config['url'],
                     'best',  # Use best quality for high-definition clips
                     '--stream-url',
@@ -1495,11 +1574,10 @@ class StreamProcessor:
                 'X-Session-Token': self.session_token
             }
 
-            # Send to main server API
+            # Send to session-based API endpoint
             response = requests.post(
-                'http://0.0.0.0:5000/api/clips',
+                f'http://0.0.0.0:5000/api/sessions/{self.session_id}/clips',
                 json=clip_data,
-                headers=headers,
                 timeout=5
             )
 

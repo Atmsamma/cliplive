@@ -6,30 +6,48 @@ import ClipList from "@/components/clip-list";
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
-import type { ProcessingStatus as ProcessingStatusType, Clip } from "@shared/schema";
+import type { Clip } from "@shared/schema";
+import { useSession } from "@/hooks/use-session";
+
+// NOTE: This page previously used a separate sessionManager singleton that
+// created its own session IDs independent of the SessionProvider. That caused
+// multiple concurrent session polls & start attempts (404 spam). We now unify
+// everything on SessionProvider so only one authoritative session exists.
 
 export default function StreamCapture() {
   const { toast } = useToast();
+  const { sessionId, isSessionReady } = useSession();
 
-  const { data: status } = useQuery<ProcessingStatusType>({
-    queryKey: ["/api/status"],
+  const { data: status } = useQuery({
+    queryKey: ["session", sessionId, "status"],
+    queryFn: async () => {
+      if (!sessionId) throw new Error("No session ID available");
+      const res = await fetch(`/api/sessions/${sessionId}/status`);
+      if (!res.ok) throw new Error("Failed to fetch session status");
+      return res.json();
+    },
     refetchInterval: 1000,
+    enabled: isSessionReady && !!sessionId,
   });
 
   const { data: clips } = useQuery<Clip[]>({
-    queryKey: ["/api/clips"],
+    queryKey: ["session", sessionId, "clips"],
+    queryFn: async () => {
+      if (!sessionId) throw new Error("No session ID available");
+      const res = await fetch(`/api/sessions/${sessionId}/clips`);
+      if (!res.ok) throw new Error("Failed to fetch clips");
+      return res.json();
+    },
     refetchInterval: 5000,
+    enabled: isSessionReady && !!sessionId,
   });
 
   const handleDownloadAll = async () => {
     try {
-      const response = await apiRequest("GET", "/api/download-all");
-      const data = await response.json();
-
+      // For now, just show a message since download-all needs to be implemented for sessions
       toast({
         title: "Download All",
-        description: data.message || "Download started",
+        description: "Download all functionality will be implemented for session-based clips",
       });
     } catch (error) {
       toast({
@@ -60,13 +78,9 @@ export default function StreamCapture() {
           <div className="flex items-center space-x-4">
             {/* Processing Status Badge */}
             <div className="flex items-center space-x-2 px-3 py-1 bg-slate-700 rounded-full text-sm">
-              <div
-                className={`w-2 h-2 rounded-full ${
-                  status?.isProcessing ? "bg-red-500 animate-pulse" : "bg-slate-500"
-                }`}
-              />
+              <div className={`w-2 h-2 rounded-full ${status?.status === 'running' ? "bg-red-500 animate-pulse" : "bg-slate-500"}`} />
               <span className="text-slate-300">
-                {status?.isProcessing ? "watching" : "Ready to clip"}
+                {status?.status === 'running' ? "Processing" : "Ready"}
               </span>
             </div>
 

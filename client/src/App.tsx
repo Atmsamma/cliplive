@@ -5,33 +5,13 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import StreamCapture from "@/pages/stream-capture";
+import SessionsDashboard from "@/pages/sessions-dashboard";
 import ClipLibrary from "@/pages/clip-library";
 import Landing from "@/pages/landing";
 import SignUp from "@/pages/signup";
 import SignIn from "@/pages/signin";
 import Sidebar from "@/components/sidebar";
-import { useQuery } from "@tanstack/react-query";
-
-function AuthenticatedRoute({ component: Component, ...props }: any) {
-  const { data: user, isLoading } = useQuery({
-    queryKey: ["/api/user"],
-    retry: false,
-  });
-
-  if (isLoading) {
-    return <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-      <div className="text-slate-400">Loading...</div>
-    </div>;
-  }
-
-  if (!user) {
-    // Redirect to sign in page instead of rendering it here
-    window.location.href = '/signin';
-    return null;
-  }
-
-  return <Component {...props} />;
-}
+import { SessionProvider } from "@/providers/session-provider";
 
 function Router() {
   return (
@@ -39,19 +19,20 @@ function Router() {
       <Route path="/" component={Landing} />
       <Route path="/signup" component={SignUp} />
       <Route path="/signin" component={SignIn} />
+      <Route path="/sessions">
+        <SessionsDashboard />
+      </Route>
       <Route path="/capture">
-        <AuthenticatedRoute component={() => (
-          <div className="flex h-screen bg-slate-900">
-            <Sidebar />
-            <div className="flex-1 flex flex-col overflow-hidden">
-              <Switch>
-                <Route path="/capture" component={StreamCapture} />
-                <Route path="/capture/clips" component={ClipLibrary} />
-                <Route component={NotFound} />
-              </Switch>
-            </div>
+        <div className="flex h-screen bg-slate-900">
+          <Sidebar />
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <Switch>
+              <Route path="/capture" component={StreamCapture} />
+              <Route path="/capture/clips" component={ClipLibrary} />
+              <Route component={NotFound} />
+            </Switch>
           </div>
-        )} />
+        </div>
       </Route>
       <Route component={NotFound} />
     </Switch>
@@ -61,10 +42,12 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Router />
-      </TooltipProvider>
+      <SessionProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Router />
+        </TooltipProvider>
+      </SessionProvider>
     </QueryClientProvider>
   );
 }

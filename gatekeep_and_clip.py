@@ -10,6 +10,15 @@ import sys
 import os
 import subprocess
 import json
+
+# Ensure stdout/stderr can emit UTF-8 (emoji) without crashing on Windows code pages
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 from backend.ad_gatekeeper import AdGatekeeper
 
 def main():
@@ -27,7 +36,6 @@ Examples:
     
     parser.add_argument(
         "--channel", 
-        required=True, 
         help="Twitch channel name (e.g., papaplatte)"
     )
     
@@ -71,8 +79,73 @@ Examples:
         help="Only validate stream cleanliness, don't start clipper"
     )
     
+    parser.add_argument(
+        "--url",
+        help="Stream URL to process (alternative to --channel)"
+    )
+    
+    parser.add_argument(
+        "--output-dir",
+        help="Output directory for clips"
+    )
+    
+    parser.add_argument(
+        "--session-id",
+        help="Session ID for API integration"
+    )
+    
     args = parser.parse_args()
     
+    # Handle both channel-based and URL-based workflows
+    if args.url:
+        # URL-based workflow (called from session manager)
+        print(f"🚀 Starting stream processor for URL: {args.url}")
+        if args.session_id:
+            print(f"   Session ID: {args.session_id}")
+        
+        # Skip ad gatekeeper for direct URL processing
+        processor_config = {
+            "url": args.url,
+            "audioThreshold": args.audio_threshold,
+            "motionThreshold": args.motion_threshold,
+            "clipLength": args.clip_length,
+            "sessionId": args.session_id,  # Pass session ID to processor
+            "outputDir": args.output_dir  # Pass output directory
+        }
+        
+        try:
+            # Start the stream processor directly
+            print(f"🚀 Launching stream processor...")
+            print(f"   URL: {args.url}")
+            print(f"   Audio Threshold: {args.audio_threshold}")
+            print(f"   Motion Threshold: {args.motion_threshold}")
+            print(f"   Clip Length: {args.clip_length}s")
+            
+            # Run the stream processor
+            # Use current interpreter for portability (Windows has no python3 alias)
+            cmd = [
+                sys.executable,
+                "backend/stream_processor.py",
+                json.dumps(processor_config)
+            ]
+            
+            print(f"🎯 Command: {' '.join(cmd[:2])} [config]")
+            subprocess.run(cmd, check=True)
+            
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Stream processor failed: {e}")
+            sys.exit(1)
+        except KeyboardInterrupt:
+            print(f"\n⏹️ Stream processing interrupted by user")
+            sys.exit(0)
+            
+        return
+    
+    # Channel-based workflow (original logic)
+    if not args.channel:
+        print("❌ Either --channel or --url must be provided")
+        sys.exit(1)
+        
     print(f"🛡️ Starting Ad Gatekeeper for channel: {args.channel}")
     print(f"   Quality: {args.quality}")
     print(f"   Validation Duration: {args.duration}s")
@@ -126,7 +199,9 @@ Examples:
         "audioThreshold": args.audio_threshold,
         "motionThreshold": args.motion_threshold,
         "clipLength": args.clip_length,
-        "useAdGatekeeper": True  # Enable Ad Gatekeeper in processor
+        "useAdGatekeeper": True,  # Enable Ad Gatekeeper in processor
+        "sessionId": args.session_id,  # Pass session ID if provided
+        "outputDir": args.output_dir   # Pass output directory if provided
     }
     
     try:
@@ -139,8 +214,8 @@ Examples:
         
         # Run the stream processor
         cmd = [
-            "python3", 
-            "backend/stream_processor.py", 
+            sys.executable,
+            "backend/stream_processor.py",
             json.dumps(processor_config)
         ]
         

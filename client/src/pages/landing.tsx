@@ -8,6 +8,7 @@ import type { Clip, ProcessingStatus as ProcessingStatusType } from "@shared/sch
 import StreamInputForm from "@/components/stream-input-form";
 import ProcessingStatus from "@/components/processing-status";
 import ClipList from "@/components/clip-list";
+import { useSession } from "@/hooks/use-session";
 
 // Dummy functions and variables to satisfy the compiler if they were used in the changes
 const formatSize = (size: number) => `${(size / 1024).toFixed(2)} KB`;
@@ -17,15 +18,30 @@ export default function Landing() {
   const { toast } = useToast();
   const liveProcessingSectionRef = useRef<HTMLElement>(null);
   const [wasProcessing, setWasProcessing] = useState(false);
+  const { sessionId, isSessionReady } = useSession();
 
   const { data: status } = useQuery<ProcessingStatusType>({
-    queryKey: ["/api/status"],
+    queryKey: ["session", sessionId, "status"],
+    queryFn: async () => {
+      if (!sessionId) throw new Error('No session ID available');
+      const response = await fetch(`/api/sessions/${sessionId}/status`);
+      if (!response.ok) throw new Error('Failed to fetch session status');
+      return response.json();
+    },
     refetchInterval: 1000,
+    enabled: isSessionReady && !!sessionId,
   });
 
   const { data: clips } = useQuery<Clip[]>({
-    queryKey: ["/api/clips"],
+    queryKey: ["session", sessionId, "clips"],
+    queryFn: async () => {
+      if (!sessionId) throw new Error('No session ID available');
+      const response = await fetch(`/api/sessions/${sessionId}/clips`);
+      if (!response.ok) throw new Error('Failed to fetch clips');
+      return response.json();
+    },
     refetchInterval: 5000,
+    enabled: isSessionReady && !!sessionId,
   });
 
   // Auto-scroll to Live Processing section when processing starts

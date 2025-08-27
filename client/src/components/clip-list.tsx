@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Play, Download, Trash2, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { useSession } from "@/hooks/use-session";
 import type { Clip } from "@shared/schema";
 
 interface ClipListProps {
@@ -15,17 +15,23 @@ export default function ClipList({ clips, showActions = false }: ClipListProps) 
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [previewingClip, setPreviewingClip] = useState<Clip | null>(null);
+  const { sessionId } = useSession();
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      await apiRequest("DELETE", `/api/clips/${id}`);
+      if (!sessionId) throw new Error('No session available');
+      const response = await fetch(`/api/sessions/${sessionId}/clips/${id}`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) throw new Error('Failed to delete clip');
+      return response.json();
     },
     onSuccess: () => {
       toast({
         title: "Clip Deleted",
         description: "The clip has been removed",
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/clips"] });
+      queryClient.invalidateQueries({ queryKey: ['session', sessionId, 'clips'] });
     },
     onError: () => {
       toast({

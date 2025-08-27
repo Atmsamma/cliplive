@@ -1,11 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
 import ClipList from "@/components/clip-list";
 import { Film } from "lucide-react";
+import { useSession } from "@/hooks/use-session";
 
 export default function ClipLibrary() {
+  const { sessionId, isSessionReady } = useSession();
+  
   const { data: clips = [], isLoading } = useQuery({
-    queryKey: ["/api/clips"],
+    queryKey: ["session", sessionId, "clips"],
+    queryFn: async () => {
+      if (!sessionId) throw new Error('No session ID available');
+      const response = await fetch(`/api/sessions/${sessionId}/clips`);
+      if (!response.ok) throw new Error('Failed to fetch clips');
+      return response.json();
+    },
     refetchInterval: 5000,
+    enabled: isSessionReady && !!sessionId,
   });
 
   const totalSize = clips.reduce((acc: number, clip: any) => acc + clip.fileSize, 0);

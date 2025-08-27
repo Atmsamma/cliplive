@@ -8,33 +8,33 @@ export interface StreamConfig {
 }
 
 export const streamService = {
-  async startCapture(config: StreamConfig) {
-    const response = await apiRequest("POST", "/api/start", config);
+  async startCapture(sessionId: string, config: StreamConfig) {
+    const response = await apiRequest("POST", `/api/sessions/${sessionId}/start`, config);
     return response.json();
   },
 
-  async stopCapture() {
-    const response = await apiRequest("POST", "/api/stop");
+  async stopCapture(sessionId: string) {
+    const response = await apiRequest("POST", `/api/sessions/${sessionId}/stop`);
     return response.json();
   },
 
-  async getStatus() {
-    const response = await apiRequest("GET", "/api/status");
+  async getStatus(sessionId: string) {
+    const response = await apiRequest("GET", `/api/sessions/${sessionId}/status`);
     return response.json();
   },
 
-  async getClips() {
-    const response = await apiRequest("GET", "/api/clips");
+  async getClips(sessionId: string) {
+    const response = await apiRequest("GET", `/api/sessions/${sessionId}/clips`);
     return response.json();
   },
 
-  async deleteClip(id: number) {
-    const response = await apiRequest("DELETE", `/api/clips/${id}`);
+  async deleteClip(sessionId: string, id: number) {
+    const response = await apiRequest("DELETE", `/api/sessions/${sessionId}/clips/${id}`);
     return response.json();
   },
 
-  async downloadAll() {
-    const response = await apiRequest("GET", "/api/download-all");
+  async downloadAll(sessionId: string) {
+    const response = await apiRequest("GET", `/api/sessions/${sessionId}/download-all`);
     return response.json();
   },
 };

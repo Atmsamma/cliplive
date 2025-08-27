@@ -2,24 +2,33 @@ import { Link, useLocation } from "wouter";
 import { Video, Library, Activity } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { useSession } from "@/hooks/use-session";
 
 export default function Sidebar() {
   const [location] = useLocation();
+  const { sessionId, isSessionReady } = useSession();
 
   const { data: status } = useQuery({
-    queryKey: ["/api/status"],
+    queryKey: ["session", sessionId, "status"],
+    queryFn: async () => {
+      if (!sessionId) throw new Error('No session ID available');
+      const response = await fetch(`/api/sessions/${sessionId}/status`);
+      if (!response.ok) throw new Error('Failed to fetch session status');
+      return response.json();
+    },
     refetchInterval: 1000,
+    enabled: isSessionReady && !!sessionId,
   });
 
   const navItems = [
     {
       name: "Stream Capture",
-      path: "/capture",
+      path: "/",
       icon: Video,
     },
     {
       name: "Clip Library",
-      path: "/capture/clips",
+      path: "/clips",
       icon: Library,
     },
   ];
@@ -61,7 +70,13 @@ export default function Sidebar() {
             </Link>
           );
         })}
-      </nav>
+        </nav>
+        <a
+          href="/sessions"
+          className="flex items-center px-3 py-2 text-sm font-medium rounded-md text-slate-300 hover:bg-slate-700 hover:text-white"
+        >
+          Multi Sessions
+        </a>
 
       {/* Status */}
       <div className="p-4 border-t border-slate-600">

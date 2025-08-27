@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Link, Play, Square } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { useSession } from "@/hooks/use-session";
 
 // URL validation function for supported streaming platforms
 const isValidStreamUrl = (url: string): boolean => {
@@ -52,13 +52,23 @@ const streamConfigSchema = z.object({
 
 type StreamConfig = z.infer<typeof streamConfigSchema>;
 
-export default function StreamInputForm() {
+interface Props { sessionId?: string; compact?: boolean }
+export default function StreamInputForm({ sessionId: propSessionId, compact }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { sessionId: ctxSessionId, isSessionReady, refreshSession } = useSession();
+  const sessionId = propSessionId || ctxSessionId;
 
-  const { data: status } = useQuery({
-    queryKey: ["/api/status"],
+  const { data: session } = useQuery({
+    queryKey: ['session', sessionId, 'status'],
+    queryFn: async () => {
+      if (!sessionId) throw new Error('No session ID available');
+  const response = await fetch(`/api/sessions/${sessionId}/status`, { credentials: 'include' });
+  if (!response.ok) throw new Error('Failed to fetch session status');
+  return response.json();
+    },
     refetchInterval: 1000,
+    enabled: isSessionReady && !!sessionId,
   });
 
   const form = useForm<StreamConfig>({
@@ -71,65 +81,107 @@ export default function StreamInputForm() {
 
   const startMutation = useMutation({
     mutationFn: async (data: StreamConfig) => {
-      const response = await apiRequest("POST", "/api/start", data);
-      return response.json();
+  const attemptStart = async (sid: string, attempt: number): Promise<any> => {
+        const res = await fetch(`/api/sessions/${sid}/start`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+          credentials: 'include'
+        });
+        let body: any = null;
+        try { body = await res.json(); } catch {}
+        if (!res.ok) {
+          const msg = (body && (body.error || body.message)) ? (body.error || body.message) : `HTTP ${res.status}`;
+          const status = res.status;
+          const looksLikeStale = (status === 400 || status === 404) && /session not found/i.test(msg);
+          if (looksLikeStale && attempt === 0) {
+            console.warn('[start] Detected stale session id', sid, '=> refreshing and retrying');
+            const newSid = await refreshSession();
+            if (!newSid) throw new Error('Session not found and failed to refresh session');
+            sessionStorage.setItem('sessionId', newSid);
+            return attemptStart(newSid, 1);
+          }
+          throw new Error(msg);
+        }
+        return body;
+      };
+
+      // Wait briefly for provider to finish verification/creation to avoid duplicate POSTs
+      const waitForReady = async (): Promise<string> => {
+        const start = Date.now();
+        while (Date.now() - start < 2000) { // wait up to 2s
+          if (isSessionReady && sessionId) return sessionId;
+          await new Promise(r => setTimeout(r, 100));
+        }
+        // If still not ready, force refresh (will POST once)
+        const newSid = await refreshSession();
+        if (!newSid) throw new Error('Failed to establish session');
+        return newSid;
+      };
+
+      let sid = sessionId;
+      if (!sid || !isSessionReady) {
+        sid = await waitForReady();
+      }
+
+      // Preflight status check; if 404 refresh once
+      try {
+  const statusRes = await fetch(`/api/sessions/${sid}/status`, { credentials: 'include' });
+        if (statusRes.status === 404) {
+          console.warn('[start] Preflight 404 for session', sid, '-> refreshing');
+          const newSid = await refreshSession();
+          if (newSid) sid = newSid; else throw new Error('Session not found and refresh failed');
+        }
+      } catch (e) {
+        console.warn('[start] Preflight status check error (continuing):', e);
+      }
+
+      return attemptStart(sid, 0);
     },
-    onSuccess: () => {
-      toast({
-        title: "Stream Capture Started",
-        description: "Now monitoring stream for highlights",
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/status"] });
+    onSuccess: (_data, _vars, context) => {
+      const sid = context?.sid || sessionId;
+      queryClient.invalidateQueries({ queryKey: ['session', sid, 'status'] });
     },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to start stream capture",
-        variant: "destructive",
-      });
+    onError: (error: any) => {
+      toast({ title: 'Could not start', description: error?.message ?? 'Unknown', variant: 'destructive' });
     },
   });
 
   const stopMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("POST", "/api/stop");
+      if (!sessionId) throw new Error('No session available');
+      const response = await fetch(`/api/sessions/${sessionId}/stop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include'
+      });
       return response.json();
     },
-    onSuccess: () => {
-      toast({
-        title: "Stream Capture Stopped",
-        description: "Processing has been stopped",
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/status"] });
+    onSuccess: (_data, _vars, context) => {
+      const sid = context?.sid || sessionId;
+      queryClient.invalidateQueries({ queryKey: ['session', sid, 'status'] });
     },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to stop stream capture",
-        variant: "destructive",
-      });
+    onError: (e) => {
+      toast({ title: 'Could not stop', description: e?.message ?? 'Unknown', variant: 'destructive' });
     },
   });
 
+  // Start in a brand new session without affecting current running one
   const onSubmit = (data: StreamConfig) => {
-    if (status?.isProcessing) {
+    const isProcessing = session?.status === 'running';
+    if (isProcessing) {
       stopMutation.mutate();
-    } else {
-      // Additional validation check before starting
-      if (!isValidStreamUrl(data.url)) {
-        toast({
-          title: "Invalid URL",
-          description: "Please enter a valid YouTube, Twitch, or Kick stream URL",
-          variant: "destructive",
-        });
-        return;
-      }
-      startMutation.mutate(data);
+      return;
     }
+    if (!isValidStreamUrl(data.url)) {
+      console.warn('[stream] invalid URL provided');
+      return;
+    }
+    startMutation.mutate(data);
   };
 
   return (
-    <Card className="bg-slate-800 border-slate-600 mb-6">
+    <Card className={compact ? "bg-slate-700 border-slate-600" : "bg-slate-800 border-slate-600 mb-6"}>
       <CardContent className="pt-6">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -145,7 +197,7 @@ export default function StreamInputForm() {
                         placeholder="https://www.twitch.tv/username, https://youtube.com/watch?v=..., or https://kick.com/username"
                         className="bg-slate-700 border-slate-600 text-slate-100 placeholder-slate-400 focus:ring-blue-500 focus:border-blue-500"
                         {...field}
-                        disabled={status?.isProcessing}
+                        disabled={session?.status === 'running'}
                       />
                     </div>
                   </FormControl>
@@ -166,7 +218,7 @@ export default function StreamInputForm() {
                   <Select
                     value={field.value.toString()}
                     onValueChange={(value) => field.onChange(parseInt(value))}
-                    disabled={status?.isProcessing}
+                    disabled={session?.status === 'running'}
                   >
                     <FormControl>
                       <SelectTrigger className="bg-slate-700 border-slate-600 text-slate-100">
@@ -193,13 +245,14 @@ export default function StreamInputForm() {
               <Button
                 type="submit"
                 className={
-                  status?.isProcessing
+                  session?.status === 'running'
                     ? "bg-red-500 hover:bg-red-600 text-white"
                     : "bg-blue-500 hover:bg-blue-600 text-white"
                 }
                 disabled={startMutation.isPending || stopMutation.isPending}
+                style={!isSessionReady && sessionId ? { opacity: 0.8 } : undefined}
               >
-                {status?.isProcessing ? (
+                {session?.status === 'running' ? (
                   <>
                     <Square size={16} className="mr-2" />
                     Stop Clipping
@@ -207,7 +260,7 @@ export default function StreamInputForm() {
                 ) : (
                   <>
                     <Play size={16} className="mr-2" />
-                    Start Clipping
+                    {(!isSessionReady && sessionId) ? 'Start Clipping (Init...)' : 'Start Clipping'}
                   </>
                 )}
               </Button>

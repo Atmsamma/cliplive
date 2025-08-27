@@ -1,50 +1,58 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 
-export default defineConfig({
-  plugins: [
-    react(),
-    runtimeErrorOverlay(),
-    ...(process.env.NODE_ENV !== "production" &&
-    process.env.REPL_ID !== undefined
-      ? [
-          await import("@replit/vite-plugin-cartographer").then((m) =>
-            m.cartographer(),
-          ),
-        ]
-      : []),
-  ],
-  resolve: {
-    alias: {
-      "@": path.resolve(import.meta.dirname, "client", "src"),
-      "@shared": path.resolve(import.meta.dirname, "shared"),
-      "@assets": path.resolve(import.meta.dirname, "attached_assets"),
-    },
-  },
-  root: path.resolve(import.meta.dirname, "client"),
-  build: {
-    outDir: path.resolve(import.meta.dirname, "dist/public"),
-    emptyOutDir: true,
-  },
-  server: {
-    fs: {
-      strict: true,
-      deny: ["**/.*"],
-    },
-    // Development proxy - only active in dev mode
-    proxy: process.env.NODE_ENV === "development" ? {
-      "/api": {
-        target: process.env.VITE_API_URL || "http://localhost:5000",
-        changeOrigin: true,
-        secure: false,
+// ESM-safe __dirname
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Export an async config *function* (no top-level await)
+export default defineConfig(async () => {
+  const plugins = [react(), runtimeErrorOverlay()];
+
+  // Only load Cartographer on Replit and in non-production
+  if (process.env.NODE_ENV !== "production" && process.env.REPL_ID) {
+    // dynamic import *inside* the function is OK
+    const mod = await import("@replit/vite-plugin-cartographer");
+    plugins.push(mod.cartographer());
+  }
+
+  return {
+    plugins,
+    resolve: {
+      alias: {
+        "@": resolve(__dirname, "client", "src"),
+        "@shared": resolve(__dirname, "shared"),
+        "@assets": resolve(__dirname, "attached_assets"),
       },
-      "/clips": {
-        target: process.env.VITE_API_URL || "http://localhost:5000",
-        changeOrigin: true,
-        secure: false,
-      }
-    } : undefined,
-  },
+    },
+    root: resolve(__dirname, "client"),
+    build: {
+      outDir: resolve(__dirname, "dist/public"),
+      emptyOutDir: true,
+    },
+    server: {
+      fs: {
+        strict: true,
+        deny: ["**/.*"],
+      },
+      // Dev proxy only
+      proxy:
+        process.env.NODE_ENV === "development"
+          ? {
+              "/api": {
+                target: process.env.VITE_API_URL || "http://localhost:5001",
+                changeOrigin: true,
+                secure: false,
+              },
+              "/clips": {
+                target: process.env.VITE_API_URL || "http://localhost:5001",
+                changeOrigin: true,
+                secure: false,
+              },
+            }
+          : undefined,
+    },
+  };
 });
