@@ -5,6 +5,10 @@ import { cn } from "@/lib/utils";
 import { useSession } from "@/hooks/use-session";
 
 export default function Sidebar() {
+  const handleSignOut = () => {
+    localStorage.removeItem('sessionToken');
+    window.location.href = '/';
+  };
   const [location] = useLocation();
   const { sessionId, isSessionReady } = useSession();
 
@@ -34,7 +38,7 @@ export default function Sidebar() {
   ];
 
   return (
-    <div className="w-64 bg-slate-800 border-r border-slate-600 flex flex-col">
+  <div className="w-64 bg-slate-800 border-r border-slate-600 flex flex-col">
       {/* Logo/Header */}
       <div className="p-6 border-b border-slate-600">
         <div className="flex items-center space-x-3">
@@ -49,7 +53,7 @@ export default function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-2">
+  <nav className="flex-1 p-4 space-y-2">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = location === item.path;
@@ -79,6 +83,12 @@ export default function Sidebar() {
         </a>
 
       {/* Status */}
+      <button
+        onClick={handleSignOut}
+        className="w-full mt-4 px-3 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
+      >
+        Sign Out
+      </button>
       <div className="p-4 border-t border-slate-600">
         <div className="text-xs text-slate-400 space-y-1">
           <div>Status: {status?.isProcessing ? "Processing" : "Idle"}</div>
