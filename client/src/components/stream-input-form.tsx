@@ -22,7 +22,11 @@ const isValidStreamUrl = (url: string): boolean => {
     // YouTube validation
     if (hostname === 'www.youtube.com' || hostname === 'youtube.com' || hostname === 'youtu.be') {
       if (hostname === 'youtu.be') return true;
-      return urlObj.pathname === '/watch' && urlObj.searchParams.has('v');
+    // Accept /watch?v=... and /live/{id}
+    if (urlObj.pathname === '/watch' && urlObj.searchParams.has('v')) return true;
+    const liveMatch = urlObj.pathname.match(/^\/live\/([A-Za-z0-9_-]+)$/);
+    if (liveMatch) return true;
+    return false;
     }
     
     // Twitch validation

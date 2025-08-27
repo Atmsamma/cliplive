@@ -155,20 +155,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register new session-based routes
   registerSessionRoutes(app);
 
-  // Configure session middleware
-  app.use(session({
-    secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      secure: false, // Set to true in production with HTTPS
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
-    }
-  }));
-
-  // Initialize passport
-  app.use(passport.initialize());
-  app.use(passport.session());
+  // Session and passport middleware are now configured in index.ts
 
   // Ensure clips directory exists
   const clipsDir = path.join(process.cwd(), 'clips');

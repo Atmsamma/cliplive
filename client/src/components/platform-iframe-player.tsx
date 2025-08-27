@@ -106,7 +106,8 @@ export default function PlatformIframePlayer({ streamUrl, className = "" }: Plat
         return twitchMatch ? twitchMatch[1] : '';
       
       case 'youtube':
-        const youtubeMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/);
+        // Support /watch?v=, /youtu.be/, and /live/{id}
+        const youtubeMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/live\/)([^&\n?#\/]+)/);
         return youtubeMatch ? youtubeMatch[1] : '';
       
       case 'kick':
