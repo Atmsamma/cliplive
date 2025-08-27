@@ -12,6 +12,7 @@ import SignUp from "@/pages/signup";
 import SignIn from "@/pages/signin";
 import Sidebar from "@/components/sidebar";
 import { SessionProvider } from "@/providers/session-provider";
+import RequireAuth from "@/components/RequireAuth";
 
 function Router() {
   return (
@@ -23,16 +24,18 @@ function Router() {
         <SessionsDashboard />
       </Route>
       <Route path="/capture">
-        <div className="flex h-screen bg-slate-900">
-          <Sidebar />
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <Switch>
-              <Route path="/capture" component={StreamCapture} />
-              <Route path="/capture/clips" component={ClipLibrary} />
-              <Route component={NotFound} />
-            </Switch>
+        <RequireAuth>
+          <div className="flex h-screen bg-slate-900">
+            <Sidebar />
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <Switch>
+                <Route path="/capture" component={StreamCapture} />
+                <Route path="/capture/clips" component={ClipLibrary} />
+                <Route component={NotFound} />
+              </Switch>
+            </div>
           </div>
-        </div>
+        </RequireAuth>
       </Route>
       <Route component={NotFound} />
     </Switch>

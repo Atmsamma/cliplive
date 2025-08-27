@@ -12,7 +12,8 @@ const startStreamSchema = z.object({
 
 export function registerSessionRoutes(app: Express) {
   // Create a new session
-  app.post('/api/sessions', (req: Request, res: Response) => {
+  const { requireAuth } = require('./auth');
+  app.post('/api/sessions', requireAuth, (req: Request, res: Response) => {
     try {
       const sessionId = sessionManager.createSession();
       res.json({ session_id: sessionId });
@@ -33,7 +34,7 @@ export function registerSessionRoutes(app: Express) {
   }
 
   // Get session status
-  app.get('/api/sessions/:sid/status', (req: Request, res: Response) => {
+  app.get('/api/sessions/:sid/status', requireAuth, (req: Request, res: Response) => {
   // ...existing code...
     const sessionId = getSessionId(req);
     if (!sessionId) {
@@ -55,7 +56,7 @@ export function registerSessionRoutes(app: Express) {
   });
 
   // Start stream for a session
-  app.post('/api/sessions/:sid/start', async (req: Request, res: Response) => {
+  app.post('/api/sessions/:sid/start', requireAuth, async (req: Request, res: Response) => {
     const sessionId = getSessionId(req);
     if (!sessionId) {
       return res.status(400).json({ error: 'Missing session ID' });
@@ -80,7 +81,7 @@ export function registerSessionRoutes(app: Express) {
   });
 
   // Stop stream for a session
-  app.post('/api/sessions/:sid/stop', async (req: Request, res: Response) => {
+  app.post('/api/sessions/:sid/stop', requireAuth, async (req: Request, res: Response) => {
     const sessionId = getSessionId(req);
     if (!sessionId) {
       return res.status(400).json({ error: 'Missing session ID' });
@@ -100,7 +101,7 @@ export function registerSessionRoutes(app: Express) {
   });
 
   // Get clips for a session
-  app.get('/api/sessions/:sid/clips', (req: Request, res: Response) => {
+  app.get('/api/sessions/:sid/clips', requireAuth, (req: Request, res: Response) => {
     const { sid } = req.params;
     const session = sessionManager.getSession(sid);
     
@@ -120,7 +121,7 @@ export function registerSessionRoutes(app: Express) {
   });
 
   // Server-Sent Events for a session
-  app.get('/api/sessions/:sid/events', (req: Request, res: Response) => {
+  app.get('/api/sessions/:sid/events', requireAuth, (req: Request, res: Response) => {
     const { sid } = req.params;
     const session = sessionManager.getSession(sid);
     
@@ -157,7 +158,7 @@ export function registerSessionRoutes(app: Express) {
   });
 
   // Delete a session
-  app.delete('/api/sessions/:sid', async (req: Request, res: Response) => {
+  app.delete('/api/sessions/:sid', requireAuth, async (req: Request, res: Response) => {
     const { sid } = req.params;
     
     try {
@@ -173,7 +174,7 @@ export function registerSessionRoutes(app: Express) {
   });
 
   // Get all sessions (for debugging/admin)
-  app.get('/api/sessions', (req: Request, res: Response) => {
+  app.get('/api/sessions', requireAuth, (req: Request, res: Response) => {
     const sessions = sessionManager.getAllSessions();
     res.json({
       sessions: sessions.map(session => ({
