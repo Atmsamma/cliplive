@@ -73,7 +73,7 @@ export default function SignUp() {
           title: "Success",
           description: "Account created successfully!",
         });
-        setLocation("/capture");
+  setLocation("/dashboard");
       } else {
         toast({
           title: "Error",
