@@ -436,12 +436,13 @@ class StreamProcessor:
             print("🛡️ Ad Gatekeeper disabled by configuration")
 
         # Directories
-        self.clips_dir = os.path.join(os.getcwd(), 'clips')
+        self.clips_dir = config.get('outputDir', os.path.join(os.getcwd(), 'clips'))
         os.makedirs(self.clips_dir, exist_ok=True)
         temp_dir = os.path.join(os.getcwd(), 'temp')
         os.makedirs(temp_dir, exist_ok=True)
 
         print(f"Stream processor initialized with config: {config}")
+        print(f"Clips directory: {self.clips_dir}")
         print(f"AI Detection: {'Enabled' if self.ai_detector else 'Disabled'}")
         print(f"Ad Gatekeeper: {'Enabled' if self.ad_gatekeeper else 'Disabled'}")
 
