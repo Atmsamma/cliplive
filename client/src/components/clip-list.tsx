@@ -43,7 +43,8 @@ export default function ClipList({ clips, showActions = false }: ClipListProps) 
   });
 
   const handleDownload = (filename: string) => {
-    window.open(`/clips/${filename}`, '_blank');
+    if (!sessionId) return;
+    window.open(`/clips/${sessionId}/${filename}`, '_blank');
   };
 
   const handleDelete = (id: number) => {
@@ -208,7 +209,7 @@ export default function ClipList({ clips, showActions = false }: ClipListProps) 
                 autoPlay
                 className="w-full rounded-lg bg-black"
                 style={{ maxHeight: '70vh' }}
-                src={`/clips/${previewingClip.filename}`}
+                src={`/clips/${sessionId}/${previewingClip.filename}`}
               >
                 Your browser does not support the video tag.
               </video>

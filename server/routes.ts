@@ -329,9 +329,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // LEGACY ENDPOINT REMOVED - Use /api/sessions/{sessionId}/clips/{id} instead
 
-  app.get("/clips/:filename", (req, res) => {
-    const filename = req.params.filename;
-    const filePath = path.join(process.cwd(), "clips", filename);
+  app.get("/clips/:sessionId/:filename", (req, res) => {
+    const { sessionId, filename } = req.params;
+    const filePath = path.join(process.cwd(), "clips", sessionId, filename);
 
     if (fs.existsSync(filePath)) {
       res.sendFile(filePath);

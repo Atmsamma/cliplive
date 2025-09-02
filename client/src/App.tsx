@@ -28,11 +28,17 @@ function Router() {
           <div className="flex h-screen bg-slate-900">
             <Sidebar />
             <div className="flex-1 flex flex-col overflow-hidden">
-              <Switch>
-                <Route path="/dashboard" component={StreamCapture} />
-                <Route path="/dashboard/clips" component={ClipLibrary} />
-                <Route component={NotFound} />
-              </Switch>
+              <StreamCapture />
+            </div>
+          </div>
+        </RequireAuth>
+      </Route>
+      <Route path="/dashboard/clips">
+        <RequireAuth>
+          <div className="flex h-screen bg-slate-900">
+            <Sidebar />
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <ClipLibrary />
             </div>
           </div>
         </RequireAuth>

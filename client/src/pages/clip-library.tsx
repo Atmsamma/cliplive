@@ -18,7 +18,8 @@ export default function ClipLibrary() {
     enabled: isSessionReady && !!sessionId,
   });
 
-  const totalSize = clips.reduce((acc: number, clip: any) => acc + clip.fileSize, 0);
+  const clipsArray = Array.isArray(clips) ? clips : [];
+  const totalSize = clipsArray.reduce((acc: number, clip: any) => acc + clip.fileSize, 0);
   const formatSize = (bytes: number) => {
     const mb = bytes / (1024 * 1024);
     return `${mb.toFixed(1)} MB`;
@@ -34,7 +35,7 @@ export default function ClipLibrary() {
             <p className="text-slate-400 text-sm">Browse and manage your Clip Live captures</p>
           </div>
           <div className="flex items-center space-x-2">
-            <span className="text-sm text-slate-400">Total: {clips.length} clips</span>
+            <span className="text-sm text-slate-400">Total: {clipsArray.length} clips</span>
             <div className="text-sm text-slate-400">•</div>
             <span className="text-sm text-slate-400">{formatSize(totalSize)}</span>
           </div>
@@ -57,7 +58,7 @@ export default function ClipLibrary() {
               <p>Loading clips...</p>
             </div>
           ) : (
-            <ClipList clips={clips} showActions />
+            <ClipList clips={clipsArray} showActions />
           )}
         </div>
       </main>
