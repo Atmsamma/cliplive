@@ -507,8 +507,6 @@ class StreamProcessor:
         except Exception as e:
             print(f"⚠️ Error cleaning old frames: {e}")
 
-
-
         # Start capture, analysis, and metrics update threads
         self.capture_thread = threading.Thread(target=self._stream_capture_loop, daemon=True)
         self.analysis_thread = threading.Thread(target=self._stream_analysis_loop, daemon=True)
@@ -517,6 +515,9 @@ class StreamProcessor:
         self.capture_thread.start()
         self.analysis_thread.start()
         self.metrics_thread.start()
+
+        # Spawn immediate TEST clip capture asynchronously
+        threading.Thread(target=self._create_initial_test_clip, daemon=True).start()
 
         return True
 
@@ -974,6 +975,54 @@ class StreamProcessor:
 
         except Exception as e:
             print(f"Error creating highlight clip: {e}")
+
+    def _create_initial_test_clip(self):
+        """Capture a quick 3s test clip at startup so UI shows something immediately."""
+        try:
+            # Wait a brief moment for stream capture to begin creating content
+            time.sleep(2)
+            test_filename = f"test_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.mp4"
+            output_path = os.path.join(self.clips_dir, test_filename)
+            print(f"🧪 Generating test clip: {test_filename}")
+
+            # Basic ffmpeg direct capture (best effort). If it fails, silently skip.
+            # Use streamlink to resolve the URL to an accessible stream URL if the original is a platform page.
+            resolved_url = self.url
+            if 'twitch.tv/' in self.url or 'youtube.com/' in self.url:
+                try:
+                    # Attempt to get a direct playable URL via streamlink
+                    sl = subprocess.run(['streamlink', self.url, 'best', '--stream-url', '--retry-streams', '1', '--retry-max', '1'],
+                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=25, text=True)
+                    if sl.returncode == 0 and sl.stdout.strip():
+                        resolved_url = sl.stdout.strip()
+                        print("🧪 Resolved direct stream URL for test clip")
+                except Exception as e:
+                    print(f"⚠️ Streamlink resolve failed for test clip: {e}")
+
+            ff_args = [
+                'ffmpeg', '-y', '-i', resolved_url,
+                '-t', '3', '-c', 'copy', output_path
+            ]
+            try:
+                proc = subprocess.run(ff_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=35)
+                if proc.returncode != 0:
+                    print(f"⚠️ Test clip ffmpeg non-zero exit ({proc.returncode}) - stderr size {len(proc.stderr)}")
+                    return
+            except Exception as e:
+                print(f"⚠️ Test clip capture failed: {e}")
+                return
+
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 10000:
+                thumb_name = test_filename.replace('.mp4', '.jpg')
+                self._capture_clip_thumbnail(output_path, thumb_name)
+                size = os.path.getsize(output_path)
+                self._notify_clip_created(test_filename, 'TEST clip, actual highlights here soon', time.time(), size)
+                self.clips_generated += 1
+                print(f"✅ Test clip generated: {test_filename}")
+            else:
+                print("⚠️ Test clip not created or too small")
+        except Exception as e:
+            print(f"⚠️ Test clip routine error: {e}")
 
     def _create_ffmpeg_clip(self, segments, detection_segment, segment_offset, before_duration, after_duration, output_path, trigger_reason):
         """Use FFmpeg to create a precise clip with 20%/80% timing."""
