@@ -36,7 +36,12 @@ export default function StreamCapture() {
       if (!sessionId) throw new Error("No session ID available");
       const res = await fetch(`/api/sessions/${sessionId}/clips`);
       if (!res.ok) throw new Error("Failed to fetch clips");
-      return res.json();
+      const data = await res.json();
+      const raw = Array.isArray(data?.clips) ? data.clips : Array.isArray(data) ? data : [];
+      return raw.map((c: any) => ({
+        ...c,
+        createdAt: c.createdAt ? new Date(c.createdAt) : new Date(),
+      }));
     },
     refetchInterval: 5000,
     enabled: isSessionReady && !!sessionId,
