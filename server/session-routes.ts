@@ -135,14 +135,19 @@ export function registerSessionRoutes(app: Express) {
           const fs = require('fs');
           stats = fs.statSync(clipPath);
         } catch {}
+        // Determine trigger reason; special label for test clip
+        let triggerReason = 'auto-detected';
+        if (filename.startsWith('test_')) {
+          triggerReason = 'TEST clip, actual highlights here soon';
+        }
         return {
           id: idx + 1, // Ephemeral ID (not DB id)
           userId: null,
-          filename,
+            filename,
           originalUrl: session.streamUrl || '',
           duration: 0, // Unknown without probing; could be populated later via ffprobe
           fileSize: stats?.size || 0,
-          triggerReason: 'auto-detected',
+          triggerReason,
           createdAt: stats?.birthtime || stats?.mtime || new Date(),
         };
       });
@@ -153,6 +158,44 @@ export function registerSessionRoutes(app: Express) {
       });
     }
   );
+
+  // Direct clip download with proper Content-Disposition header
+  app.get('/api/sessions/:sid/clips/:filename/download', (req: Request, res: Response) => {
+    const { sid, filename } = req.params;
+    const session = sessionManager.getSession(sid);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    const path = require('path');
+    const fs = require('fs');
+    // Basic path traversal guard
+    if (filename.includes('..') || filename.includes(path.sep)) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+    const filePath = path.join(session.outDir, filename);
+    console.log(`[DOWNLOAD] session=${sid} file=${filePath}`);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    // Detect content type
+    let contentType = 'application/octet-stream';
+    if (filename.endsWith('.mp4')) contentType = 'video/mp4';
+    else if (filename.endsWith('.mkv')) contentType = 'video/x-matroska';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    const stat = fs.statSync(filePath);
+    res.setHeader('Content-Length', stat.size.toString());
+    const stream = fs.createReadStream(filePath);
+    stream.on('error', (err: any) => {
+      console.error('[DOWNLOAD_ERROR]', err);
+      if (!res.headersSent) {
+        res.status(500).end();
+      } else {
+        res.end();
+      }
+    });
+    stream.pipe(res);
+  });
 
   // Accept clip notification POSTs from the Python processor (creates no DB record yet)
   app.post("/api/sessions/:sid/clips", (req: Request, res: Response) => {

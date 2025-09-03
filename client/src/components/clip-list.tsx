@@ -42,9 +42,45 @@ export default function ClipList({ clips, showActions = false }: ClipListProps) 
     },
   });
 
-  const handleDownload = (filename: string) => {
+  const handleDownload = async (filename: string) => {
     if (!sessionId) return;
-    window.open(`/clips/${sessionId}/${filename}`, '_blank');
+    const apiUrl = `/api/sessions/${sessionId}/clips/${encodeURIComponent(filename)}/download`;
+    console.debug('[ClipDownload] start', { sessionId, filename, apiUrl });
+    try {
+      const resp = await fetch(apiUrl, { method: 'GET' });
+      if (!resp.ok) {
+        const text = await resp.text();
+        console.error('[ClipDownload] non-OK response', resp.status, text.slice(0, 300));
+        throw new Error('bad status');
+      }
+      const blob = await resp.blob();
+      if (blob.size === 0) {
+        console.error('[ClipDownload] empty blob');
+        throw new Error('empty');
+      }
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => window.URL.revokeObjectURL(url), 2000);
+    } catch (e) {
+      console.error('[ClipDownload] primary method failed, trying fallback', e);
+      // Fallback: use direct static path with download attribute
+      try {
+        const a = document.createElement('a');
+        a.href = `/clips/${sessionId}/${encodeURIComponent(filename)}`;
+        a.setAttribute('download', filename);
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      } catch (fallbackErr) {
+        console.error('[ClipDownload] fallback failed', fallbackErr);
+        toast({ title: 'Download error', description: 'Unable to download clip', variant: 'destructive' });
+      }
+    }
   };
 
   const handleDelete = (id: number) => {
