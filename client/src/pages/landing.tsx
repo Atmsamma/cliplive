@@ -40,7 +40,14 @@ export default function Landing() {
       if (!sessionId) throw new Error('No session ID available');
       const response = await fetch(`/api/sessions/${sessionId}/clips`);
       if (!response.ok) throw new Error('Failed to fetch clips');
-      return response.json();
+      const data = await response.json();
+      // API returns { session_id, clips: [...] }. Normalize to Clip[] expected by UI.
+      const rawClips = Array.isArray(data?.clips) ? data.clips : [];
+      return rawClips.map((c: any) => ({
+        ...c,
+        // Ensure createdAt is a Date instance for downstream formatting
+        createdAt: c.createdAt ? new Date(c.createdAt) : new Date(),
+      }));
     },
     refetchInterval: 5000,
     enabled: isSessionReady && !!sessionId,
@@ -66,9 +73,9 @@ export default function Landing() {
 
   // Auto-scroll to Clips section when a new clip is generated
   useEffect(() => {
-    if (clipsArray.length > lastClipCount && clipsSectionRef.current) {
+    if (clipsArray.length > lastClipCount) {
       setTimeout(() => {
-        clipsSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        clipsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }, 100);
     }
     setLastClipCount(clipsArray.length);

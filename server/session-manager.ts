@@ -110,6 +110,8 @@ export class SessionManager {
         cwd: process.cwd(),
         env: {
           ...process.env,
+          // Ensure Python knows where to send metrics (server listens on 5001)
+          API_BASE_URL: process.env.API_BASE_URL || 'http://localhost:5001',
           PYTHONIOENCODING: 'utf-8',
           PYTHONUTF8: '1'
         }

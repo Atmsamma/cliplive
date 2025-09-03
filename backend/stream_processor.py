@@ -57,6 +57,13 @@ except Exception:
 
 logger = setup_logger(__name__)
 
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+# Node/Express server now listens on port 5001 (see server/index.ts). Allow an
+# override via environment variable API_BASE_URL for Docker / deployment.
+BASE_API_URL = os.environ.get('API_BASE_URL', 'http://localhost:5001').rstrip('/')
+
 # Import AI detector
 try:
     from ai_detector import AIHighlightDetector
@@ -1577,7 +1584,7 @@ class StreamProcessor:
 
             # Send to session-based API endpoint
             response = requests.post(
-                f'http://0.0.0.0:5000/api/sessions/{self.session_id}/clips',
+                f'{BASE_API_URL}/api/sessions/{self.session_id}/clips',
                 json=clip_data,
                 timeout=5
             )
@@ -1589,7 +1596,7 @@ class StreamProcessor:
                 try:
                     print(f"Triggering thumbnail generation for: {filename}")
                     thumbnail_response = requests.get(
-                        f'http://0.0.0.0:5000/api/thumbnails/{filename}',
+                        f'{BASE_API_URL}/api/thumbnails/{filename}',
                         headers=headers,
                         timeout=15
                     )
@@ -1623,7 +1630,7 @@ class StreamProcessor:
 
             # Send to main server API
             response = requests.post(
-                'http://0.0.0.0:5000/api/internal/stream-ended',
+                f'{BASE_API_URL}/api/internal/stream-ended',
                 json=stream_end_data,
                 headers=headers,
                 timeout=5
@@ -1679,7 +1686,7 @@ class StreamProcessor:
                     'X-Session-Token': self.session_token
                 }
                 response = requests.post(
-                    'http://0.0.0.0:5000/api/internal/metrics',
+                    f'{BASE_API_URL}/api/internal/metrics',
                     json=status_data,
                     headers=headers,
                     timeout=2
@@ -1701,7 +1708,7 @@ class StreamProcessor:
                 'X-Session-Token': self.session_token
             }
             response = requests.post(
-                'http://localhost:5000/api/internal/metrics', 
+                f'{BASE_API_URL}/api/internal/metrics', 
                 json=metrics,
                 headers=headers
             )

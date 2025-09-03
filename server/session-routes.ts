@@ -124,17 +124,47 @@ export function registerSessionRoutes(app: Express) {
         return res.status(404).json({ error: "Session not found" });
       }
       const clips = sessionManager.getSessionClips(sid);
+      // Build a richer response so the frontend ClipList can render session directory clips
+      // without them needing to exist in the database yet.
+      const enriched = clips.map((clipPath, idx) => {
+        const pathParts = clipPath.split(/[/\\]/);
+        const filename = pathParts[pathParts.length - 1];
+        let stats: any = null;
+        try {
+          // Lazy require to avoid bundler complaints in some environments
+          const fs = require('fs');
+          stats = fs.statSync(clipPath);
+        } catch {}
+        return {
+          id: idx + 1, // Ephemeral ID (not DB id)
+          userId: null,
+          filename,
+          originalUrl: session.streamUrl || '',
+          duration: 0, // Unknown without probing; could be populated later via ffprobe
+          fileSize: stats?.size || 0,
+          triggerReason: 'auto-detected',
+          createdAt: stats?.birthtime || stats?.mtime || new Date(),
+        };
+      });
       res.json({
         session_id: sid,
-        clips: clips.map((clipPath) => ({
-          filename:
-            clipPath.split("/").pop() || clipPath.split("\\").pop(),
-          path: clipPath,
-          created_at: null, // TODO: file creation time
-        })),
+        clips: enriched,
+        total: enriched.length,
       });
     }
   );
+
+  // Accept clip notification POSTs from the Python processor (creates no DB record yet)
+  app.post("/api/sessions/:sid/clips", (req: Request, res: Response) => {
+    const { sid } = req.params;
+    const session = sessionManager.getSession(sid);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    const { filename } = req.body || {};
+    // We rely on filesystem poll for listing; just acknowledge.
+    return res.json({ ok: true, received: { filename } });
+  });
 
   // Server-Sent Events for a session (auth-gated)
   app.get(
