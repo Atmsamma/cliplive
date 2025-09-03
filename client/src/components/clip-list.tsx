@@ -84,7 +84,7 @@ export default function ClipList({ clips, showActions = false }: ClipListProps) 
             <div className="w-full h-24 bg-slate-600 rounded flex items-center justify-center text-slate-400 flex-shrink-0 cursor-pointer transition-all duration-200 relative overflow-hidden group thumbnail-container"
                  onClick={() => setPreviewingClip(clip)}>
               <img 
-                src={`/api/thumbnails/${clip.filename}`}
+                src={sessionId ? `/api/sessions/${sessionId}/thumbnails/${clip.filename}` : ''}
                 alt={`${clip.filename} thumbnail`}
                 className="w-full h-full object-cover transition-transform duration-200"
                 loading="lazy"

@@ -1,4 +1,4 @@
-import type { Express, Response as ExpressResponse } from "express";
+import type { Express, Response as ExpressResponse, Request } from "express";
 import { createServer, type Server } from "http";
 import session from "express-session";
 import passport, { requireAuth } from "./auth";
@@ -42,6 +42,14 @@ interface SessionProcessingState {
   streamProcessor: ChildProcess | null;
   sessionStartTime: Date | null;
   sseClients: Set<ExpressResponse>;
+}
+
+// Extend Express Request to include sessionToken added by sessionMiddleware
+declare module 'express-serve-static-core' {
+  interface Request {
+    sessionToken?: string;
+    sessionData?: any;
+  }
 }
 
 const sessionStates = new Map<string, SessionProcessingState>();
@@ -341,25 +349,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/thumbnails/:filename", async (req, res) => {
-    try {
-      const filename = req.params.filename;
-      const thumbnailPath = path.join(process.cwd(), 'clips', 'thumbnails', filename.replace('.mp4', '.jpg'));
+    // Legacy route now disabled in favor of session-specific endpoint
+    return res.status(400).json({ error: 'Use /api/sessions/:sid/thumbnails/:filename' });
+  });
 
-      if (fs.existsSync(thumbnailPath)) {
-        res.sendFile(thumbnailPath);
-      } else {
-        // Generate thumbnail if it doesn't exist
-        const clipPath = path.join(process.cwd(), 'clips', filename);
-        if (fs.existsSync(clipPath)) {
-          await generateThumbnail(clipPath, thumbnailPath);
-          res.sendFile(thumbnailPath);
-        } else {
-          res.status(404).json({ error: 'Clip not found' });
-        }
+  // Session-scoped thumbnail route (only looks in that session directory)
+  app.get('/api/sessions/:sid/thumbnails/:filename', async (req, res) => {
+    try {
+      const { sid, filename } = req.params;
+      const safeName = filename.replace(/[^A-Za-z0-9._-]/g, '');
+      const sessionDir = path.join(process.cwd(), 'clips', sid);
+      if (!fs.existsSync(sessionDir)) {
+        return res.status(404).json({ error: 'Session or clip not found' });
       }
+      const videoPath = path.join(sessionDir, safeName);
+      if (!fs.existsSync(videoPath)) {
+        return res.status(404).json({ error: 'Clip not found' });
+      }
+
+      // Store thumbnail inside a per-session thumbnails subdir to avoid collisions
+      const thumbsDir = path.join(sessionDir, '.thumbs');
+      const thumbPath = path.join(thumbsDir, safeName.replace(/\.(mp4|mkv|webm)$/i, '.jpg'));
+      if (!fs.existsSync(thumbPath)) {
+        await generateThumbnail(videoPath, thumbPath);
+      }
+      if (fs.existsSync(thumbPath)) {
+        return res.sendFile(thumbPath);
+      }
+      return res.status(500).json({ error: 'Thumbnail generation failed' });
     } catch (error) {
-      console.error('Error serving thumbnail:', error);
-      res.status(500).json({ error: 'Failed to serve thumbnail' });
+      console.error('Session thumbnail error:', error);
+      return res.status(500).json({ error: 'Failed to generate thumbnail' });
     }
   });
 
@@ -456,14 +476,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // For now, skip Ad Gatekeeper in TypeScript context and go directly to streamlink
           console.log('⚠️ Skipping Ad Gatekeeper (Python module), using streamlink directly');
         } catch (error) {
-          console.log('⚠️ Ad Gatekeeper error for display, using streamlink fallback:', error.message);
+          const msg = (error instanceof Error) ? error.message : String(error);
+          console.log('⚠️ Ad Gatekeeper error for display, using streamlink fallback:', msg);
         }
       }
 
       // Fallback to streamlink if Ad Gatekeeper fails
       console.log('🔄 Using streamlink to resolve URL for display');
       
-      return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve) => {
         let responsesent = false; // Flag to prevent multiple responses
         
         const streamlinkProcess = spawn('streamlink', [
@@ -495,7 +516,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const cleanUrl = streamUrl.trim();
             console.log(`✅ Streamlink resolved URL for display: ${cleanUrl.substring(0, 80)}...`);
             res.json({ resolvedStreamUrl: cleanUrl });
-            resolve(null);
+            resolve();
           } else {
             console.error(`❌ Streamlink failed for display (code: ${code})`);
             console.error(`❌ Streamlink stderr: ${errorOutput}`);
@@ -504,7 +525,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               details: `Streamlink exit code: ${code}`,
               stderr: errorOutput.substring(0, 200)
             });
-            resolve(null);
+            resolve();
           }
         });
 
@@ -517,15 +538,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
             error: 'Stream URL resolution process failed',
             details: error.message 
           });
-          resolve(null);
+          resolve();
         });
       });
 
     } catch (error) {
-      console.error('❌ Error getting stream URL for display:', error);
+      const msg = (error instanceof Error) ? error.message : String(error);
+      console.error('❌ Error getting stream URL for display:', msg);
       res.status(500).json({ 
         error: 'Failed to get stream URL',
-        details: error.message 
+        details: msg 
       });
     }
   });
@@ -593,15 +615,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   return httpServer;
 }
 
-// Dummy function for thumbnail generation if not defined elsewhere
+// Real thumbnail generation (ffmpeg). Falls back to a 1x1 pixel if ffmpeg fails.
 async function generateThumbnail(clipPath: string, thumbnailPath: string) {
-  console.log(`Generating thumbnail for ${clipPath} at ${thumbnailPath}`);
-  // In a real application, you would use a library like ffmpeg-static or similar
-  // to generate a thumbnail from the video file.
-  // For now, we'll just create a placeholder file.
   try {
-    fs.writeFileSync(thumbnailPath, 'dummy thumbnail content');
+    fs.mkdirSync(path.dirname(thumbnailPath), { recursive: true });
+    // Use ffmpeg if available to grab a frame ~2s in
+    const args = ['-y', '-ss', '2', '-i', clipPath, '-frames:v', '1', '-vf', 'scale=320:-1', thumbnailPath];
+    await new Promise<void>((resolve) => {
+      const proc = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'ignore'] });
+      proc.on('close', () => resolve());
+      proc.on('error', () => resolve());
+    });
+    if (!fs.existsSync(thumbnailPath) || fs.statSync(thumbnailPath).size < 500) {
+      // Fallback placeholder (transparent 1x1 PNG)
+      const pngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==';
+      fs.writeFileSync(thumbnailPath, Buffer.from(pngBase64, 'base64'));
+    }
   } catch (error) {
-    console.error('Failed to create dummy thumbnail:', error);
+    console.error('Thumbnail generation error:', error);
+    try {
+      const pngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==';
+      fs.writeFileSync(thumbnailPath, Buffer.from(pngBase64, 'base64'));
+    } catch {}
   }
 }
